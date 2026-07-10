@@ -1,0 +1,12 @@
+func identity<T>(T x) -> T {
+    return x
+}
+
+func pair<T, U>(T a, U b) -> str {
+    return "(" + identity<T>(a) + ", " + identity<U>(b) + ")"
+}
+
+main {
+    str p = pair<int, str>(1, "one")
+    printin(p)
+}

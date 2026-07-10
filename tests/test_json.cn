@@ -1,0 +1,21 @@
+import json
+
+main {
+    str text = "{\"name\":\"Melton\",\"age\":19,\"active\":true,\"score\":95.5}"
+    var data = json.parse(text)
+
+    str name = json.get_string(data, "name")
+    int age = json.get_int(data, "age")
+    bool active = json.get_bool(data, "active")
+    float score = json.get_float(data, "score")
+
+    printin(name)
+    printin(age)
+    printin(active)
+    printin(score)
+
+    str out = json.stringify(data)
+    printin(out)
+
+    json.free(data)
+}

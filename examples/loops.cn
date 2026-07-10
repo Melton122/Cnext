@@ -1,0 +1,14 @@
+main {
+    int health = 50
+    
+    printin("Taking damage...")
+    while health > 0 {
+        health -= 10
+        printin(health)
+    }
+
+    printin("Counting up:")
+    for int i = 0; i < 5; i += 1 {
+        printin(i)
+    }
+}

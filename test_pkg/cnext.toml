@@ -1,0 +1,6 @@
+[package]
+name = "test_pkg"
+version = "0.1.0"
+
+[dependencies]
+dummy = "https://raw.githubusercontent.com/mdn/learning-area/master/html/introduction-to-html/getting-started/index.html"

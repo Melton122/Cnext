@@ -1,0 +1,229 @@
+import math
+import io
+
+// ============================================================================
+// Cnext v3.0 Feature Tests
+// Each feature is tested with a simple assertion pattern (print + check)
+// ============================================================================
+
+// --- Test 1: Var Inference ---
+func test_var_inference() {
+    var x = 42
+    var name = "Cnext"
+    var flag = true
+    var pi = 3.14
+
+    printin(x == 42)
+    printin(name == "Cnext")
+    printin(flag == true)
+    printin(pi > 3.0)
+}
+
+// --- Test 2: For-In Loops ---
+func test_for_in() {
+    int[] nums = {10, 20, 30}
+    int sum = 0
+    for n in nums {
+        sum = sum + n
+    }
+    printin(sum == 60)
+}
+
+// --- Test 3: Null Safety ---
+func test_null_safety() {
+    str empty = null
+    str filled = "hello"
+
+    bool is_null = (empty == null)
+    bool is_not_null = (filled != null)
+
+    printin(is_null == true)
+    printin(is_not_null == true)
+}
+
+// --- Test 4: Type Casting ---
+func test_casting() {
+    float f = 7.8
+    int i = f as int
+    printin(i == 7)
+
+    int n = 5
+    float fn = n as float
+    printin(fn > 4.9)
+    printin(fn < 5.1)
+}
+
+// --- Test 5: Lambdas ---
+func test_lambdas() {
+    var add = (int a, int b) => a + b
+    var triple = (int x) => {
+        return x * 3
+    }
+
+    printin(add(3, 4) == 7)
+    printin(triple(5) == 15)
+}
+
+// --- Test 6: Pattern Matching with Enums ---
+enum Color {
+    RED,
+    GREEN,
+    BLUE
+}
+
+func color_name(Color c) -> str {
+    match c {
+        RED => {
+            return "red"
+        }
+        GREEN => {
+            return "green"
+        }
+        BLUE => {
+            return "blue"
+        }
+        _ => {
+            return "unknown"
+        }
+    }
+    return "never"
+}
+
+func test_pattern_matching() {
+    printin(color_name(RED) == "red")
+    printin(color_name(GREEN) == "green")
+    printin(color_name(BLUE) == "blue")
+}
+
+// --- Test 7: Try / Catch / Finally ---
+func test_try_catch() {
+    bool caught = false
+    bool finally_ran = false
+
+    try {
+        throw "test error"
+    } catch (str err) {
+        caught = true
+    } finally {
+        finally_ran = true
+    }
+
+    printin(caught == true)
+    printin(finally_ran == true)
+}
+
+// --- Test 8: Classes with Constructors ---
+class Point {
+    int x
+    int y
+
+    func new(int x_val, int y_val) {
+        self.x = x_val
+        self.y = y_val
+    }
+
+    func magnitude() -> int {
+        return self.x * self.x + self.y * self.y
+    }
+}
+
+func test_classes() {
+    Point p = new Point(3, 4)
+    printin(p.x == 3)
+    printin(p.y == 4)
+    printin(p.magnitude() == 25)
+}
+
+// --- Test 9: Inheritance ---
+class Animal {
+    str name
+
+    func new(str n) {
+        self.name = n
+    }
+
+    func speak() {
+        printin("sound")
+    }
+}
+
+class Cat extends Animal {
+    func new(str n) {
+        super.new(n)
+    }
+
+    override func speak() {
+        printin("meow")
+    }
+
+    func get_name() -> str {
+        return self.name
+    }
+}
+
+func test_inheritance() {
+    Cat c = new Cat("Whiskers")
+    printin(c.get_name() == "Whiskers")
+}
+
+// --- Test 10: String Interpolation ---
+func test_interpolation() {
+    int age = 25
+    str msg = "I am {age} years old"
+    printin(msg == "I am 25 years old")
+}
+
+// --- Test 11: Constants ---
+func test_constants() {
+    const int max_val = 100
+    printin(max_val == 100)
+}
+
+// --- Test 12: Array Length ---
+func test_array_length() {
+    int[] arr = {1, 2, 3, 4, 5}
+    printin(arr.length == 5)
+}
+
+// ============================================================================
+// Main: Run all tests
+// ============================================================================
+main {
+    printin("--- Test 1: Var Inference ---")
+    test_var_inference()
+
+    printin("--- Test 2: For-In Loops ---")
+    test_for_in()
+
+    printin("--- Test 3: Null Safety ---")
+    test_null_safety()
+
+    printin("--- Test 4: Type Casting ---")
+    test_casting()
+
+    printin("--- Test 5: Lambdas ---")
+    test_lambdas()
+
+    printin("--- Test 6: Pattern Matching ---")
+    test_pattern_matching()
+
+    printin("--- Test 7: Try/Catch ---")
+    test_try_catch()
+
+    printin("--- Test 8: Classes ---")
+    test_classes()
+
+    printin("--- Test 9: Inheritance ---")
+    test_inheritance()
+
+    printin("--- Test 10: Interpolation ---")
+    test_interpolation()
+
+    printin("--- Test 11: Constants ---")
+    test_constants()
+
+    printin("--- Test 12: Array Length ---")
+    test_array_length()
+
+    printin("=== All v3 tests completed ===")
+}

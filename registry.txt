@@ -1,0 +1,7 @@
+# Cnext Package Registry
+# Format: name = url
+# URLs can be http(s) or local file paths
+
+# Example packages (uncomment and update URLs as needed)
+# hello_pkg = https://raw.githubusercontent.com/user/repo/main/hello_pkg.cn
+# string_utils = https://raw.githubusercontent.com/user/repo/main/string_utils.cn

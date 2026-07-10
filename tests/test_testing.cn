@@ -1,0 +1,23 @@
+test "basic arithmetic" {
+    int result = 2 + 3
+    assert result == 5
+    assert result > 0
+}
+
+test "string equality" {
+    str greeting = "hello"
+    assert greeting == "hello"
+}
+
+test "nested scope" {
+    int x = 10
+    {
+        int y = 20
+        assert x + y == 30
+    }
+    assert x == 10
+}
+
+main {
+    printin("main body after tests")
+}

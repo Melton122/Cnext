@@ -1,0 +1,4 @@
+main {
+    str name = "World"
+    printin("Hello " + name)
+}

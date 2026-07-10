@@ -1,0 +1,42 @@
+import collections
+
+main {
+    int lst = list_new()
+    printin(lst >= 0)
+
+    list_add(lst, 10)
+    list_add(lst, 30)
+    list_add(lst, 20)
+    printin(list_size(lst) == 3)
+
+    list_sort(lst)
+    printin(list_get(lst, 0) == 10)
+    printin(list_get(lst, 1) == 20)
+    printin(list_get(lst, 2) == 30)
+
+    bool has = list_contains(lst, 20)
+    printin(has)
+
+    list_remove(lst, 1)
+    printin(list_size(lst) == 2)
+
+    int mp = map_new()
+    printin(mp >= 0)
+
+    map_set(mp, 1, 100)
+    map_set(mp, 2, 200)
+    printin(map_get(mp, 1) == 100)
+    printin(map_has(mp, 2))
+    printin(map_size(mp) == 2)
+
+    int st = set_new()
+    set_add(st, 5)
+    set_add(st, 10)
+    printin(set_has(st, 5))
+    printin(set_has(st, 7) == false)
+    printin(set_size(st) == 2)
+
+    list_free(lst)
+    map_free(mp)
+    set_free(st)
+}

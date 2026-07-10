@@ -1,0 +1,27 @@
+import math
+
+main {
+    // Integer math
+    int a = -5
+    printin(math.abs(a))
+    printin(math.max(3, 7))
+    printin(math.min(3, 7))
+
+    // Float math
+    float x = 16.0
+    printin(math.sqrt(x))
+    printin(math.pow(2.0, 3.0))
+    printin(math.floor(3.7))
+    printin(math.ceil(3.2))
+    printin(math.round(3.5))
+    printin(math.fabs(-4.5))
+
+    // Trig
+    printin(math.sin(0.0))
+    printin(math.cos(0.0))
+
+    // Random (seeded for reproducibility)
+    math.random_seed(42)
+    int r = math.random_int(1, 100)
+    printin(r)
+}

@@ -1,0 +1,15 @@
+import regex
+
+main {
+    bool m1 = regex_match("^[a-z]+$", "hello")
+    printin(m1)
+
+    bool m2 = regex_match("^[a-z]+$", "Hello123")
+    printin(m2)
+
+    bool s1 = regex_search("world", "hello world!")
+    printin(s1)
+
+    str r1 = regex_replace("foo", "bar", "foo foo foo")
+    printin(r1)
+}

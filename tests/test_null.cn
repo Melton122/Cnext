@@ -1,0 +1,7 @@
+main {
+    str name = null
+    printin("name is null")
+
+    int x = 0
+    printin("x = " + x)
+}

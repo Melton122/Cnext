@@ -1,0 +1,189 @@
+import math
+
+// Version 3.0: Advanced Cnext Features
+// This example demonstrates modern language capabilities
+
+// --- Interfaces ---
+interface Shape {
+    func area() -> float
+    func describe()
+}
+
+// --- Classes with Inheritance ---
+class Rectangle implements Shape {
+    float width
+    float height
+
+    func new(float w, float h) {
+        self.width = w
+        self.height = h
+    }
+
+    func area() -> float {
+        return self.width * self.height
+    }
+
+    func describe() {
+        printin("Rectangle: {self.width} x {self.height}")
+    }
+}
+
+class Circle implements Shape {
+    float radius
+
+    func new(float r) {
+        self.radius = r
+    }
+
+    func area() -> float {
+        const float pi = 3.14159
+        return pi * self.radius * self.radius
+    }
+
+    func describe() {
+        printin("Circle: radius = {self.radius}")
+    }
+}
+
+// --- Pattern Matching ---
+enum Status {
+    OK,
+    WARNING,
+    ERROR
+}
+
+func describe_status(Status s) {
+    match s {
+        OK => {
+            printin("Everything is fine")
+        }
+        WARNING => {
+            printin("Pay attention")
+        }
+        ERROR => {
+            printin("Something went wrong!")
+        }
+        _ => {
+            printin("Unknown status")
+        }
+    }
+}
+
+// --- Null Safety ---
+func greet_user(str name) {
+    if name == null {
+        printin("Hello, anonymous user!")
+    } else {
+        printin("Hello, {name}!")
+    }
+}
+
+// --- Type Casting ---
+func demo_casting() {
+    float pi = 3.14159
+    int whole = pi as int
+    printin("pi as int = {whole}")
+
+    int x = 42
+    float precise = x as float
+    printin("42 as float = {precise}")
+}
+
+// --- Lambdas (Anonymous Functions) ---
+func demo_lambdas() {
+    var add = (int a, int b) => a + b
+    var result = add(10, 20)
+    printin("Lambda add(10, 20) = {result}")
+
+    var double_it = (int x) => {
+        return x * 2
+    }
+    printin("Lambda double_it(15) = {double_it(15)}")
+
+    var greet = (str name) => {
+        return "Hello, " + name
+    }
+    printin(greet("Cnext"))
+}
+
+// --- Error Handling with Try/Catch/Finally ---
+func risky_operation(bool should_fail) {
+    if should_fail {
+        throw "Operation failed intentionally"
+    }
+    printin("Operation succeeded")
+}
+
+func demo_error_handling() {
+    try {
+        printin("Trying risky operation...")
+        risky_operation(false)
+        printin("Trying another risky operation...")
+        risky_operation(true)
+        printin("This line won't execute")
+    } catch (str error) {
+        printin("Caught error: {error}")
+    } finally {
+        printin("Cleanup complete")
+    }
+}
+
+// --- Main Entry Point ---
+main {
+    printin("=== Cnext v3.0 Feature Showcase ===")
+    printin("")
+
+    // Var inference
+    var message = "Welcome to modern Cnext"
+    printin(message)
+    printin("")
+
+    // For-in loops
+    int[] scores = {85, 92, 78, 96, 88}
+    printin("Scores:")
+    for score in scores {
+        printin("  - {score}")
+    }
+    printin("")
+
+    // Null handling
+    greet_user("Melton")
+    greet_user(null)
+    printin("")
+
+    // Type casting
+    demo_casting()
+    printin("")
+
+    // Lambdas
+    demo_lambdas()
+    printin("")
+
+    // Pattern matching with enums
+    Status current = WARNING
+    describe_status(current)
+    describe_status(ERROR)
+    printin("")
+
+    // Error handling
+    demo_error_handling()
+    printin("")
+
+    // OOP: Classes
+    Rectangle rect = new Rectangle(10.0, 5.0)
+    rect.describe()
+    printin("Area: {rect.area()}")
+    printin("")
+
+    Circle circle = new Circle(7.0)
+    circle.describe()
+    printin("Area: {circle.area()}")
+    printin("")
+
+    // Constants
+    const float gravity = 9.81
+    printin("Gravity constant: {gravity}")
+    printin("")
+
+    printin("=== End of v3.0 Showcase ===")
+}

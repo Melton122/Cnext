@@ -1,0 +1,65 @@
+// Test all features combined
+import io
+
+enum Color {
+    RED,
+    GREEN,
+    BLUE
+}
+
+struct Point {
+    int x
+    int y
+}
+
+class Rectangle {
+    int width
+    int height
+}
+
+func area(Rectangle r) -> int {
+    return r.width * r.height
+}
+
+main {
+    const int max_size = 100
+    
+    Point p
+    p.x = 10
+    p.y = 20
+    printin(p.x)
+    
+    Rectangle rect
+    rect.width = 5
+    rect.height = 10
+    printin(area(rect))
+    
+    int[] nums = {1, 2, 3, 4, 5}
+    for var n in nums {
+        if n == 3 {
+            continue
+        }
+        if n == 4 {
+            break
+        }
+        printin(n)
+    }
+    
+    int sum = 0
+    for int i = 0; i < nums.length; i++ {
+        sum += nums[i]
+    }
+    printin(sum)
+    
+    Color c = GREEN
+    switch c {
+        case RED:
+            printin("Red")
+        case GREEN:
+            printin("Green")
+        case BLUE:
+            printin("Blue")
+        default:
+            printin("Unknown")
+    }
+}

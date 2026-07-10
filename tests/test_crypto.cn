@@ -1,0 +1,15 @@
+import crypto
+
+main {
+    str md5 = crypto_md5("hello")
+    printin(md5)
+
+    str sha = crypto_sha256("hello")
+    printin(sha)
+
+    str enc = crypto_base64_encode("hello")
+    printin(enc)
+
+    str dec = crypto_base64_decode(enc)
+    printin(dec)
+}

@@ -1,0 +1,19 @@
+class Student {
+    str name
+    int age
+}
+
+main {
+    // Basic class instantiation representation
+    // Since constructors aren't formally defined yet, we'll imagine a basic initialization
+    // Cnext 1.0 will likely compile this to a struct and initialization
+    Student s
+    s.name = "Melton"
+    s.age = 19
+
+    if s.age >= 18 {
+        printin(s.name + " is an adult")
+    } else {
+        printin(s.name + " is a minor")
+    }
+}

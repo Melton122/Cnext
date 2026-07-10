@@ -1,0 +1,12 @@
+// test_pkg.cn - A simple test package for Cnext
+func greet(str name) -> str {
+    return "Hello, " + name
+}
+
+func add(int a, int b) -> int {
+    return a + b
+}
+
+func twice(int x) -> int {
+    return x * 2
+}

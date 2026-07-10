@@ -1,0 +1,32 @@
+class Animal {
+    str name
+    
+    func new(str name) {
+        self.name = name
+    }
+    
+    func speak() {
+        printin("Animal speaking")
+    }
+}
+
+class Dog extends Animal {
+    func new(str name) {
+        // Wait, how do I call super constructor?
+        // super.new(name) ? or super(name) ?
+        // Based on the parser, it parses super.method(args)
+        super.new(name)
+    }
+    
+    override func speak() {
+        printin("Woof! My name is " + self.name)
+    }
+}
+
+main {
+    printin("Testing inheritance...")
+    
+    // new expression
+    Dog dog = new Dog("Buddy")
+    dog.speak()
+}

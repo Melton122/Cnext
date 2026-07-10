@@ -1,0 +1,33 @@
+import string_utils
+
+main {
+    str text = "  Hello World  "
+    printin(str_trim(text))
+
+    str lower = str_to_lower("HELLO")
+    printin(lower)
+
+    str upper = str_to_upper("hello")
+    printin(upper)
+
+    bool starts = str_starts_with("hello world", "hello")
+    printin(starts)
+
+    bool ends = str_ends_with("hello world", "world")
+    printin(ends)
+
+    bool contains = str_contains("hello world", "lo wo")
+    printin(contains)
+
+    int idx = str_index_of("hello world", "world")
+    printin(idx)
+
+    str replaced = str_replace("hello world", "world", "there")
+    printin(replaced)
+
+    str sub = str_substring("hello world", 0, 5)
+    printin(sub)
+
+    str rev = str_reverse("abc")
+    printin(rev)
+}

@@ -1,0 +1,4 @@
+main {
+    int[] nums = {10, 20, 30}
+    printin(nums[5])
+}

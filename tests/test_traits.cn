@@ -1,0 +1,40 @@
+// Test traits with default method implementations
+trait Greeter {
+    func greet() {
+        printin("Hello!")
+    }
+
+    func greet_name(str name) {
+        printin("Hello, {name}!")
+    }
+}
+
+class EnglishUser implements Greeter {
+    str name
+
+    func new(str n) {
+        self.name = n
+    }
+}
+
+class FrenchUser implements Greeter {
+    str name
+
+    func new(str n) {
+        self.name = n
+    }
+
+    override func greet() {
+        printin("Bonjour!")
+    }
+}
+
+main {
+    EnglishUser eu = new EnglishUser("Alice")
+    eu.greet()
+    eu.greet_name("Alice")
+
+    FrenchUser fu = new FrenchUser("Bob")
+    fu.greet()
+    fu.greet_name("Bob")
+}

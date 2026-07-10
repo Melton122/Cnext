@@ -1,0 +1,11 @@
+// Test var type inference and for-in with var
+main {
+    var name = "Cnext"
+    var age = 25
+    printin("Hello, {name}! You are {age} years old.")
+    
+    int[] scores = {85, 90, 95}
+    for var item in scores {
+        printin(item)
+    }
+}

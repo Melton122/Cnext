@@ -1,0 +1,7 @@
+test "this should fail" {
+    assert 1 == 2
+}
+
+main {
+    printin("should not reach here")
+}

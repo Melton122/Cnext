@@ -1,0 +1,22 @@
+class Point {
+    int x
+    int y
+
+    func distance(Point other) -> int {
+        int dx = self.x - other.x
+        int dy = self.y - other.y
+        return dx * dx + dy * dy
+    }
+}
+
+main {
+    Point p1
+    p1.x = 0
+    p1.y = 0
+
+    Point p2
+    p2.x = 3
+    p2.y = 4
+
+    printin(p1.distance(p2))
+}
