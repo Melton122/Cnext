@@ -1,0 +1,3 @@
+main {
+    printin("Hello, TestProject!")
+}

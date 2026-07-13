@@ -93,6 +93,15 @@ bool dirname_from_path(const char* path, char* buffer, size_t buffer_size) {
     return true;
 }
 
+static bool probe_include_path(const char* dir_path) {
+    char probe[CNEXT_PATH_MAX];
+    int written = snprintf(probe, sizeof(probe), "%s%cruntime.h", dir_path, CNEXT_PATH_SEP);
+    if (written < 0 || (size_t)written >= sizeof(probe)) return false;
+    FILE* f = fopen(probe, "r");
+    if (f) { fclose(f); return true; }
+    return false;
+}
+
 bool build_include_path(const char* argv0, char* include_path, size_t include_path_size) {
     char base[CNEXT_PATH_MAX];
     const char* include_dir = "include";
@@ -102,14 +111,32 @@ bool build_include_path(const char* argv0, char* include_path, size_t include_pa
         size_t base_len = strlen(base);
         const char* include_leaf = "include";
         size_t include_len = strlen(include_leaf);
-        if (base_len + 1 + include_len + 1 > sizeof(resolved_include_path)) {
-            fprintf(stderr, "Compiler path is too long.\n");
-            return false;
+
+        /* Try <exe_dir>/include first (works for dev builds) */
+        if (base_len + 1 + include_len + 1 <= sizeof(resolved_include_path)) {
+            memcpy(resolved_include_path, base, base_len);
+            resolved_include_path[base_len] = CNEXT_PATH_SEP;
+            memcpy(resolved_include_path + base_len + 1, include_leaf, include_len + 1);
+
+            if (probe_include_path(resolved_include_path)) {
+                include_dir = resolved_include_path;
+            } else {
+                /* Try <exe_dir>/../include (works for installed builds with bin/ prefix) */
+                const char* last_sep = strrchr(base, CNEXT_PATH_SEP);
+                if (last_sep && last_sep > base) {
+                    size_t parent_len = (size_t)(last_sep - base);
+                    size_t leaf_len = strlen(include_leaf);
+                    if (parent_len + 1 + leaf_len + 1 <= sizeof(resolved_include_path)) {
+                        memcpy(resolved_include_path, base, parent_len);
+                        resolved_include_path[parent_len] = CNEXT_PATH_SEP;
+                        memcpy(resolved_include_path + parent_len + 1, include_leaf, leaf_len + 1);
+                        if (probe_include_path(resolved_include_path)) {
+                            include_dir = resolved_include_path;
+                        }
+                    }
+                }
+            }
         }
-        memcpy(resolved_include_path, base, base_len);
-        resolved_include_path[base_len] = CNEXT_PATH_SEP;
-        memcpy(resolved_include_path + base_len + 1, include_leaf, include_len + 1);
-        include_dir = resolved_include_path;
     }
 
     int written = snprintf(include_path, include_path_size, "%s", include_dir);
