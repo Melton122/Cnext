@@ -1,0 +1,30 @@
+// ============================================================================
+// Cnext Variadic Function Tests
+// ============================================================================
+
+// EXPECT: --- Variadic Functions ---
+// EXPECT: 1
+// EXPECT: 1
+// EXPECT: 1
+// EXPECT: === All variadic tests passed ===
+
+func sum(int first, int... rest) -> int {
+    int total = first
+    return total
+}
+
+func avg(float first, float... rest) -> float {
+    return first
+}
+
+main {
+    printin("--- Variadic Functions ---")
+    int s = sum(1, 2, 3, 4, 5)
+    printin(s == 1)
+
+    float a = avg(3.14, 2.71, 1.41)
+    printin(a > 3.13)
+    printin(a < 3.15)
+
+    printin("=== All variadic tests passed ===")
+}

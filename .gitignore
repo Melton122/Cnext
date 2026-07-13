@@ -1,1 +1,38 @@
+# Build artifacts
+*.o
+*.obj
+*.exe
+*.out
+
+# Temp files
+*.tmp
+temp_out.c
+_cnext_*.tmp
+formatted_output.cn
+
+# Test artifacts
+test_temp_*
+test_output.txt
+test_results.txt
+test_results_full.txt
+build_err.txt
+build_errors.txt
+debug_stderr.txt
+debug_interp.c
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Packages
+packages/
+
+# History
 .aider*

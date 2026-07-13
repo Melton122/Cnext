@@ -1,0 +1,32 @@
+// === Threading Tests ===
+import thread
+
+// EXPECT: 42
+// EXPECT: hello
+// EXPECT: hello world
+
+main {
+    // Test 1: Basic mutex
+    var m = mutex_new()
+    mutex_lock(m)
+    var x = 42
+    mutex_unlock(m)
+    printin(x)
+    mutex_free(m)
+
+    // Test 2: Channel send/recv
+    var ch = channel_new(8)
+    channel_send(ch, "hello")
+    var msg = channel_recv(ch)
+    printin(msg)
+    channel_free(ch)
+
+    // Test 3: Channel with multiple messages
+    var ch2 = channel_new(8)
+    channel_send(ch2, "hello")
+    channel_send(ch2, "world")
+    var msg1 = channel_recv(ch2)
+    var msg2 = channel_recv(ch2)
+    printin(msg1 + " " + msg2)
+    channel_free(ch2)
+}

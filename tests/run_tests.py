@@ -1,3 +1,14 @@
+"""
+Extended test runner for Cnext compiler.
+
+This runner provides additional tests beyond the built-in `cnext test` command:
+- Negative tests (expect compilation failure with specific error)
+- Runtime tests (expect runtime failure with specific error)
+- Example compilation tests
+
+Primary test runner: `make test` (uses built-in cnext test)
+This runner: `python tests/run_tests.py`
+"""
 import subprocess
 import os
 import sys

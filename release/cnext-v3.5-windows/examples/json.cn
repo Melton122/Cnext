@@ -1,0 +1,24 @@
+// JSON Example
+
+import json
+
+main {
+    // Parse JSON
+    var data = json_parse('{"name": "Alice", "age": 30, "city": "NYC"}')
+
+    // Get values
+    str name = json_get_string(data, "name")
+    int age = json_get_int(data, "age")
+    str city = json_get_string(data, "city")
+
+    printin("Name: " + name)
+    printin("Age: " + age)
+    printin("City: " + city)
+
+    // Stringify
+    str json_str = json_stringify(data)
+    printin("JSON: " + json_str)
+
+    // Free memory
+    json_free(data)
+}

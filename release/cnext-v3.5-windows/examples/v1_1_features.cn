@@ -1,0 +1,16 @@
+import math
+import io
+
+main {
+    var age = 19
+    var name = "Melton"
+    
+    printin("Hello, {name}! You are {age} years old.")
+    
+    int[] nums = {10, 20, 30}
+    
+    printin("Looping array:")
+    for item in nums {
+        printin(item)
+    }
+}

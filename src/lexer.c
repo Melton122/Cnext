@@ -44,7 +44,7 @@ static bool match(char expected) {
     return true;
 }
 
-static Token make_token(TokenType type) {
+static Token make_token(CnextTokenType type) {
     Token token;
     token.type = type;
     token.start = lexer.start;
@@ -101,7 +101,7 @@ static void skip_whitespace() {
     }
 }
 
-static TokenType check_keyword(int start, int length, const char* rest, TokenType type) {
+static CnextTokenType check_keyword(int start, int length, const char* rest, CnextTokenType type) {
     if (lexer.current - lexer.start == start + length &&
         memcmp(lexer.start + start, rest, length) == 0) {
         return type;
@@ -109,10 +109,14 @@ static TokenType check_keyword(int start, int length, const char* rest, TokenTyp
     return TOKEN_IDENTIFIER;
 }
 
-static TokenType identifier_type() {
+static CnextTokenType identifier_type() {
     switch (lexer.start[0]) {
         case 'a': {
-            TokenType t = check_keyword(1, 5, "ssert", TOKEN_ASSERT);
+            CnextTokenType t = check_keyword(1, 5, "ssert", TOKEN_ASSERT);
+            if (t != TOKEN_IDENTIFIER) return t;
+            t = check_keyword(1, 4, "sync", TOKEN_ASYNC);
+            if (t != TOKEN_IDENTIFIER) return t;
+            t = check_keyword(1, 4, "wait", TOKEN_AWAIT);
             if (t != TOKEN_IDENTIFIER) return t;
             return check_keyword(1, 1, "s", TOKEN_AS);
         }
@@ -121,6 +125,7 @@ static TokenType identifier_type() {
                 switch (lexer.start[1]) {
                     case 'r': return check_keyword(2, 3, "eak", TOKEN_BREAK);
                     case 'o': return check_keyword(1, 3, "ool", TOKEN_BOOL_TYPE);
+                    case 'e': return check_keyword(2, 3, "nch", TOKEN_BENCH);
                 }
             }
             return check_keyword(1, 3, "ool", TOKEN_BOOL_TYPE);
@@ -128,14 +133,22 @@ static TokenType identifier_type() {
             if (lexer.current - lexer.start > 1) {
                 switch (lexer.start[1]) {
                     case 'a': {
-                        TokenType t = check_keyword(2, 3, "tch", TOKEN_CATCH);
+                        CnextTokenType t = check_keyword(2, 3, "tch", TOKEN_CATCH);
                         if (t != TOKEN_IDENTIFIER) return t;
                         return check_keyword(2, 2, "se", TOKEN_CASE);
                     }
-                    case 'h': return check_keyword(2, 2, "ar", TOKEN_CHAR_TYPE);
+                    case 'h': {
+                        CnextTokenType t = check_keyword(2, 5, "annel", TOKEN_CHANNEL);
+                        if (t != TOKEN_IDENTIFIER) return t;
+                        return check_keyword(2, 2, "ar", TOKEN_CHAR_TYPE);
+                    }
                     case 'l': return check_keyword(2, 3, "ass", TOKEN_CLASS);
                     case 'o': {
-                        TokenType t = check_keyword(3, 5, "tinue", TOKEN_CONTINUE);
+                        CnextTokenType t = check_keyword(2, 7, "routine", TOKEN_COROUTINE);
+                        if (t != TOKEN_IDENTIFIER) return t;
+                        t = check_keyword(3, 5, "tinue", TOKEN_CONTINUE);
+                        if (t != TOKEN_IDENTIFIER) return t;
+                        t = check_keyword(2, 7, "nstexpr", TOKEN_CONSTEXPR);
                         if (t != TOKEN_IDENTIFIER) return t;
                         return check_keyword(2, 3, "nst", TOKEN_CONST);
                     }
@@ -149,9 +162,11 @@ static TokenType identifier_type() {
                     case 'l': return check_keyword(2, 2, "se", TOKEN_ELSE);
                     case 'n': return check_keyword(2, 2, "um", TOKEN_ENUM);
                     case 'x': {
-                        TokenType t = check_keyword(2, 5, "tends", TOKEN_EXTENDS);
+                        CnextTokenType t = check_keyword(2, 5, "tends", TOKEN_EXTENDS);
                         if (t != TOKEN_IDENTIFIER) return t;
-                        return check_keyword(2, 4, "tend", TOKEN_EXTEND);
+                        t = check_keyword(2, 4, "tend", TOKEN_EXTEND);
+                        if (t != TOKEN_IDENTIFIER) return t;
+                        return check_keyword(2, 3, "tern", TOKEN_EXTERN);
                     }
                     // 'err' handled as identifier in parser context
                 }
@@ -175,15 +190,16 @@ static TokenType identifier_type() {
                     case 'n':
                         if (lexer.current - lexer.start == 2) return TOKEN_IN;
                         {
-                            TokenType t = check_keyword(2, 7, "terface", TOKEN_INTERFACE);
+                            CnextTokenType t = check_keyword(2, 7, "terface", TOKEN_INTERFACE);
                             if (t != TOKEN_IDENTIFIER) return t;
                         }
                         return check_keyword(2, 1, "t", TOKEN_INT_TYPE);
                     case 'm': {
-                        TokenType t = check_keyword(2, 8, "plements", TOKEN_IMPLEMENTS);
+                        CnextTokenType t = check_keyword(2, 8, "plements", TOKEN_IMPLEMENTS);
                         if (t != TOKEN_IDENTIFIER) return t;
                         return check_keyword(2, 4, "port", TOKEN_IMPORT);
                     }
+                    case 't': return check_keyword(2, 2, "er", TOKEN_ITER);
                 }
             }
             break;
@@ -191,10 +207,13 @@ static TokenType identifier_type() {
             if (lexer.current - lexer.start > 1) {
                 switch (lexer.start[1]) {
                     case 'a': {
-                        TokenType t = check_keyword(2, 3, "tch", TOKEN_MATCH);
+                        CnextTokenType t = check_keyword(2, 4, "cro", TOKEN_MACRO);
+                        if (t != TOKEN_IDENTIFIER) return t;
+                        t = check_keyword(2, 3, "tch", TOKEN_MATCH);
                         if (t != TOKEN_IDENTIFIER) return t;
                         return check_keyword(2, 2, "in", TOKEN_MAIN);
                     }
+                    case 'u': return check_keyword(2, 3, "tex", TOKEN_MUTEX);
                 }
             }
             break;
@@ -209,19 +228,29 @@ static TokenType identifier_type() {
         case 'o':
             if (lexer.current - lexer.start > 1) {
                 switch (lexer.start[1]) {
-                    case 'p': {
-                        TokenType t = check_keyword(2, 6, "erator", TOKEN_OPERATOR);
-                        if (t != TOKEN_IDENTIFIER) return t;
-                    }
+                    case 'p': return check_keyword(2, 6, "erator", TOKEN_OPERATOR);
                     case 'v': return check_keyword(2, 6, "erride", TOKEN_OVERRIDE);
+                    case 'w': return check_keyword(2, 1, "n", TOKEN_OWN);
                 }
             }
             return check_keyword(1, 8, "verride", TOKEN_OVERRIDE);
         case 'r':
             if (lexer.current - lexer.start > 1) {
                 switch (lexer.start[1]) {
-                    case 'e':
-                        return check_keyword(2, 4, "turn", TOKEN_RETURN);
+                    case 'e': {
+                        CnextTokenType t = check_keyword(2, 4, "turn", TOKEN_RETURN);
+                        if (t != TOKEN_IDENTIFIER) return t;
+                        t = check_keyword(2, 4, "sume", TOKEN_RESUME);
+                        if (t != TOKEN_IDENTIFIER) return t;
+                        return check_keyword(2, 2, "cv", TOKEN_RECV);
+                    }
+                    case 'u': {
+                        // run_async
+                        if (lexer.current - lexer.start > 3 && lexer.start[2] == 'n') {
+                            return check_keyword(3, 6, "_async", TOKEN_RUN_ASYNC);
+                        }
+                        break;
+                    }
                 }
             }
             break;
@@ -233,6 +262,8 @@ static TokenType identifier_type() {
                         return check_keyword(2, 4, "ruct", TOKEN_STRUCT);
                     case 'w': return check_keyword(2, 4, "itch", TOKEN_SWITCH);
                     case 'u': return check_keyword(2, 3, "per", TOKEN_SUPER);
+                    case 'p': return check_keyword(2, 4, "awn", TOKEN_SPAWN);
+                    case 'e': return check_keyword(2, 3, "nd", TOKEN_SEND);
                 }
             }
             break;
@@ -240,19 +271,35 @@ static TokenType identifier_type() {
             if (lexer.current - lexer.start > 1) {
                 switch (lexer.start[1]) {
                     case 'r': {
-                        TokenType t = check_keyword(2, 3, "ait", TOKEN_TRAIT);
+                        CnextTokenType t = check_keyword(2, 3, "ait", TOKEN_TRAIT);
                         if (t != TOKEN_IDENTIFIER) return t;
                         t = check_keyword(2, 1, "y", TOKEN_TRY);
                         if (t != TOKEN_IDENTIFIER) return t;
                         return check_keyword(2, 2, "ue", TOKEN_TRUE);
                     }
-                    case 'h': return check_keyword(2, 3, "row", TOKEN_THROW);
+                    case 'h': {
+                        CnextTokenType t = check_keyword(2, 3, "row", TOKEN_THROW);
+                        if (t != TOKEN_IDENTIFIER) return t;
+                        return check_keyword(2, 4, "read", TOKEN_THREAD);
+                    }
                     case 'e': return check_keyword(2, 2, "st", TOKEN_TEST);
+                    case 'y': return check_keyword(2, 4, "peof", TOKEN_TYPEOF);
                 }
             }
             break;
         case 'v': return check_keyword(1, 2, "ar", TOKEN_VAR);
-        case 'w': return check_keyword(1, 4, "hile", TOKEN_WHILE);
+        case 'w': {
+            CnextTokenType t = check_keyword(1, 4, "hile", TOKEN_WHILE);
+            if (t != TOKEN_IDENTIFIER) return t;
+            return check_keyword(1, 3, "ith", TOKEN_WITH);
+        }
+        case 'y': return check_keyword(1, 4, "ield", TOKEN_YIELD);
+        case 'l': return check_keyword(1, 3, "ock", TOKEN_LOCK);
+        case 'u': {
+            CnextTokenType t = check_keyword(1, 5, "nlock", TOKEN_UNLOCK);
+            if (t != TOKEN_IDENTIFIER) return t;
+            break;
+        }
     }
     return TOKEN_IDENTIFIER;
 }
@@ -314,7 +361,10 @@ Token next_token() {
             if (match('.') && match('.')) return make_token(TOKEN_ELLIPSIS);
             return make_token(TOKEN_DOT);
         case ':': return make_token(TOKEN_COLON);
-        case '?': return make_token(TOKEN_QUESTION);
+        case '?':
+            if (match('.')) return make_token(TOKEN_QUESTION_DOT);
+            if (match('?')) return make_token(TOKEN_QUESTION_QUESTION);
+            return make_token(TOKEN_QUESTION);
         case '-':
             if (match('>')) return make_token(TOKEN_ARROW);
             if (match('-')) return make_token(TOKEN_DECREMENT);
@@ -333,6 +383,8 @@ Token next_token() {
         case '>': return make_token(match('=') ? TOKEN_GREATER_EQ : TOKEN_GREATER);
         case '&': if (match('&')) return make_token(TOKEN_AND_AND); break;
         case '|': if (match('|')) return make_token(TOKEN_OR_OR); break;
+        case '@': return make_token(TOKEN_AT);
+        case '$': return make_token(TOKEN_DOLLAR);
         case '"': return string();
         case '\'': {
             if (is_at_end()) return error_token("Unterminated char.");

@@ -1,3 +1,0 @@
-main {
-    printin("Hello, test_pkg!")
-}

@@ -1,0 +1,23 @@
+// Simple Calculator
+
+func add(int a, int b) -> int => a + b
+func subtract(int a, int b) -> int => a - b
+func multiply(int a, int b) -> int => a * b
+func divide(int a, int b) -> int {
+    if b == 0 {
+        throw "Division by zero"
+    }
+    return a / b
+}
+
+main {
+    var a = 10
+    var b = 5
+
+    printin("a = " + a)
+    printin("b = " + b)
+    printin("a + b = " + add(a, b))
+    printin("a - b = " + subtract(a, b))
+    printin("a * b = " + multiply(a, b))
+    printin("a / b = " + divide(a, b))
+}

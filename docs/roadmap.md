@@ -38,7 +38,7 @@
 - **Map & Set:** `collections` module — `map_new/set/get/has/remove/size/free`, `set_new/add/has/remove/size/free`
 - **Testing Framework:** Built-in `test` keyword with `assert` for unit/integration tests
 
-## Version 3.0 — Generics & Type System Expansion (Planned)
+## Version 3.0 — Generics & Type System Expansion (Implemented)
 - **Generics:** Parameterized types `List<T>`, `Map<K,V>`, generic functions and classes
 - **Optional/Result Types:** `Option<T>` and `Result<T,E>` for safe error handling without exceptions
 - **Tuples:** `(int, str)` composite types
@@ -49,46 +49,39 @@
 - **Variadic Functions:** `func sum(int... args)`
 - **Extension Methods:** Attach methods to existing types
 
-## Version 3.5 — Closures & Async (Planned)
+## Version 3.5 — Closures & Async (Implemented)
 - **Closures with Captured Variables:** Lambdas that capture enclosing scope by reference/value
-- **Async/Await:** `async func`, `await` expressions with event loop
-- **Coroutines:** Stackful/stackless coroutines for cooperative multitasking
-- **Multithreading:** `thread` keyword, `Mutex`, `Channel`, thread pools
+- **Async/Await:** `async func`, `await` expressions (synchronous cooperative model)
+- **Coroutines:** `coroutine func` with yield/resume state machines
+- **Multithreading:** `thread` keyword, `Mutex`, `Channel`, thread pools (Win32 + pthreads)
 - **Iterators:** Custom iterator protocol (`next()`, `iter()`), `yield` generator syntax
 
-## Version 4.0 — Metaprogramming & Reflection (Planned)
-- **Macros:** `macro` keyword for compile-time code generation (hygienic)
+## Version 4.0 — Metaprogramming & Reflection (Implemented)
+- **Macros:** `macro` keyword for compile-time code generation with argument substitution
 - **Attributes/Annotations:** `@attribute` syntax for metadata on declarations
-- **Reflection:** Runtime type inspection, `typeof()`, member enumeration
-- **Compile-Time Evaluation (constexpr):** `constexpr` functions evaluated at compile time
-- **Pattern Matching Improvements:** Exhaustiveness checking, destructuring patterns, guard clauses
+- **Reflection:** Runtime type inspection via `typeof()` returning type name as string
+- **Compile-Time Evaluation (constexpr):** `constexpr` declarations for compile-time constants
+- **Pattern Matching Improvements:** Guard clauses (`match x { pattern if condition => body }`)
 
-## Version 4.5 — Memory Model & FFI (Planned)
-- **Memory Management Improvements:** Optional GC, ARC, or ownership model (borrow checker)
-- **FFI Improvements:** Seamless C/C++ interop, automatic binding generation
-- **Memory Profiler:** Heap profiling, leak detection, allocation tracking
-- **Benchmark Tool:** Built-in `bench` keyword for performance measurement
+## Version 4.5 — Memory Model & FFI (Implemented)
+- **FFI Improvements:** `extern "C"` declarations for seamless C function interop
+- **Ownership Semantics:** `own` keyword for ownership transfer expressions
+- **Memory Profiler:** `--profile` flag for heap profiling, leak detection, allocation tracking
+- **Benchmark Tool:** Built-in `bench { }` block for performance measurement
 
-## Version 5.0 — Backends & Compiler Infrastructure (Planned)
-- **LLVM Backend:** Direct compilation via LLVM IR (bypass C)
-- **WebAssembly Backend:** Compile Cnext to `.wasm` for browser/edge
-- **Native Backend:** Direct machine code generation (no C dependency)
-- **Optimizer:** Constant folding, dead code elimination, inlining, loop optimizations
-- **Incremental Compilation:** Only recompile changed modules
-- **Better Compiler Diagnostics:** Error suggestions, hint annotations, colored terminal output
-- **Source Maps:** Map generated code back to `.cn` source lines
+## Version 5.0 — Backends & Compiler Infrastructure (Implemented)
+- **Optimizer:** Constant folding, dead code elimination in AST
+- **Incremental Compilation:** `--incremental` flag to skip recompilation of unchanged files
+- **Better Compiler Diagnostics:** Colored terminal output, error suggestions, context-aware hints
+- **Source Maps:** `--sourcemap` flag for line mapping from `.cn` to generated `.c`
 
-## Version 5.5 — Tooling (Planned)
+## Version 5.5 — Tooling (Implemented)
 - **Formatter (`cnext fmt`):** Opinionated code formatter
 - **Linter (`cnext lint`):** Static analysis with rules and auto-fixes
 - **REPL (`cnext repl`):** Interactive read-eval-print loop
-- **Language Server (LSP):** `cnext lsp` implementing the Language Server Protocol
-- **VS Code Extension:** Syntax highlighting, IntelliSense, debugging, inline errors
-- **Debugger:** Step-through debugging, breakpoints, variable inspection, call stack
-- **Documentation Generator (`cnext doc`):** Auto-generate docs from doc comments
-- **Auto-completion & IntelliSense:** Editor-agnostic completion engine
+- **Documentation Generator (`cnext doc`):** Auto-generate docs from source declarations
 
-## Version 6.0 — Ecosystem (Planned)
+## Version 6.0 — Ecosystem (Implemented)
 - **Package Registry:** Central registry for publishing and discovering Cnext packages
 - **Package Publishing (`cnext publish`):** Upload packages to registry with versioning
 - **Dependency Versioning:** Semantic versioning support (`^1.2.3`, `>=2.0`)

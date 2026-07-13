@@ -1,0 +1,34 @@
+// Threading
+
+import thread
+
+main {
+    // Mutex example
+    var m = mutex_new()
+    var counter = 0
+
+    mutex_lock(m)
+    counter = counter + 1
+    counter = counter + 1
+    counter = counter + 1
+    mutex_unlock(m)
+
+    printin("Counter: " + counter)  // 3
+
+    // Channel example
+    var ch = channel_new(8)
+
+    channel_send(ch, "hello")
+    channel_send(ch, "world")
+    channel_send(ch, "!")
+
+    var msg1 = channel_recv(ch)
+    var msg2 = channel_recv(ch)
+    var msg3 = channel_recv(ch)
+
+    printin(msg1 + " " + msg2 + msg3)  // hello world !
+
+    // Cleanup
+    mutex_free(m)
+    channel_free(ch)
+}

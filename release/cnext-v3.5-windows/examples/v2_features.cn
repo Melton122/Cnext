@@ -1,0 +1,31 @@
+struct Point {
+    int x
+    int y
+}
+
+enum State {
+    IDLE,
+    RUNNING,
+    STOPPED
+}
+
+main {
+    const int max_speed = 100
+    // max_speed = 120 // This would trigger a semantic error if uncommented
+    
+    int[] scores = {95, 80, 100}
+    printin("Number of scores: {scores.length}")
+    
+    State current_state = RUNNING
+    
+    switch (current_state) {
+        case IDLE:
+            printin("State is IDLE")
+        case RUNNING:
+            printin("State is RUNNING")
+        case STOPPED:
+            printin("State is STOPPED")
+        default:
+            printin("Unknown state")
+    }
+}

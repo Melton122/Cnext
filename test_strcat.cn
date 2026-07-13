@@ -1,6 +1,0 @@
-main {
-    str a = "Hello"
-    str b = " World"
-    str c = a + b
-    printin(c)
-}

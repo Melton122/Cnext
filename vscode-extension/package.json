@@ -1,0 +1,110 @@
+{
+  "name": "cnext",
+  "displayName": "Cnext Language Support",
+  "description": "Syntax highlighting, snippets, and build tasks for the Cnext programming language",
+  "version": "1.0.0",
+  "publisher": "cnext-lang",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "cnext",
+    "language",
+    "transpiler",
+    "compiler"
+  ],
+  "activationEvents": [
+    "onLanguage:cnext"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "cnext",
+        "aliases": [
+          "Cnext",
+          "cnext"
+        ],
+        "extensions": [
+          ".cn"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "cnext",
+        "scopeName": "source.cnext",
+        "path": "./syntaxes/cnext.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "cnext",
+        "path": "./snippets/cnext.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "cnext.run",
+        "title": "Cnext: Run File"
+      },
+      {
+        "command": "cnext.build",
+        "title": "Cnext: Build File"
+      },
+      {
+        "command": "cnext.test",
+        "title": "Cnext: Run Tests"
+      }
+    ],
+    "taskDefinitions": [
+      {
+        "type": "cnext",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "Cnext command to run"
+          },
+          "file": {
+            "type": "string",
+            "description": "File to process"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      }
+    ],
+    "configuration": {
+      "title": "Cnext",
+      "properties": {
+        "cnext.compilerPath": {
+          "type": "string",
+          "default": "cnext",
+          "description": "Path to the Cnext compiler"
+        },
+        "cnext.autoRun": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically run file after save"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "echo 'No build step needed'"
+  },
+  "icon": "icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Melton122/cnext"
+  },
+  "bugs": {
+    "url": "https://github.com/Melton122/cnext/issues"
+  },
+  "homepage": "https://github.com/Melton122/cnext#readme"
+}

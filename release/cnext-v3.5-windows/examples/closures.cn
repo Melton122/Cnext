@@ -1,0 +1,41 @@
+// Closures
+
+main {
+    // Basic closure
+    var x = 10
+    var add_x = (int a) => a + x
+    printin(add_x(5))  // 15
+
+    // Closure with mutation
+    var counter = 0
+    var increment = () => {
+        counter = counter + 1
+        return counter
+    }
+
+    printin(increment())  // 1
+    printin(increment())  // 2
+    printin(increment())  // 3
+
+    // Closures as arguments
+    func apply(int x, func f) -> int {
+        return f(x)
+    }
+
+    var double = (int x) => x * 2
+    var square = (int x) => x * x
+
+    printin(apply(5, double))  // 10
+    printin(apply(5, square))  // 25
+
+    // Returning closures
+    func make_adder(int x) -> func {
+        return (int a) => a + x
+    }
+
+    var add5 = make_adder(5)
+    var add10 = make_adder(10)
+
+    printin(add5(3))   // 8
+    printin(add10(3))  // 13
+}

@@ -1,33 +1,7 @@
 #include "ast.h"
+#include "checked_alloc.h"
 #include <stdio.h>
 #include <stdlib.h>
-
-static void* checked_malloc(size_t size) {
-    void* ptr = malloc(size);
-    if (!ptr) {
-        fprintf(stderr, "Out of memory.\n");
-        exit(70);
-    }
-    return ptr;
-}
-
-static void* checked_calloc(size_t count, size_t size) {
-    void* ptr = calloc(count, size);
-    if (!ptr) {
-        fprintf(stderr, "Out of memory.\n");
-        exit(70);
-    }
-    return ptr;
-}
-
-static void* checked_realloc(void* old_ptr, size_t size) {
-    void* ptr = realloc(old_ptr, size);
-    if (!ptr) {
-        fprintf(stderr, "Out of memory.\n");
-        exit(70);
-    }
-    return ptr;
-}
 
 ASTNode* create_node(ASTNodeType type, Token token) {
     ASTNode* node = (ASTNode*)checked_calloc(1, sizeof(ASTNode));
@@ -145,6 +119,7 @@ static void free_ast_internal(ASTNode* node, FreedNode** seen) {
     free(node->type_name);
     free(node->parent_name);
     free(node->implements_names);
+    free(node->attribute_name);
     free(node);
 }
 

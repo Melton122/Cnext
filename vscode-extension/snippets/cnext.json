@@ -1,0 +1,273 @@
+{
+  "Main Block": {
+    "prefix": "main",
+    "body": [
+      "main {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Main block"
+  },
+  "Function": {
+    "prefix": "func",
+    "body": [
+      "func ${1:name}(${2:params}) -> ${3:type} {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Function declaration"
+  },
+  "Arrow Function": {
+    "prefix": "func =>",
+    "body": [
+      "func ${1:name}(${2:params}) -> ${3:type} => ${4:expression}"
+    ],
+    "description": "Arrow function"
+  },
+  "Class": {
+    "prefix": "class",
+    "body": [
+      "class ${1:Name} {",
+      "\t${2:type} ${3:field}",
+      "",
+      "\tfunc new(${4:params}) {",
+      "\t\t$5",
+      "\t}",
+      "",
+      "\t$0",
+      "}"
+    ],
+    "description": "Class declaration"
+  },
+  "Struct": {
+    "prefix": "struct",
+    "body": [
+      "struct ${1:Name} {",
+      "\t${2:type} ${3:field}",
+      "\t$0",
+      "}"
+    ],
+    "description": "Struct declaration"
+  },
+  "Enum": {
+    "prefix": "enum",
+    "body": [
+      "enum ${1:Name} {",
+      "\t${2:VARIANT1},",
+      "\t${3:VARIANT2}",
+      "}"
+    ],
+    "description": "Enum declaration"
+  },
+  "Trait": {
+    "prefix": "trait",
+    "body": [
+      "trait ${1:Name} {",
+      "\tfunc ${2:method}(${3:params}) -> ${4:type}",
+      "\t$0",
+      "}"
+    ],
+    "description": "Trait declaration"
+  },
+  "Interface": {
+    "prefix": "interface",
+    "body": [
+      "interface ${1:Name} {",
+      "\tfunc ${2:method}(${3:params}) -> ${4:type}",
+      "\t$0",
+      "}"
+    ],
+    "description": "Interface declaration"
+  },
+  "If Statement": {
+    "prefix": "if",
+    "body": [
+      "if ${1:condition} {",
+      "\t$0",
+      "}"
+    ],
+    "description": "If statement"
+  },
+  "If-Else": {
+    "prefix": "ifelse",
+    "body": [
+      "if ${1:condition} {",
+      "\t$2",
+      "} else {",
+      "\t$0",
+      "}"
+    ],
+    "description": "If-else statement"
+  },
+  "While Loop": {
+    "prefix": "while",
+    "body": [
+      "while ${1:condition} {",
+      "\t$0",
+      "}"
+    ],
+    "description": "While loop"
+  },
+  "For Loop": {
+    "prefix": "for",
+    "body": [
+      "for ${1:int} ${2:i} = ${3:0}; ${2:i} < ${4:limit}; ${2:i} = ${2:i} + 1 {",
+      "\t$0",
+      "}"
+    ],
+    "description": "For loop"
+  },
+  "For-In Loop": {
+    "prefix": "forin",
+    "body": [
+      "for ${1:var} ${2:item} in ${3:collection} {",
+      "\t$0",
+      "}"
+    ],
+    "description": "For-in loop"
+  },
+  "Switch": {
+    "prefix": "switch",
+    "body": [
+      "switch ${1:expression} {",
+      "\tcase ${2:value}:",
+      "\t\t$3",
+      "\tdefault:",
+      "\t\t$0",
+      "}"
+    ],
+    "description": "Switch statement"
+  },
+  "Match": {
+    "prefix": "match",
+    "body": [
+      "match ${1:expression} {",
+      "\t${2:pattern} => ${3:result}",
+      "\t_ => ${4:default}",
+      "}"
+    ],
+    "description": "Match expression"
+  },
+  "Try-Catch": {
+    "prefix": "try",
+    "body": [
+      "try {",
+      "\t$1",
+      "} catch (${2:str} ${3:err}) {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Try-catch block"
+  },
+  "Try-Catch-Finally": {
+    "prefix": "tryfinally",
+    "body": [
+      "try {",
+      "\t$1",
+      "} catch (${2:str} ${3:err}) {",
+      "\t$4",
+      "} finally {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Try-catch-finally block"
+  },
+  "Throw": {
+    "prefix": "throw",
+    "body": [
+      "throw ${1:\"error message\"}"
+    ],
+    "description": "Throw statement"
+  },
+  "Lambda": {
+    "prefix": "lambda",
+    "body": [
+      "(${1:params}) => ${2:expression}"
+    ],
+    "description": "Lambda expression"
+  },
+  "Lambda Block": {
+    "prefix": "lambdablock",
+    "body": [
+      "(${1:params}) => {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Lambda with block"
+  },
+  "Generator": {
+    "prefix": "generator",
+    "body": [
+      "func ${1:name}(${2:params}) -> iter<${3:type}> {",
+      "\tvar ${4:i} = ${5:0}",
+      "\twhile ${6:condition} {",
+      "\t\tyield ${4:i}",
+      "\t\t${4:i} = ${4:i} + 1",
+      "\t}",
+      "}"
+    ],
+    "description": "Generator function"
+  },
+  "Coroutine": {
+    "prefix": "coroutine",
+    "body": [
+      "coroutine func ${1:name}(${2:params}) -> iter<${3:type}> {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Coroutine function"
+  },
+  "Async Function": {
+    "prefix": "async",
+    "body": [
+      "async func ${1:name}(${2:params}) -> ${3:type} {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Async function"
+  },
+  "Await": {
+    "prefix": "await",
+    "body": [
+      "await ${1:expression}"
+    ],
+    "description": "Await expression"
+  },
+  "Import": {
+    "prefix": "import",
+    "body": [
+      "import ${1:module}"
+    ],
+    "description": "Import statement"
+  },
+  "Const": {
+    "prefix": "const",
+    "body": [
+      "const ${1:type} ${2:name} = ${3:value}"
+    ],
+    "description": "Constant declaration"
+  },
+  "Var Declaration": {
+    "prefix": "var",
+    "body": [
+      "var ${1:name} = ${2:value}"
+    ],
+    "description": "Variable declaration"
+  },
+  "Test Block": {
+    "prefix": "test",
+    "body": [
+      "test \"${1:description}\" {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Test block"
+  },
+  "Assert": {
+    "prefix": "assert",
+    "body": [
+      "assert ${1:condition}"
+    ],
+    "description": "Assert statement"
+  }
+}

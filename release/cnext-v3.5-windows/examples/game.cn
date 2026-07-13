@@ -1,0 +1,87 @@
+// Simple Text Adventure Game
+
+class Player {
+    str name
+    int health
+    int attack_power
+
+    func new(str n, int h, int ap) {
+        self.name = n
+        self.health = h
+        self.attack_power = ap
+    }
+
+    func attack(Player enemy) -> int {
+        var damage = self.attack_power
+        enemy.health = enemy.health - damage
+        return damage
+    }
+
+    func is_alive() -> bool {
+        return self.health > 0
+    }
+
+    func info() -> str {
+        return self.name + " (HP: " + self.health + ")"
+    }
+}
+
+class Monster {
+    str name
+    int health
+    int attack_power
+
+    func new(str n, int h, int ap) {
+        self.name = n
+        self.health = h
+        self.attack_power = ap
+    }
+
+    func attack(Player player) -> int {
+        var damage = self.attack_power
+        player.health = player.health - damage
+        return damage
+    }
+
+    func is_alive() -> bool {
+        return self.health > 0
+    }
+}
+
+func battle(Player hero, Monster monster) {
+    printin("Battle: " + hero.info() + " vs " + monster.name)
+
+    while hero.is_alive() && monster.is_alive() {
+        // Hero attacks
+        var damage = hero.attack(monster)
+        printin(hero.name + " attacks for " + damage + " damage!")
+
+        if !monster.is_alive() {
+            printin(monster.name + " is defeated!")
+            break
+        }
+
+        // Monster attacks
+        damage = monster.attack(hero)
+        printin(monster.name + " attacks for " + damage + " damage!")
+
+        if !hero.is_alive() {
+            printin(hero.name + " has fallen!")
+            break
+        }
+    }
+}
+
+main {
+    var hero = new Player("Hero", 100, 20)
+    var goblin = new Monster("Goblin", 50, 10)
+    var dragon = new Monster("Dragon", 200, 30)
+
+    battle(hero, goblin)
+
+    if hero.is_alive() {
+        printin("\nHero is victorious! Preparing for dragon...")
+        hero.health = 100  // Heal
+        battle(hero, dragon)
+    }
+}

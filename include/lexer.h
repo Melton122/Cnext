@@ -103,6 +103,8 @@ typedef enum {
     TOKEN_DOT,          // .
     TOKEN_COLON,        // :
     TOKEN_QUESTION,     // ?
+    TOKEN_QUESTION_DOT, // ?.
+    TOKEN_QUESTION_QUESTION, // ??
     TOKEN_ELLIPSIS,     // ...
     TOKEN_OPTIONAL,     // Optional
     TOKEN_RESULT,       // Result
@@ -110,11 +112,47 @@ typedef enum {
     TOKEN_EXTEND,       // extend
     TOKEN_OPTION,       // option
     TOKEN_OK,           // ok
-    TOKEN_ERR           // err
-} TokenType;
+    TOKEN_ERR,          // err
+
+    // v3.5: Iterators
+    TOKEN_YIELD,        // yield
+    TOKEN_ITER,         // iter
+
+    // v3.5: Coroutines
+    TOKEN_COROUTINE,    // coroutine
+    TOKEN_RESUME,       // resume
+    TOKEN_WITH,         // with
+
+    // v3.5: Async/Await
+    TOKEN_ASYNC,        // async
+    TOKEN_AWAIT,        // await
+    TOKEN_RUN_ASYNC,    // run_async
+
+    // v3.5: Threading
+    TOKEN_THREAD,       // thread
+    TOKEN_SPAWN,        // spawn
+    TOKEN_MUTEX,        // mutex
+    TOKEN_CHANNEL,      // channel
+    TOKEN_LOCK,         // lock
+    TOKEN_UNLOCK,       // unlock
+    TOKEN_SEND,         // send
+    TOKEN_RECV,         // recv
+
+    // v4.0: Reflection and macros
+    TOKEN_TYPEOF,       // typeof
+    TOKEN_MACRO,        // macro
+    TOKEN_CONSTEXPR,    // constexpr
+    TOKEN_AT,           // @ attribute marker
+
+    // v4.5: Memory & FFI
+    TOKEN_EXTERN,       // extern
+    TOKEN_OWN,          // own
+    TOKEN_BENCH,        // bench
+    TOKEN_DOLLAR        // $ (for FFI naming: $function_name)
+} CnextTokenType;
 
 typedef struct {
-    TokenType type;
+    CnextTokenType type;
     const char* start;
     int length;
     int line;

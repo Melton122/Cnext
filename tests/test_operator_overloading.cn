@@ -1,0 +1,109 @@
+// EXPECT: --- Operator Overloading: Addition ---
+// EXPECT: 1
+// EXPECT: 1
+// EXPECT: 1
+// EXPECT: 1
+// EXPECT: --- Operator Overloading: Subtraction ---
+// EXPECT: 1
+// EXPECT: 1
+// EXPECT: 1
+// EXPECT: 1
+// EXPECT: --- Operator Overloading: Scalar Multiply ---
+// EXPECT: 1
+// EXPECT: 1
+// EXPECT: 1
+// EXPECT: 1
+// EXPECT: --- Operator Overloading: Equality ---
+// EXPECT: true
+// EXPECT: true
+// EXPECT: === All operator overloading tests passed ===
+// ============================================================================
+// Cnext Operator Overloading Tests
+// ============================================================================
+
+class Vec2 {
+    float x
+    float y
+
+    func new(float x_val, float y_val) {
+        self.x = x_val
+        self.y = y_val
+    }
+
+    func operator+(Vec2 other) -> Vec2 {
+        return new Vec2(self.x + other.x, self.y + other.y)
+    }
+
+    func operator-(Vec2 other) -> Vec2 {
+        return new Vec2(self.x - other.x, self.y - other.y)
+    }
+
+    func operator*(float scalar) -> Vec2 {
+        return new Vec2(self.x * scalar, self.y * scalar)
+    }
+
+    func operator==(Vec2 other) -> bool {
+        return (self.x == other.x) && (self.y == other.y)
+    }
+
+    func operator!=(Vec2 other) -> bool {
+        return (self.x != other.x) || (self.y != other.y)
+    }
+
+    func magnitude() -> float {
+        return self.x * self.x + self.y * self.y
+    }
+}
+
+func test_addition() {
+    Vec2 a = new Vec2(1.0, 2.0)
+    Vec2 b = new Vec2(3.0, 4.0)
+    Vec2 c = a + b
+    printin(c.x > 3.9)
+    printin(c.x < 4.1)
+    printin(c.y > 5.9)
+    printin(c.y < 6.1)
+}
+
+func test_subtraction() {
+    Vec2 a = new Vec2(5.0, 7.0)
+    Vec2 b = new Vec2(2.0, 3.0)
+    Vec2 c = a - b
+    printin(c.x > 2.9)
+    printin(c.x < 3.1)
+    printin(c.y > 3.9)
+    printin(c.y < 4.1)
+}
+
+func test_scalar_mul() {
+    Vec2 a = new Vec2(2.0, 3.0)
+    Vec2 b = a * 2.0
+    printin(b.x > 3.9)
+    printin(b.x < 4.1)
+    printin(b.y > 5.9)
+    printin(b.y < 6.1)
+}
+
+func test_equality() {
+    Vec2 a = new Vec2(1.0, 2.0)
+    Vec2 b = new Vec2(1.0, 2.0)
+    Vec2 c = new Vec2(3.0, 4.0)
+    printin(a == b)
+    printin(a != c)
+}
+
+main {
+    printin("--- Operator Overloading: Addition ---")
+    test_addition()
+
+    printin("--- Operator Overloading: Subtraction ---")
+    test_subtraction()
+
+    printin("--- Operator Overloading: Scalar Multiply ---")
+    test_scalar_mul()
+
+    printin("--- Operator Overloading: Equality ---")
+    test_equality()
+
+    printin("=== All operator overloading tests passed ===")
+}

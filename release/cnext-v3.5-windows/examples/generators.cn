@@ -1,0 +1,54 @@
+// Generators
+
+// Fibonacci generator
+func fibonacci() -> iter<int> {
+    var a = 0, b = 1
+    while true {
+        yield a
+        var temp = a + b
+        a = b
+        b = temp
+    }
+}
+
+// Range generator
+func range(int start, int end) -> iter<int> {
+    var i = start
+    while i < end {
+        yield i
+        i = i + 1
+    }
+}
+
+// Filter generator
+func even_only(int[] nums) -> iter<int> {
+    for var n in nums {
+        if n % 2 == 0 {
+            yield n
+        }
+    }
+}
+
+main {
+    // Print first 10 fibonacci numbers
+    printin("Fibonacci:")
+    var count = 0
+    for var x in fibonacci() {
+        if count == 10 { break }
+        printin(x)
+        count = count + 1
+    }
+
+    // Print range
+    printin("\nRange 0-5:")
+    for var x in range(0, 5) {
+        printin(x)
+    }
+
+    // Filter even numbers
+    printin("\nEven numbers:")
+    int[] nums = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+    for var x in even_only(nums) {
+        printin(x)
+    }
+}

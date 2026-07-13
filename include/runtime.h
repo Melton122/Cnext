@@ -11,6 +11,11 @@
 /* ========================================================================
  * Cnext Runtime Library
  * Automatically included by all generated C code from the Cnext compiler.
+ *
+ * Design note: All functions are static inline because the compiler generates
+ * a single .c file that is compiled directly to an executable. This avoids
+ * the need for a separate runtime library link step. For multi-file projects,
+ * consider extracting these into a runtime.c file and linking separately.
  * ======================================================================== */
 
 /* --- String Type --- */
@@ -57,6 +62,19 @@ static void _cnext_free_all() {
         free(node->ptr);
         free(node);
     }
+}
+
+/* --- Memory Profiling --- */
+static size_t _cnext_alloc_count = 0;
+static size_t _cnext_free_count = 0;
+static size_t _cnext_peak_bytes = 0;
+static size_t _cnext_current_bytes = 0;
+
+static void _cnext_profile_report(void) {
+    fprintf(stderr, "[profile] allocations: %zu\n", _cnext_alloc_count);
+    fprintf(stderr, "[profile] frees:      %zu\n", _cnext_free_count);
+    fprintf(stderr, "[profile] peak:       %zu bytes\n", _cnext_peak_bytes);
+    fprintf(stderr, "[profile] leaks:      %zu bytes\n", _cnext_current_bytes);
 }
 
 static inline void cnext_free(CnextString s) {
@@ -134,6 +152,39 @@ static inline void printin_bool(bool x) { _cnext_printin("%s", x ? "true" : "fal
 static inline void printin_ptr(void* x) { _cnext_printin("%p", x); }
 static inline void printin_char(char x) { _cnext_printin("%c", x); }
 
+/* --- Closure Type --- */
+typedef struct {
+    void* fn;
+    void* env;
+    int refcount;
+} CnextClosure;
+
+static inline void cnext_closure_decref(CnextClosure* c) {
+    if (c && c->env && --c->refcount <= 0) {
+        free(c->env);
+        c->env = NULL;
+        c->fn = NULL;
+    }
+}
+
+static inline void printin_closure(CnextClosure x) { (void)x; _cnext_printin("<closure>"); }
+
+/* --- Iterator Type (Generators) --- */
+typedef struct {
+    int _pc;
+    bool done;
+} CnextIterBase;
+
+static inline void printin_iter(CnextIterBase x) { (void)x; _cnext_printin("<iterator>"); }
+
+/* --- Tuple Type --- */
+typedef struct {
+    int count;
+    CnextString repr;
+} CnextTuple;
+
+static inline void printin_tuple(CnextTuple x) { printf("%s\n", x.repr.data); }
+
 #define printin(...) do { __auto_type _x = (__VA_ARGS__); _Generic((_x), \
     int: printin_int, \
     unsigned int: printin_uint, \
@@ -144,10 +195,13 @@ static inline void printin_char(char x) { _cnext_printin("%c", x); }
     float: printin_float, \
     double: printin_double, \
     CnextString: printin_str, \
+    CnextTuple: printin_tuple, \
     char*: printin_cstr, \
     const char*: printin_cstr, \
     char: printin_char, \
     bool: printin_bool, \
+    CnextClosure: printin_closure, \
+    CnextIterBase: printin_iter, \
     default: printin_ptr)(_x); } while(0)
 
 /* --- Input --- */
@@ -257,5 +311,163 @@ static inline size_t _cnext_array_check(size_t length, size_t index) {
     _d->data = _s.data + _st; \
     _d->length = _en - _st; \
 } while(0)
+
+/* --- Threading --- */
+
+#ifdef _WIN32
+#include <windows.h>
+
+typedef HANDLE CnextThread;
+typedef CRITICAL_SECTION CnextMutex;
+
+typedef struct {
+    CnextString* buffer;
+    int capacity;
+    int head;
+    int tail;
+    int count;
+    CRITICAL_SECTION mutex;
+    HANDLE not_empty;
+    HANDLE not_full;
+} CnextChannel;
+
+static inline CnextThread cnext_thread_spawn(void* (*func)(void*), void* arg) {
+    HANDLE thread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)func, arg, 0, NULL);
+    if (!thread) { fprintf(stderr, "Cnext: failed to create thread\n"); exit(1); }
+    return thread;
+}
+
+static inline void cnext_thread_join(CnextThread t) { WaitForSingleObject(t, INFINITE); CloseHandle(t); }
+
+static inline CnextMutex cnext_mutex_new(void) {
+    CnextMutex m; InitializeCriticalSection(&m); return m;
+}
+static inline void cnext_mutex_lock(CnextMutex* m) { EnterCriticalSection(m); }
+static inline void cnext_mutex_unlock(CnextMutex* m) { LeaveCriticalSection(m); }
+static inline void cnext_mutex_free(CnextMutex* m) { DeleteCriticalSection(m); }
+
+static inline CnextChannel cnext_channel_new(int capacity) {
+    CnextChannel ch;
+    ch.capacity = capacity > 0 ? capacity : 16;
+    ch.buffer = (CnextString*)malloc(sizeof(CnextString) * ch.capacity);
+    ch.head = 0; ch.tail = 0; ch.count = 0;
+    InitializeCriticalSection(&ch.mutex);
+    ch.not_empty = CreateEvent(NULL, FALSE, FALSE, NULL);
+    ch.not_full = CreateEvent(NULL, FALSE, FALSE, NULL);
+    return ch;
+}
+
+static inline void cnext_channel_send(CnextChannel* ch, CnextString msg) {
+    EnterCriticalSection(&ch->mutex);
+    while (ch->count >= ch->capacity) {
+        LeaveCriticalSection(&ch->mutex);
+        WaitForSingleObject(ch->not_full, INFINITE);
+        EnterCriticalSection(&ch->mutex);
+    }
+    ch->buffer[ch->tail] = msg;
+    ch->tail = (ch->tail + 1) % ch->capacity;
+    ch->count++;
+    SetEvent(ch->not_empty);
+    LeaveCriticalSection(&ch->mutex);
+}
+
+static inline CnextString cnext_channel_recv(CnextChannel* ch) {
+    EnterCriticalSection(&ch->mutex);
+    while (ch->count <= 0) {
+        LeaveCriticalSection(&ch->mutex);
+        WaitForSingleObject(ch->not_empty, INFINITE);
+        EnterCriticalSection(&ch->mutex);
+    }
+    CnextString msg = ch->buffer[ch->head];
+    ch->head = (ch->head + 1) % ch->capacity;
+    ch->count--;
+    SetEvent(ch->not_full);
+    LeaveCriticalSection(&ch->mutex);
+    return msg;
+}
+
+static inline void cnext_channel_free(CnextChannel* ch) {
+    free(ch->buffer);
+    DeleteCriticalSection(&ch->mutex);
+    CloseHandle(ch->not_empty);
+    CloseHandle(ch->not_full);
+}
+
+#else /* POSIX */
+#include <pthread.h>
+
+typedef pthread_t CnextThread;
+typedef pthread_mutex_t CnextMutex;
+
+typedef struct {
+    CnextString* buffer;
+    int capacity;
+    int head;
+    int tail;
+    int count;
+    pthread_mutex_t mutex;
+    pthread_cond_t not_empty;
+    pthread_cond_t not_full;
+} CnextChannel;
+
+static inline CnextThread cnext_thread_spawn(void* (*func)(void*), void* arg) {
+    CnextThread t;
+    if (pthread_create(&t, NULL, func, arg) != 0) {
+        fprintf(stderr, "Cnext: failed to create thread\n"); exit(1);
+    }
+    return t;
+}
+
+static inline void cnext_thread_join(CnextThread t) { pthread_join(t, NULL); }
+
+static inline CnextMutex cnext_mutex_new(void) {
+    CnextMutex m; pthread_mutex_init(&m, NULL); return m;
+}
+static inline void cnext_mutex_lock(CnextMutex* m) { pthread_mutex_lock(m); }
+static inline void cnext_mutex_unlock(CnextMutex* m) { pthread_mutex_unlock(m); }
+static inline void cnext_mutex_free(CnextMutex* m) { pthread_mutex_destroy(m); }
+
+static inline CnextChannel cnext_channel_new(int capacity) {
+    CnextChannel ch;
+    ch.capacity = capacity > 0 ? capacity : 16;
+    ch.buffer = (CnextString*)malloc(sizeof(CnextString) * ch.capacity);
+    ch.head = 0; ch.tail = 0; ch.count = 0;
+    pthread_mutex_init(&ch.mutex, NULL);
+    pthread_cond_init(&ch.not_empty, NULL);
+    pthread_cond_init(&ch.not_full, NULL);
+    return ch;
+}
+
+static inline void cnext_channel_send(CnextChannel* ch, CnextString msg) {
+    pthread_mutex_lock(&ch->mutex);
+    while (ch->count >= ch->capacity)
+        pthread_cond_wait(&ch->not_full, &ch->mutex);
+    ch->buffer[ch->tail] = msg;
+    ch->tail = (ch->tail + 1) % ch->capacity;
+    ch->count++;
+    pthread_cond_signal(&ch->not_empty);
+    pthread_mutex_unlock(&ch->mutex);
+}
+
+static inline CnextString cnext_channel_recv(CnextChannel* ch) {
+    pthread_mutex_lock(&ch->mutex);
+    while (ch->count <= 0)
+        pthread_cond_wait(&ch->not_empty, &ch->mutex);
+    CnextString msg = ch->buffer[ch->head];
+    ch->head = (ch->head + 1) % ch->capacity;
+    ch->count--;
+    pthread_cond_signal(&ch->not_full);
+    pthread_mutex_unlock(&ch->mutex);
+    return msg;
+}
+
+static inline void cnext_channel_free(CnextChannel* ch) {
+    free(ch->buffer);
+    pthread_mutex_destroy(&ch->mutex);
+    pthread_cond_destroy(&ch->not_empty);
+    pthread_cond_destroy(&ch->not_full);
+}
+
+#endif /* _WIN32 */
 
 #endif /* CNEXT_RUNTIME_H */

@@ -1,0 +1,10 @@
+#ifndef CODEGEN_H
+#define CODEGEN_H
+
+#include "ast.h"
+#include <stdio.h>
+
+bool generate_c_code(ASTNode* program, const char* output_filename, bool test_mode);
+void reset_codegen_state(void);
+
+#endif // CODEGEN_H

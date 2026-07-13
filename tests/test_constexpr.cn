@@ -1,0 +1,7 @@
+// EXPECT: 42
+// Test constexpr (v4.0)
+constexpr int MAX = 42
+
+main {
+    printin(MAX)
+}

@@ -1,0 +1,111 @@
+// === Comprehensive Generics Test Suite ===
+
+// EXPECT: true
+// EXPECT: 1
+// EXPECT: 1
+// EXPECT: 1
+// EXPECT: true
+// EXPECT: 1
+// EXPECT: true
+// EXPECT: 1
+// EXPECT: 1
+// EXPECT: true
+// EXPECT: 1
+// EXPECT: true
+// EXPECT: true
+
+// --- Generic Functions ---
+func identity<T>(T x) -> T {
+    return x
+}
+
+func pair<T, U>(T a, U b) -> str {
+    return "(" + identity<T>(a) + ", " + identity<U>(b) + ")"
+}
+
+func add<T>(T a, T b) -> T {
+    return a + b
+}
+
+func swap<T, U>(T a, U b) -> str {
+    return identity<U>(b) + " " + identity<T>(a)
+}
+
+// --- Generic Classes ---
+class Box<T> {
+    T value
+
+    func new(T val) {
+        self.value = val
+    }
+
+    func get() -> T {
+        return self.value
+    }
+
+    func set(T val) {
+        self.value = val
+    }
+}
+
+class Pair<A, B> {
+    A first
+    B second
+
+    func new(A a, B b) {
+        self.first = a
+        self.second = b
+    }
+
+    func get_first() -> A {
+        return self.first
+    }
+
+    func get_second() -> B {
+        return self.second
+    }
+}
+
+main {
+    // --- Test 1: Generic functions with explicit type args ---
+    str p1 = pair<int, str>(1, "one")
+    printin(p1 == "(1, one)")
+
+    // --- Test 2: Generic function type inference ---
+    int x = identity(42)
+    printin(x == 42)
+
+    float y = identity(3.14)
+    printin(y > 3.13)
+    printin(y < 3.15)
+
+    str s = identity("hello")
+    printin(s == "hello")
+
+    // --- Test 3: Generic add ---
+    int sum = add(10, 20)
+    printin(sum == 30)
+
+    // --- Test 4: Generic swap ---
+    str swapped = swap(1, "hello")
+    printin(swapped == "hello 1")
+
+    // --- Test 5: Generic Box<int> ---
+    Box b1 = new Box<int>(42)
+    printin(b1.get() == 42)
+    b1.set(100)
+    printin(b1.get() == 100)
+
+    // --- Test 6: Generic Box<str> ---
+    Box b2 = new Box<str>("hello")
+    printin(b2.get() == "hello")
+
+    // --- Test 7: Generic Pair<int, str> ---
+    Pair p = new Pair<int, str>(1, "one")
+    printin(p.get_first() == 1)
+    printin(p.get_second() == "one")
+
+    // --- Test 8: Nested generic calls ---
+    str nested = pair<int, str>(identity(99), identity("test"))
+    printin(nested == "(99, test)")
+}

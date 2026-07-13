@@ -1,0 +1,91 @@
+// EXPECT: --- Null Coalescing Operator (nn) ---
+// EXPECT: true
+// EXPECT: true
+// EXPECT: true
+// EXPECT: --- Safe Navigation Operator (?.) ---
+// EXPECT: true
+// EXPECT: 1
+// EXPECT: true
+// EXPECT: --- Combined ?? and ?. ---
+// EXPECT: true
+// EXPECT: true
+// EXPECT: === All null safety operator tests passed ===
+// ============================================================================
+// Cnext Null Safety Operators: ?? and ?.
+// ============================================================================
+
+class Person {
+    str name
+    int age
+
+    func new(str n, int a) {
+        self.name = n
+        self.age = a
+    }
+
+    func greet() -> str {
+        return "Hello, I am " + self.name
+    }
+}
+
+func get_name(Person p) -> str {
+    return p?.name ?? "Unknown"
+}
+
+func get_age(Person p) -> int {
+    return p?.age ?? 0
+}
+
+func test_null_coalesce() {
+    // Test with non-null values
+    str name = "Alice"
+    str fallback = name ?? "Nobody"
+    printin(fallback == "Alice")
+
+    // Test with null string
+    str null_name = null
+    str result = null_name ?? "Nobody"
+    printin(result == "Nobody")
+
+    // Test with non-null Person
+    Person p = new Person("Bob", 25)
+    str pname = p?.name ?? "Nobody"
+    printin(pname == "Bob")
+}
+
+func test_safe_access() {
+    Person alice = new Person("Alice", 30)
+    str greeting = alice?.name ?? "No name"
+    printin(greeting == "Alice")
+
+    int age = alice?.age ?? 0
+    printin(age == 30)
+
+    // Test with null
+    Person nobody = null
+    str name = nobody?.name ?? "Unknown"
+    printin(name == "Unknown")
+}
+
+func test_combined() {
+    Person p = null
+    str greeting = p?.greet() ?? "No greeting"
+    printin(greeting == "No greeting")
+
+    Person bob = new Person("Bob", 25)
+    str bob_greeting = bob?.greet() ?? "No greeting"
+    printin(bob_greeting == "Hello, I am Bob")
+}
+
+main {
+    printin("--- Null Coalescing Operator (nn) ---")
+    test_null_coalesce()
+
+    printin("--- Safe Navigation Operator (?.) ---")
+    test_safe_access()
+
+    printin("--- Combined ?? and ?. ---")
+    test_combined()
+
+    printin("=== All null safety operator tests passed ===")
+}

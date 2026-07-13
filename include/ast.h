@@ -10,6 +10,7 @@ typedef enum {
     AST_BLOCK,
     AST_VAR_DECL,
     AST_FUNC_DECL,
+    AST_MACRO_DECL,
     AST_CLASS_DECL,
     AST_STRUCT_DECL,
     AST_ENUM_DECL,
@@ -46,6 +47,7 @@ typedef enum {
     AST_CONSTRUCTOR,
     AST_NEW_EXPR,
     AST_SUPER_EXPR,
+    AST_TYPEOF,
     // Pattern matching
     AST_MATCH,
     AST_MATCH_ARM,
@@ -76,7 +78,29 @@ typedef enum {
     AST_OPTION_SOME,
     AST_OPTION_NONE,
     AST_RESULT_OK,
-    AST_RESULT_ERR
+    AST_RESULT_ERR,
+    // v3.1: Null safety
+    AST_NULL_COALESCE,  // a ?? b
+    AST_SAFE_ACCESS,    // a?.b
+    // v3.5: Iterators
+    AST_YIELD,          // yield expr
+    // v3.5: Coroutines
+    AST_COROUTINE_DECL, // coroutine func ...
+    AST_RESUME_EXPR,    // resume co / resume co with val
+    // v3.5: Async/Await
+    AST_ASYNC_FUNC_DECL,// async func ...
+    AST_AWAIT_EXPR,     // await expr
+    AST_RUN_ASYNC,       // run_async func()
+    // v4.0: Reflection and macros
+    AST_ATTRIBUTE,      // @attribute(name, args) on declarations
+    AST_CONSTEXPR_DECL, // constexpr var = expr
+    AST_MACRO_INVOCATION, // macro_name(args) — expanded inline
+    // v4.0: Pattern matching improvements
+    AST_GUARD,          // guard condition in match arm
+    // v4.5: Memory & FFI
+    AST_EXTERN_DECL,    // extern "C" { func ... } — C function declarations
+    AST_BENCH_DECL,     // bench { code } — performance measurement block
+    AST_OWN_EXPR        // own expr — ownership transfer expression
 } ASTNodeType;
 
 typedef struct ASTNode {
@@ -90,6 +114,7 @@ typedef struct ASTNode {
     char* type_name; // For resolved type (e.g., class name for member access)
     char* parent_name; // For class inheritance (parent class name)
     char* implements_names; // Comma-separated list of implemented interface/trait names
+    char* attribute_name; // Declaration attribute name, e.g. @attribute
     
     // For lists (e.g. block statements, function args, program declarations)
     struct ASTNode** children;
@@ -116,7 +141,7 @@ typedef struct ASTNode {
     // Types
     Token var_type; // the token representing the type
     Token return_type;
-    TokenType expr_type;
+    CnextTokenType expr_type;
     
     // v3.0: Default argument value
     struct ASTNode* default_value;
@@ -126,6 +151,8 @@ typedef struct ASTNode {
     bool is_variadic;
     // v3.0: Operator token (for operator overloading)
     Token operator_token;
+    // v3.5: Generator function flag
+    bool is_generator;
 } ASTNode;
 
 ASTNode* create_node(ASTNodeType type, Token token);
