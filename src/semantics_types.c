@@ -1,11 +1,29 @@
 #include "semantics_internal.h"
 
+#define IS_BUILTIN_NUMERIC(t) \
+    ((t) == TOKEN_INT_TYPE || (t) == TOKEN_LONG_TYPE || \
+     (t) == TOKEN_FLOAT_TYPE || (t) == TOKEN_DOUBLE_TYPE || \
+     (t) == TOKEN_CHAR_TYPE || (t) == TOKEN_BYTE_TYPE || \
+     (t) == TOKEN_UINT_TYPE || (t) == TOKEN_ULONG_TYPE || \
+     (t) == TOKEN_USHORT_TYPE || (t) == TOKEN_UBYTE_TYPE)
+
+#define IS_BUILTIN_UNSIGNED(t) \
+    ((t) == TOKEN_UINT_TYPE || (t) == TOKEN_ULONG_TYPE || \
+     (t) == TOKEN_USHORT_TYPE || (t) == TOKEN_UBYTE_TYPE)
+
 char* type_name_from_token(Token token) {
     if (token.type == TOKEN_STR_TYPE) return copy_cstring("str");
     if (token.type == TOKEN_INT_TYPE) return copy_cstring("int");
+    if (token.type == TOKEN_LONG_TYPE) return copy_cstring("long");
     if (token.type == TOKEN_FLOAT_TYPE) return copy_cstring("float");
+    if (token.type == TOKEN_DOUBLE_TYPE) return copy_cstring("double");
     if (token.type == TOKEN_BOOL_TYPE) return copy_cstring("bool");
     if (token.type == TOKEN_CHAR_TYPE) return copy_cstring("char");
+    if (token.type == TOKEN_BYTE_TYPE) return copy_cstring("byte");
+    if (token.type == TOKEN_UINT_TYPE) return copy_cstring("uint");
+    if (token.type == TOKEN_ULONG_TYPE) return copy_cstring("ulong");
+    if (token.type == TOKEN_USHORT_TYPE) return copy_cstring("ushort");
+    if (token.type == TOKEN_UBYTE_TYPE) return copy_cstring("ubyte");
     if (token.type == TOKEN_ITER) return copy_cstring("iter");
     if (token.type != TOKEN_IDENTIFIER) return NULL;
     return sem_copy_token_text(token);
@@ -14,7 +32,8 @@ char* type_name_from_token(Token token) {
 bool assignment_types_compatible(Token expected, CnextTokenType actual) {
     if (expected.type == TOKEN_VAR || actual == TOKEN_EOF) return true;
     if (expected.type == actual) return true;
-    if (expected.type == TOKEN_FLOAT_TYPE && actual == TOKEN_INT_TYPE) return true;
+    // Numeric widening: smaller types promote to larger types
+    if (IS_BUILTIN_NUMERIC(expected.type) && IS_BUILTIN_NUMERIC(actual)) return true;
 
     if (actual == TOKEN_NULL) {
         if (expected.type == TOKEN_STR_TYPE) return true;

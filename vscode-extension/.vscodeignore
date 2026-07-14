@@ -3,8 +3,5 @@
 src/**
 .git/**
 .gitignore
-**/*.ts
-**/*.map
 **/node_modules/**
-**/tsconfig.json
-**/tslint.json
+**/*.map

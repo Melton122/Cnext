@@ -1,5 +1,10 @@
 #include "codegen_internal.h"
 
+int bench_counter = 0;
+int loop_counter = 0;
+int try_counter = 0;
+int match_counter = 0;
+
 void generate_block(ASTNode* node) {
     push_scope();
     track_source_line(node->token.line);
@@ -325,7 +330,6 @@ void generate_node(ASTNode* node) {
             }
             break;
         case AST_BENCH_DECL: {
-            static int bench_counter = 0;
             int bench_id = bench_counter++;
             write_indent();
             fprintf(out, "{\n");
@@ -460,7 +464,6 @@ void generate_node(ASTNode* node) {
             generate_block(node->left);
             break;
         case AST_FOR_IN: {
-            static int loop_counter = 0;
             int current_loop = loop_counter++;
             
             bool is_generator_call = false;
@@ -577,7 +580,6 @@ void generate_node(ASTNode* node) {
             fprintf(out, "continue;\n");
             break;
         case AST_TRY: {
-            static int try_counter = 0;
             int current_try = try_counter++;
             fprintf(out, "{\n");
             indent_level++;
@@ -626,7 +628,6 @@ void generate_node(ASTNode* node) {
             fprintf(out, ");\n");
             break;
         case AST_MATCH: {
-            static int match_counter = 0;
             int current_match = match_counter++;
             fprintf(out, "{\n");
             indent_level++;
@@ -659,7 +660,26 @@ void generate_node(ASTNode* node) {
                     }
                     fprintf(out, ") ");
                 }
-                generate_block(arm->left);
+                // Add return statement for the arm body if it's an expression
+                if (arm->left && arm->left->child_count > 0) {
+                    ASTNode* last_stmt = arm->left->children[arm->left->child_count - 1];
+                    if (last_stmt && last_stmt->type == AST_EXPR_STMT) {
+                        // Convert expression statement to return
+                        fprintf(out, "{\n");
+                        indent_level++;
+                        write_indent();
+                        fprintf(out, "return ");
+                        generate_expression(last_stmt->left);
+                        fprintf(out, ";\n");
+                        indent_level--;
+                        write_indent();
+                        fprintf(out, "}\n");
+                    } else {
+                        generate_block(arm->left);
+                    }
+                } else {
+                    generate_block(arm->left);
+                }
                 first = false;
             }
             indent_level--;

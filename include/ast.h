@@ -100,7 +100,9 @@ typedef enum {
     // v4.5: Memory & FFI
     AST_EXTERN_DECL,    // extern "C" { func ... } — C function declarations
     AST_BENCH_DECL,     // bench { code } — performance measurement block
-    AST_OWN_EXPR        // own expr — ownership transfer expression
+    AST_OWN_EXPR,       // own expr — ownership transfer expression
+    // v8.0: Type aliases
+    AST_TYPE_ALIAS      // type MyType = OtherType
 } ASTNodeType;
 
 typedef struct ASTNode {

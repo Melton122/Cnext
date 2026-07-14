@@ -12,6 +12,105 @@ typedef struct { int key; int val; int used; } MapEntry;
 typedef struct { MapEntry* entries; int cap; int len; } Map;
 typedef struct { int* data; int cap; int len; } Set;
 
+// String-keyed HashMap
+typedef struct HashMapEntry {
+    char* key;
+    void* value;
+    struct HashMapEntry* next;
+} HashMapEntry;
+
+typedef struct {
+    HashMapEntry** buckets;
+    int capacity;
+    int size;
+} HashMap;
+
+static HashMap* hashmap_new(int capacity) {
+    HashMap* map = (HashMap*)malloc(sizeof(HashMap));
+    if (!map) return NULL;
+    map->capacity = capacity > 0 ? capacity : 16;
+    map->size = 0;
+    map->buckets = (HashMapEntry**)calloc(map->capacity, sizeof(HashMapEntry*));
+    if (!map->buckets) { free(map); return NULL; }
+    return map;
+}
+
+static unsigned int hashmap_hash(const char* key, int capacity) {
+    unsigned int hash = 5381;
+    while (*key) {
+        hash = ((hash << 5) + hash) + (unsigned char)*key++;
+    }
+    return hash % capacity;
+}
+
+static void hashmap_put(HashMap* map, const char* key, void* value) {
+    if (!map || !key) return;
+    unsigned int idx = hashmap_hash(key, map->capacity);
+    HashMapEntry* entry = map->buckets[idx];
+    while (entry) {
+        if (strcmp(entry->key, key) == 0) {
+            entry->value = value;
+            return;
+        }
+        entry = entry->next;
+    }
+    entry = (HashMapEntry*)malloc(sizeof(HashMapEntry));
+    if (!entry) return;
+    entry->key = strdup(key);
+    entry->value = value;
+    entry->next = map->buckets[idx];
+    map->buckets[idx] = entry;
+    map->size++;
+}
+
+static void* hashmap_get(HashMap* map, const char* key) {
+    if (!map || !key) return NULL;
+    unsigned int idx = hashmap_hash(key, map->capacity);
+    HashMapEntry* entry = map->buckets[idx];
+    while (entry) {
+        if (strcmp(entry->key, key) == 0) return entry->value;
+        entry = entry->next;
+    }
+    return NULL;
+}
+
+static bool hashmap_contains(HashMap* map, const char* key) {
+    return hashmap_get(map, key) != NULL;
+}
+
+static void hashmap_remove(HashMap* map, const char* key) {
+    if (!map || !key) return;
+    unsigned int idx = hashmap_hash(key, map->capacity);
+    HashMapEntry** prev = &map->buckets[idx];
+    HashMapEntry* entry = *prev;
+    while (entry) {
+        if (strcmp(entry->key, key) == 0) {
+            *prev = entry->next;
+            free(entry->key);
+            free(entry);
+            map->size--;
+            return;
+        }
+        prev = &entry->next;
+        entry = entry->next;
+    }
+}
+
+static void hashmap_free(HashMap* map) {
+    if (!map) return;
+    for (int i = 0; i < map->capacity; i++) {
+        HashMapEntry* entry = map->buckets[i];
+        while (entry) {
+            HashMapEntry* next = entry->next;
+            free(entry->key);
+            free(entry);
+            entry = next;
+        }
+    }
+    free(map->buckets);
+    free(map);
+}
+
 static List* _lists[COLL_MAX]; static int _lc = 0;
 static Map* _maps[COLL_MAX]; static int _mc = 0;
 static Set* _sets[COLL_MAX]; static int _sc = 0;
@@ -88,7 +187,9 @@ static int list_contains(int h, int val) {
 }
 
 static int intcmp(const void* a, const void* b) {
-    return *(const int*)a - *(const int*)b;
+    int va = *(const int*)a;
+    int vb = *(const int*)b;
+    return (va > vb) - (va < vb);
 }
 
 static void list_sort(int h) {

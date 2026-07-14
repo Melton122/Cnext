@@ -147,10 +147,17 @@ void define_symbol_if_missing(Token token, CnextTokenType type, bool is_const, c
 
 bool is_builtin_value_type(CnextTokenType type) {
     return type == TOKEN_INT_TYPE ||
+           type == TOKEN_LONG_TYPE ||
            type == TOKEN_FLOAT_TYPE ||
+           type == TOKEN_DOUBLE_TYPE ||
            type == TOKEN_STR_TYPE ||
            type == TOKEN_BOOL_TYPE ||
            type == TOKEN_CHAR_TYPE ||
+           type == TOKEN_BYTE_TYPE ||
+           type == TOKEN_UINT_TYPE ||
+           type == TOKEN_ULONG_TYPE ||
+           type == TOKEN_USHORT_TYPE ||
+           type == TOKEN_UBYTE_TYPE ||
            type == TOKEN_VAR;
 }
 

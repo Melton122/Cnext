@@ -1,0 +1,4 @@
+main {
+    uint x = 1
+    printin(x)
+}

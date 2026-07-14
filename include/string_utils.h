@@ -155,12 +155,15 @@ static inline CnextString str_substring(CnextString s, int start, int end) {
 }
 
 static inline CnextString str_repeat(CnextString s, int count) {
-    if (!s.data || count <= 0) return (CnextString){NULL, 0};
-    size_t new_len = s.length * (size_t)count;
+    if (!s.data || count <= 0) return (CnextString){(char*)"", 0};
+    size_t new_len = (size_t)s.length * (size_t)count;
+    if (s.length > 0 && new_len / (size_t)s.length != (size_t)count) {
+        return (CnextString){NULL, 0};
+    }
     char* buffer = (char*)malloc(new_len + 1);
     if (!buffer) return (CnextString){NULL, 0};
     for (int i = 0; i < count; i++) {
-        memcpy(buffer + i * s.length, s.data, s.length);
+        memcpy(buffer + (size_t)i * s.length, s.data, s.length);
     }
     buffer[new_len] = '\0';
     _cnext_track(buffer);

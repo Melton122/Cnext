@@ -3,6 +3,7 @@
 *.obj
 *.exe
 *.out
+*.d
 
 # Temp files
 *.tmp
@@ -33,6 +34,17 @@ Thumbs.db
 
 # Packages
 packages/
+
+# Release artifacts
+*.zip
+*.tar.gz
+*.dmg
+
+# Node
+node_modules/
+
+# Registry
+registry.txt
 
 # History
 .aider*

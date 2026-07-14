@@ -166,7 +166,8 @@ static inline json_value_t* json_parse_number(json_parser_t* p) {
     char* num_str = (char*)malloc(p->pos - start + 1);
     memcpy(num_str, p->json + start, p->pos - start);
     num_str[p->pos - start] = '\0';
-    double val = atof(num_str);
+    char* endptr = NULL;
+    double val = strtod(num_str, &endptr);
     free(num_str);
 
     json_value_t* node = (json_value_t*)malloc(sizeof(json_value_t));

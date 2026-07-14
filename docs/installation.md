@@ -5,15 +5,28 @@
 - **GCC** or **Clang** compiler (with C11 support)
 - **Make** (Linux/macOS) or **MinGW** (Windows)
 - **Git** (for cloning the repository)
+- **libcurl** (Linux/macOS, for networking features)
 
 ## Building from Source
 
-### Linux/macOS
+### Linux
 
 ```bash
 git clone https://github.com/Melton122/cnext.git
 cd cnext
+sudo apt-get install libcurl4-openssl-dev  # for networking
 make
+sudo make install
+```
+
+### macOS
+
+```bash
+git clone https://github.com/Melton122/cnext.git
+cd cnext
+brew install curl  # for networking
+make
+make install
 ```
 
 ### Windows (MinGW)
@@ -32,6 +45,18 @@ cd cnext
 make
 ```
 
+## Build Options
+
+```bash
+make              # Release build (optimized)
+make DEBUG=1      # Debug build (with symbols)
+make clean        # Clean build artifacts
+make install      # Install to /usr/local/bin
+make uninstall    # Remove from /usr/local/bin
+make format       # Format source code
+make help         # Show all available targets
+```
+
 ## Verifying Installation
 
 After building, verify the installation:
@@ -42,15 +67,22 @@ After building, verify the installation:
 
 Output should show:
 ```
-Cnext version 3.5
+Cnext version 9.0
 ```
 
 ## Adding to PATH
 
 ### Linux/macOS
 
-Add to your `~/.bashrc` or `~/.zshrc`:
+The `make install` command installs to `/usr/local/bin` by default.
 
+To install to a custom location:
+```bash
+make install DESTDIR=/opt/cnext
+export PATH=$PATH:/opt/cnext/bin
+```
+
+Or add to your `~/.bashrc` or `~/.zshrc`:
 ```bash
 export PATH=$PATH:/path/to/cnext
 ```
@@ -62,7 +94,7 @@ source ~/.bashrc
 
 ### Windows
 
-1. Right-click "This PC" → Properties → Advanced system settings
+1. Right-click "This PC" -> Properties -> Advanced system settings
 2. Click "Environment Variables"
 3. Under "System variables", find "Path" and click "Edit"
 4. Add the Cnext directory
@@ -112,3 +144,9 @@ chmod +x cnext
 If Windows Defender blocks the executable:
 1. Click "More info"
 2. Click "Run anyway"
+
+### curl/curl.h not found (Linux/macOS)
+
+Install libcurl development headers:
+- **Linux**: `sudo apt install libcurl4-openssl-dev`
+- **macOS**: `brew install curl`

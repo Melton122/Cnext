@@ -1,9 +1,25 @@
 #include "formatter.h"
 #include "lexer.h"
+#include "checked_alloc.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+
+// Formatter configuration
+typedef struct {
+    int indent_size;      // Number of spaces per indent (default: 4)
+    bool use_tabs;        // Use tabs instead of spaces
+    int max_line_length;  // Max line length before wrapping (default: 80)
+    bool trailing_commas; // Add trailing commas in multi-line expressions
+} FormatterConfig;
+
+static FormatterConfig default_config = {
+    .indent_size = 4,
+    .use_tabs = false,
+    .max_line_length = 80,
+    .trailing_commas = true
+};
 
 typedef struct {
     char* data;
@@ -13,7 +29,7 @@ typedef struct {
 
 static void sb_init(StringBuilder* sb) {
     sb->capacity = 4096;
-    sb->data = (char*)malloc(sb->capacity);
+    sb->data = (char*)checked_malloc(sb->capacity);
     sb->data[0] = '\0';
     sb->length = 0;
 }
@@ -21,7 +37,7 @@ static void sb_init(StringBuilder* sb) {
 static void sb_append(StringBuilder* sb, const char* text, int len) {
     if (sb->length + len + 1 > sb->capacity) {
         sb->capacity = (sb->capacity + len) * 2;
-        sb->data = (char*)realloc(sb->data, sb->capacity);
+        sb->data = (char*)checked_realloc(sb->data, sb->capacity);
     }
     memcpy(sb->data + sb->length, text, len);
     sb->length += len;
@@ -157,12 +173,13 @@ bool format_file(const char* input_path, const char* output_path, bool in_place)
         fprintf(stderr, "Could not open file \"%s\"\n", input_path);
         return false;
     }
-    fseek(f, 0, SEEK_END);
+    if (fseek(f, 0, SEEK_END) != 0) { fclose(f); return false; }
     long size = ftell(f);
+    if (size < 0) { fclose(f); return false; }
     rewind(f);
-    char* source = (char*)malloc(size + 1);
-    fread(source, 1, size, f);
-    source[size] = '\0';
+    char* source = (char*)checked_malloc(size + 1);
+    size_t read = fread(source, 1, size, f);
+    source[read] = '\0';
     fclose(f);
 
     char* formatted = NULL;

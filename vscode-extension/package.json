@@ -2,8 +2,9 @@
   "name": "cnext",
   "displayName": "Cnext Language Support",
   "description": "Syntax highlighting, snippets, and build tasks for the Cnext programming language",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "publisher": "cnext-lang",
+  "license": "MIT",
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -15,9 +16,6 @@
     "language",
     "transpiler",
     "compiler"
-  ],
-  "activationEvents": [
-    "onLanguage:cnext"
   ],
   "main": "./extension.js",
   "contributes": {
@@ -50,15 +48,38 @@
     "commands": [
       {
         "command": "cnext.run",
-        "title": "Cnext: Run File"
+        "title": "Cnext: Run File",
+        "icon": "$(play)"
       },
       {
         "command": "cnext.build",
-        "title": "Cnext: Build File"
+        "title": "Cnext: Build File",
+        "icon": "$(tools)"
       },
       {
         "command": "cnext.test",
-        "title": "Cnext: Run Tests"
+        "title": "Cnext: Run Tests",
+        "icon": "$(beaker)"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "cnext.run",
+        "key": "ctrl+shift+r",
+        "mac": "cmd+shift+r",
+        "when": "editorLangId == cnext"
+      },
+      {
+        "command": "cnext.build",
+        "key": "ctrl+shift+b",
+        "mac": "cmd+shift+b",
+        "when": "editorLangId == cnext"
+      },
+      {
+        "command": "cnext.test",
+        "key": "ctrl+shift+t",
+        "mac": "cmd+shift+t",
+        "when": "editorLangId == cnext"
       }
     ],
     "taskDefinitions": [

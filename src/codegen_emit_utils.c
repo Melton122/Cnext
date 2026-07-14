@@ -1,5 +1,23 @@
 #include "codegen_internal.h"
 
+const char* type_token_to_c(CnextTokenType type) {
+    switch (type) {
+        case TOKEN_INT_TYPE: return "int";
+        case TOKEN_LONG_TYPE: return "long long";
+        case TOKEN_FLOAT_TYPE: return "float";
+        case TOKEN_DOUBLE_TYPE: return "double";
+        case TOKEN_STR_TYPE: return "CnextString";
+        case TOKEN_BOOL_TYPE: return "bool";
+        case TOKEN_CHAR_TYPE: return "char";
+        case TOKEN_BYTE_TYPE: return "char";
+        case TOKEN_UINT_TYPE: return "unsigned int";
+        case TOKEN_ULONG_TYPE: return "unsigned long long";
+        case TOKEN_USHORT_TYPE: return "unsigned short";
+        case TOKEN_UBYTE_TYPE: return "unsigned char";
+        default: return NULL;
+    }
+}
+
 char* copy_token_text(Token token) {
     size_t length = token.length > 0 ? (size_t)token.length : 0;
     char* copy = (char*)malloc(length + 1);
@@ -16,12 +34,8 @@ char* copy_token_text(Token token) {
 
 void generate_lambda_return_type(ASTNode* body) {
     if (body->type != AST_BLOCK) {
-        if (body->expr_type == TOKEN_INT_TYPE) fprintf(out, "int");
-        else if (body->expr_type == TOKEN_FLOAT_TYPE) fprintf(out, "float");
-        else if (body->expr_type == TOKEN_STR_TYPE) fprintf(out, "CnextString");
-        else if (body->expr_type == TOKEN_BOOL_TYPE) fprintf(out, "bool");
-        else if (body->expr_type == TOKEN_CHAR_TYPE) fprintf(out, "char");
-        else fprintf(out, "void");
+        const char* c_type = type_token_to_c(body->expr_type);
+        fprintf(out, "%s", c_type ? c_type : "void");
     } else {
         CnextTokenType ret_type = TOKEN_EOF;
         for (int i = 0; i < body->child_count; i++) {
@@ -32,12 +46,8 @@ void generate_lambda_return_type(ASTNode* body) {
                 break;
             }
         }
-        if (ret_type == TOKEN_INT_TYPE) fprintf(out, "int");
-        else if (ret_type == TOKEN_FLOAT_TYPE) fprintf(out, "float");
-        else if (ret_type == TOKEN_STR_TYPE) fprintf(out, "CnextString");
-        else if (ret_type == TOKEN_BOOL_TYPE) fprintf(out, "bool");
-        else if (ret_type == TOKEN_CHAR_TYPE) fprintf(out, "char");
-        else fprintf(out, "void");
+        const char* c_type = type_token_to_c(ret_type);
+        fprintf(out, "%s", c_type ? c_type : "void");
     }
 }
 
@@ -56,13 +66,12 @@ void write_indent(void) {
 }
 
 void generate_type(Token token, bool is_pointer) {
-    if (token.type == TOKEN_INT_TYPE) fprintf(out, "int");
-    else if (token.type == TOKEN_FLOAT_TYPE) fprintf(out, "float");
-    else if (token.type == TOKEN_STR_TYPE) fprintf(out, "CnextString");
-    else if (token.type == TOKEN_BOOL_TYPE) fprintf(out, "bool");
-    else if (token.type == TOKEN_CHAR_TYPE) fprintf(out, "char");
-    else if (token.type == TOKEN_VAR || token.type == TOKEN_FUNC) fprintf(out, "__auto_type");
-    else if (token.type == TOKEN_IDENTIFIER) {
+    const char* c_type = type_token_to_c(token.type);
+    if (c_type) {
+        fprintf(out, "%s", c_type);
+    } else if (token.type == TOKEN_VAR || token.type == TOKEN_FUNC) {
+        fprintf(out, "__auto_type");
+    } else if (token.type == TOKEN_IDENTIFIER) {
         char name[256];
         int nlen = token.length < 255 ? token.length : 255;
         strncpy(name, token.start, nlen);
@@ -186,16 +195,16 @@ void generate_function(ASTNode* node, const char* prefix) {
     if (node->is_generator) {
         char func_name[256];
         if (prefix) {
-            snprintf(func_name, sizeof(func_name), "%.*s_%.*s", 
+            snprintf(func_name, sizeof(func_name), "%.*s_%.*s",
                      (int)strlen(prefix), prefix, node->token.length, node->token.start);
         } else {
-            snprintf(func_name, sizeof(func_name), "%.*s", 
+            snprintf(func_name, sizeof(func_name), "%.*s",
                      node->token.length, node->token.start);
         }
         generate_generator_code(node, func_name);
         return;
     }
-    
+
     track_source_line(node->token.line);
     generate_type(node->return_type, false);
     if (prefix) {

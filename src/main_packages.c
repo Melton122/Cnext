@@ -8,6 +8,15 @@ bool is_standard_module(const char* name) {
     return false;
 }
 
+static bool is_safe_url(const char* url) {
+    if (!url || url[0] == '\0') return false;
+    for (const char* p = url; *p; p++) {
+        if (*p == '"' || *p == '\'' || *p == '`' || *p == '$' || *p == '\\')
+            return false;
+    }
+    return true;
+}
+
 bool find_registry_path(const char* argv0, char* registry_path, size_t registry_path_size) {
     char base[CNEXT_PATH_MAX];
     if (dirname_from_path(argv0, base, sizeof(base))) {
@@ -64,6 +73,11 @@ bool download_package(const char* name, const char* url) {
 #endif
         printf("Copying %s to %s...\n", local_path, out_path);
         return copy_file(local_path, out_path);
+    }
+
+    if (!is_safe_url(url)) {
+        fprintf(stderr, "URL contains unsafe characters for package '%s'.\n", name);
+        return false;
     }
 
     char command[CNEXT_PATH_MAX * 3 + 1024];

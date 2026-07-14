@@ -22,7 +22,7 @@ Syntax highlighting, snippets, and build tasks for the Cnext programming languag
 
 ### Manual Installation
 
-1. Copy this folder to `~/.vscode/extensions/cnext-0.1.0`
+1. Copy this folder to `~/.vscode/extensions/cnext-2.0.0`
 2. Restart VS Code
 
 ## Usage

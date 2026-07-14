@@ -215,27 +215,15 @@ void generate_generator_code(ASTNode* node, const char* func_name) {
     fprintf(out, "    int _received;\n");
     for (GenLocal* gl = params; gl; gl = gl->next) {
         fprintf(out, "    ");
-        switch (gl->type) {
-            case TOKEN_INT_TYPE: fprintf(out, "int"); break;
-            case TOKEN_FLOAT_TYPE: fprintf(out, "float"); break;
-            case TOKEN_STR_TYPE: fprintf(out, "CnextString"); break;
-            case TOKEN_BOOL_TYPE: fprintf(out, "bool"); break;
-            case TOKEN_CHAR_TYPE: fprintf(out, "char"); break;
-            default: fprintf(out, "__auto_type"); break;
-        }
+        const char* ct = type_token_to_c(gl->type);
+        fprintf(out, "%s", ct ? ct : "__auto_type");
         if (gl->is_pointer || gl->is_class) fprintf(out, "*");
         fprintf(out, " %.*s;\n", gl->name_len, gl->name);
     }
     for (GenLocal* gl = locals; gl; gl = gl->next) {
         fprintf(out, "    ");
-        switch (gl->type) {
-            case TOKEN_INT_TYPE: fprintf(out, "int"); break;
-            case TOKEN_FLOAT_TYPE: fprintf(out, "float"); break;
-            case TOKEN_STR_TYPE: fprintf(out, "CnextString"); break;
-            case TOKEN_BOOL_TYPE: fprintf(out, "bool"); break;
-            case TOKEN_CHAR_TYPE: fprintf(out, "char"); break;
-            default: fprintf(out, "__auto_type"); break;
-        }
+        const char* ct = type_token_to_c(gl->type);
+        fprintf(out, "%s", ct ? ct : "__auto_type");
         if (gl->is_pointer || gl->is_class) fprintf(out, "*");
         fprintf(out, " %.*s;\n", gl->name_len, gl->name);
     }
@@ -265,14 +253,8 @@ void generate_generator_code(ASTNode* node, const char* func_name) {
     bool first = true;
     for (GenLocal* gl = params; gl; gl = gl->next) {
         if (!first) fprintf(out, ", ");
-        switch (gl->type) {
-            case TOKEN_INT_TYPE: fprintf(out, "int"); break;
-            case TOKEN_FLOAT_TYPE: fprintf(out, "float"); break;
-            case TOKEN_STR_TYPE: fprintf(out, "CnextString"); break;
-            case TOKEN_BOOL_TYPE: fprintf(out, "bool"); break;
-            case TOKEN_CHAR_TYPE: fprintf(out, "char"); break;
-            default: fprintf(out, "__auto_type"); break;
-        }
+        const char* ct = type_token_to_c(gl->type);
+        fprintf(out, "%s", ct ? ct : "__auto_type");
         if (gl->is_pointer || gl->is_class) fprintf(out, "*");
         fprintf(out, " %.*s", gl->name_len, gl->name);
         first = false;

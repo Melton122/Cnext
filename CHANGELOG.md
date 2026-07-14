@@ -2,6 +2,65 @@
 
 All notable changes to Cnext will be documented in this file.
 
+## What to Test in v9.0
+
+**New Features to Test:**
+- Enum values: `enum Color { RED = 0xFF0000, GREEN = 0x00FF00 }`
+- HashMap: `hashmap_new`, `hashmap_put`, `hashmap_get`, `hashmap_contains`, `hashmap_remove`
+- Memory pool allocator: `POOL_ALLOC`, `POOL_FREE_ALL`
+- Improved error messages with colored output
+
+**Bug Fixes to Verify:**
+- NULL pointer handling in string operations
+- Integer overflow protection in string repeat/concat/replace
+- math_abs(INT_MIN) behavior
+- intcmp in qsort operations
+
+**Cross-Platform Testing:**
+- Windows: Build with MinGW, install to %LOCALAPPDATA%\Cnext\bin
+- Linux: Build with GCC, install to /usr/local/bin
+- macOS: Build with Clang, install to /usr/local/bin
+
+## [9.0.0] - 2026
+
+### Added
+- **Enum values:** Enum members can now have explicit values (`enum Color { RED = 0xFF0000 }`)
+- **Memory pool allocator:** Fast bulk allocation for performance-critical code
+- **HashMap:** String-keyed hash map with O(1) lookups (`hashmap_new`, `hashmap_put`, `hashmap_get`)
+- **Improved error handling:** Colored error messages with file/line context
+
+### Fixed
+- **Critical:** NULL pointer dereferences in runtime (`printin_str`, `printin_cstr`, `cnext_concat`)
+- **Critical:** Integer overflow in string operations (`cnext_str_repeat`, `str_repeat`, `cnext_str_replace`)
+- **Critical:** `math_abs(INT_MIN)` undefined behavior
+- **Critical:** `intcmp` subtraction overflow corrupting `qsort` results
+- **High:** Documentation version mismatches (Makefile, installation.md)
+- **High:** Missing types in documentation (long, double, byte, uint, ulong, ushort, ubyte)
+- **High:** Missing keywords in documentation (20+ keywords added)
+
+### Changed
+- **Version bumped to 9.0.0**
+- **Updated documentation:** types.md, tokens.md, installation.md
+- **Improved Makefile:** Version numbers corrected
+
+## [8.0.0] - 2026
+
+### Added
+- **Type aliases:** `type MyInt = int` for clearer code
+- **Nullable types:** `str?`, `int?` for optional values
+- **Advanced optimizer:** 9 passes including constant propagation, copy propagation, peephole, loop optimizations
+- **Package registry CLI:** `search`, `info`, `login`, `logout`, `update`, `remove` commands
+- **Language Server (LSP):** Python-based LSP with autocomplete, hover, go-to-definition
+- **Developer tools:** `doctor`, `init`, `upgrade`, `cache`, `config` commands
+- **Build flags:** `--release`, `--debug`, `--no-optimize`, `--verbose`, `--clean`
+- **String utilities:** 15+ functions (contains, starts_with, ends_with, to_upper, to_lower, trim, find, replace, count, repeat, reverse, to_int, to_double)
+- **Registry website and playground:** HTML-based web interface
+
+### Fixed
+- **Critical:** Match expression return statements
+- **Critical:** Lexer keyword recognition for uint/ushort/ubyte
+- **Critical:** `printin` macro for unsigned types
+
 ## [6.0.0] - 2026
 
 ### Added

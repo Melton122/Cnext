@@ -1,23 +1,12 @@
 #include "parser_internal.h"
+#include "diagnostics.h"
 
 const char* parser_source = NULL;
 Parser parser;
 
 void print_source_line(int line) {
     if (!parser_source) return;
-    const char* p = parser_source;
-    int current_line = 1;
-    while (*p && current_line < line) {
-        if (*p == '\n') current_line++;
-        p++;
-    }
-    if (!*p) return;
-    const char* line_start = p;
-    while (*p && *p != '\n') p++;
-    size_t line_len = (size_t)(p - line_start);
-    if (line_len > 0) {
-        fprintf(stderr, "  | %.*s\n", (int)line_len, line_start);
-    }
+    print_source_context(parser_source, line);
 }
 
 void print_caret(Token* token) {
@@ -33,57 +22,56 @@ void print_caret(Token* token) {
         col++;
         p++;
     }
-    fprintf(stderr, "  | ");
-    for (int i = 1; i < col; i++) fprintf(stderr, " ");
-    if (token->length > 0) {
-        fprintf(stderr, "^");
-        for (int i = 1; i < token->length && i < 40; i++) fprintf(stderr, "~");
-    } else {
-        fprintf(stderr, "^");
-    }
-    fprintf(stderr, "\n");
+    print_caret_at(parser_source, token->line, col, token->length);
 }
 
 void error_at(Token* token, const char* message) {
     if (parser.panic_mode) return;
     parser.panic_mode = true;
-    fprintf(stderr, "\033[31m\033[1merror\033[0m");
-    if (token->line > 0) {
-        fprintf(stderr, " [\033[33m%d\033[0m]", token->line);
-    }
+    parser.had_error = true;
+
+    ErrorCode code = ERR_UNEXPECTED_TOKEN;
+    if (strstr(message, "Expect expression")) code = ERR_EXPECT_EXPR;
+    else if (strstr(message, "Expect '")) code = ERR_EXPECT_TOKEN;
+    else if (strstr(message, "Undeclared")) code = ERR_UNDECLARED;
+    else if (strstr(message, "Type mismatch")) code = ERR_TYPE_MISMATCH;
+    else if (strstr(message, "missing brace")) code = ERR_MISSING_BRACE;
+    else if (strstr(message, "missing paren")) code = ERR_MISSING_PAREN;
+    else if (strstr(message, "';'")) code = ERR_MISSING_SEMICOLON;
+    else if (strstr(message, "already")) code = ERR_DUPLICATE_DECL;
+    else if (strstr(message, "Cannot assign")) code = ERR_INVALID_ASSIGNMENT;
+    else if (strstr(message, "Too many")) code = ERR_TOO_MANY_ARGS;
+    else if (strstr(message, "Too few")) code = ERR_TOO_FEW_ARGS;
+    else if (strstr(message, "return")) code = ERR_RETURN_TYPE;
+
+    const char* hint = get_hint_for_error(code);
+
+    // Build context message with token info
+    char full_msg[512];
     if (token->type == TOKEN_EOF) {
-        fprintf(stderr, " at end");
+        snprintf(full_msg, sizeof(full_msg), "%s (at end of file)", message);
     } else if (token->type == TOKEN_ERROR) {
-        // Nothing.
+        snprintf(full_msg, sizeof(full_msg), "%s", message);
     } else {
-        fprintf(stderr, " at '\033[36m%.*s\033[0m'", token->length, token->start);
+        snprintf(full_msg, sizeof(full_msg), "%s at '%.*s'", message, token->length, token->start);
     }
-    fprintf(stderr, ": %s\n", message);
+
+    diag_emit(DIAG_ERROR, code, token->line, 0, full_msg, hint, NULL);
     print_source_line(token->line);
-    if (token->type != TOKEN_EOF) {
+    if (token->type != TOKEN_EOF && token->type != TOKEN_ERROR) {
         print_caret(token);
     }
-    if (strstr(message, "Expect '(' after")) {
-        fprintf(stderr, "\033[32m  --> Did you forget parentheses?\033[0m\n");
-    } else if (strstr(message, "Expect ')' after")) {
-        fprintf(stderr, "\033[32m  --> Check for unmatched opening parenthesis.\033[0m\n");
-    } else if (strstr(message, "Expect ';' after")) {
-        fprintf(stderr, "\033[32m  --> Add a semicolon at the end of the statement.\033[0m\n");
-    } else if (strstr(message, "Undeclared")) {
-        fprintf(stderr, "\033[32m  --> Declare the variable first: var name = value\033[0m\n");
-    }
-    parser.had_error = true;
-}
-
-void error(const char* message) {
-    error_at(&parser.previous, message);
 }
 
 void error_at_current(const char* message) {
     error_at(&parser.current, message);
 }
 
-void advance_token() {
+void error(const char* message) {
+    error_at(&parser.previous, message);
+}
+
+void advance_token(void) {
     parser.previous = parser.current;
     for (;;) {
         parser.current = next_token();
@@ -110,7 +98,7 @@ bool match_token(CnextTokenType type) {
     return true;
 }
 
-void optionally_consume_semicolon() {
+void optionally_consume_semicolon(void) {
     match_token(TOKEN_SEMICOLON);
 }
 
@@ -125,7 +113,7 @@ bool match_identifier_text(const char* text, int len) {
     return true;
 }
 
-char* parse_attribute_name() {
+char* parse_attribute_name(void) {
     if (!match_token(TOKEN_AT)) return NULL;
     consume(TOKEN_IDENTIFIER, "Expect attribute name after '@'.");
     char* attr = (char*)malloc(parser.previous.length + 1);
@@ -144,10 +132,13 @@ char* parse_attribute_name() {
     return attr;
 }
 
-void synchronize() {
+void synchronize(void) {
     parser.panic_mode = false;
     while (parser.current.type != TOKEN_EOF) {
         if (parser.previous.type == TOKEN_SEMICOLON) return;
+        // Also sync after closing brace (end of block)
+        if (parser.previous.type == TOKEN_RBRACE) return;
+
         switch (parser.current.type) {
             case TOKEN_CLASS:
             case TOKEN_TRAIT:
@@ -162,6 +153,20 @@ void synchronize() {
             case TOKEN_RBRACE:
             case TOKEN_CASE:
             case TOKEN_DEFAULT:
+            case TOKEN_IMPORT:
+            case TOKEN_CONST:
+            case TOKEN_VAR:
+            case TOKEN_TYPE_ALIAS:
+            case TOKEN_STRUCT:
+            case TOKEN_ENUM:
+            case TOKEN_INTERFACE:
+            case TOKEN_TRY:
+            case TOKEN_MATCH:
+            case TOKEN_COROUTINE:
+            case TOKEN_ASYNC:
+            case TOKEN_MACRO:
+            case TOKEN_CONSTEXPR:
+            case TOKEN_EXTERN:
                 return;
             default:
                 ;

@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 echo ========================================
-echo   Cnext v3.5 Uninstaller
+echo   Cnext v6.0 Uninstaller
 echo ========================================
 echo.
 
@@ -23,7 +23,7 @@ REM Remove from PATH
 echo Removing from PATH...
 for /f "tokens=2*" %%a in ('reg query "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment" /v Path 2^>nul') do set "CURRENT_PATH=%%b"
 
-REM Remove Cnext from PATH
+REM Remove Cnext from PATH (handle all ordering cases)
 set "NEW_PATH=!CURRENT_PATH:;%INSTALL_DIR%\bin=!"
 set "NEW_PATH=!NEW_PATH:%INSTALL_DIR%\bin;=!"
 set "NEW_PATH=!NEW_PATH:%INSTALL_DIR%\bin=!"

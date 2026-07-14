@@ -64,6 +64,10 @@ void reset_codegen_state(void) {
     codegen_sourcemap = NULL;
     codegen_gen_line = 1;
     codegen_last_src_line = -1;
+    bench_counter = 0;
+    loop_counter = 0;
+    try_counter = 0;
+    match_counter = 0;
 
     while (closure_list) {
         ClosureInfo* ci = closure_list;

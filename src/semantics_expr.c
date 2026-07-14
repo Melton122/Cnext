@@ -95,9 +95,23 @@ CnextTokenType analyze_expression(ASTNode* node) {
                 } else if (node->token.type == TOKEN_PLUS &&
                     (left_type == TOKEN_STR_TYPE || right_type == TOKEN_STR_TYPE)) {
                     type = TOKEN_STR_TYPE;
-                } else if (left_type == TOKEN_FLOAT_TYPE || right_type == TOKEN_FLOAT_TYPE) {
-                    type = TOKEN_FLOAT_TYPE;
-                } else if (left_type == TOKEN_INT_TYPE && right_type == TOKEN_INT_TYPE) {
+                } else if (left_type == TOKEN_DOUBLE_TYPE || right_type == TOKEN_DOUBLE_TYPE ||
+                           left_type == TOKEN_FLOAT_TYPE || right_type == TOKEN_FLOAT_TYPE) {
+                    // Float/double promotion: prefer double if either side is double
+                    type = (left_type == TOKEN_DOUBLE_TYPE || right_type == TOKEN_DOUBLE_TYPE)
+                        ? TOKEN_DOUBLE_TYPE : TOKEN_FLOAT_TYPE;
+                } else if (left_type == TOKEN_LONG_TYPE || right_type == TOKEN_LONG_TYPE ||
+                           left_type == TOKEN_ULONG_TYPE || right_type == TOKEN_ULONG_TYPE) {
+                    // Long promotion: prefer unsigned long if either side is ulong
+                    type = (left_type == TOKEN_ULONG_TYPE || right_type == TOKEN_ULONG_TYPE)
+                        ? TOKEN_ULONG_TYPE : TOKEN_LONG_TYPE;
+                } else if (left_type == TOKEN_INT_TYPE || right_type == TOKEN_INT_TYPE ||
+                           left_type == TOKEN_UINT_TYPE || right_type == TOKEN_UINT_TYPE) {
+                    type = TOKEN_INT_TYPE;
+                } else if (left_type == TOKEN_CHAR_TYPE || right_type == TOKEN_CHAR_TYPE ||
+                           left_type == TOKEN_BYTE_TYPE || right_type == TOKEN_BYTE_TYPE ||
+                           left_type == TOKEN_USHORT_TYPE || right_type == TOKEN_USHORT_TYPE ||
+                           left_type == TOKEN_UBYTE_TYPE || right_type == TOKEN_UBYTE_TYPE) {
                     type = TOKEN_INT_TYPE;
                 }
             }

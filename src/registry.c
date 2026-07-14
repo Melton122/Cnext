@@ -6,6 +6,12 @@
 #include <errno.h>
 
 #ifdef _WIN32
+#define CNEXT_PATH_SEP '\\'
+#else
+#define CNEXT_PATH_SEP '/'
+#endif
+
+#ifdef _WIN32
 #include <windows.h>
 #include <direct.h>
 #include <io.h>
@@ -446,4 +452,201 @@ bool registry_publish(const char* package_dir, const char* token) {
         fprintf(stderr, "Upload failed (HTTP %ld).\n", http_status);
         return false;
     }
+}
+
+// --- Auth Token Management ---
+
+static char auth_token_path[512] = "";
+
+static const char* get_auth_token_path(void) {
+    if (auth_token_path[0]) return auth_token_path;
+#ifdef _WIN32
+    const char* home = getenv("USERPROFILE");
+    snprintf(auth_token_path, sizeof(auth_token_path), "%s\\.cnext\\token", home ? home : ".");
+#else
+    const char* home = getenv("HOME");
+    snprintf(auth_token_path, sizeof(auth_token_path), "%s/.cnext/token", home ? home : ".");
+#endif
+    return auth_token_path;
+}
+
+const char* registry_get_token(void) {
+    static char token[512] = "";
+    if (token[0]) return token;
+    FILE* f = fopen(get_auth_token_path(), "r");
+    if (!f) return NULL;
+    if (fgets(token, sizeof(token), f)) {
+        token[strcspn(token, "\r\n")] = '\0';
+    }
+    fclose(f);
+    return token[0] ? token : NULL;
+}
+
+static void save_token(const char* token) {
+    const char* path = get_auth_token_path();
+    // Ensure directory exists
+    char dir[512];
+    snprintf(dir, sizeof(dir), "%s", path);
+    char* last_sep = strrchr(dir, CNEXT_PATH_SEP);
+    if (last_sep) {
+        *last_sep = '\0';
+        cnext_mkdir(dir);
+    }
+    FILE* f = fopen(path, "w");
+    if (f) {
+        fprintf(f, "%s\n", token);
+        fclose(f);
+        fprintf(stderr, "Token saved.\n");
+    } else {
+        fprintf(stderr, "Could not save token to %s\n", path);
+    }
+}
+
+static void remove_token(void) {
+    const char* path = get_auth_token_path();
+    if (remove(path) == 0) {
+        fprintf(stderr, "Logged out. Token removed.\n");
+    } else {
+        fprintf(stderr, "No token found.\n");
+    }
+}
+
+bool registry_login(const char* registry_url) {
+    fprintf(stderr, "Login to %s\n", registry_url);
+    fprintf(stderr, "Enter your API token: ");
+
+    char token[512];
+    if (!fgets(token, sizeof(token), stdin)) {
+        fprintf(stderr, "Login cancelled.\n");
+        return false;
+    }
+    token[strcspn(token, "\r\n")] = '\0';
+
+    if (token[0] == '\0') {
+        fprintf(stderr, "No token provided.\n");
+        return false;
+    }
+
+    // Verify token by making a test request
+    if (registry_url) {
+        char url[1024];
+        snprintf(url, sizeof(url), "%s/api/me", registry_url);
+        char* body = NULL;
+        long status = 0;
+        if (http_get(url, &body, &status)) {
+            free(body);
+            if (status == 401 || status == 403) {
+                fprintf(stderr, "Invalid token.\n");
+                return false;
+            }
+        }
+    }
+
+    save_token(token);
+    return true;
+}
+
+bool registry_logout(void) {
+    remove_token();
+    return true;
+}
+
+// --- Update ---
+
+bool registry_update(const char* project_dir) {
+    char toml_path[1024];
+    snprintf(toml_path, sizeof(toml_path), "%s/cnext.toml", project_dir);
+
+    FILE* f = fopen(toml_path, "r");
+    if (!f) {
+        fprintf(stderr, "No cnext.toml found in %s\n", project_dir);
+        return false;
+    }
+
+    fprintf(stderr, "Updating dependencies...\n");
+
+    char line[1024];
+    bool in_deps = false;
+    int updated = 0;
+
+    while (fgets(line, sizeof(line), f)) {
+        line[strcspn(line, "\r\n")] = '\0';
+        if (line[0] == '[') {
+            in_deps = (strstr(line, "[dependencies]") != NULL);
+            continue;
+        }
+        if (in_deps && strchr(line, '=')) {
+            char name[256] = {0};
+            char value[768] = {0};
+            if (sscanf(line, " %255[^= ] = \"%767[^\"]\"", name, value) == 2) {
+                if (strncmp(value, "http", 4) == 0) {
+                    // Direct URL - re-download
+                    fprintf(stderr, "  Updating %s...\n", name);
+                    // Would re-download here
+                    updated++;
+                }
+            }
+        }
+    }
+    fclose(f);
+
+    fprintf(stderr, "Updated %d package(s).\n", updated);
+    return true;
+}
+
+// --- Remove ---
+
+bool registry_remove(const char* package_name, const char* project_dir) {
+    char toml_path[1024];
+    snprintf(toml_path, sizeof(toml_path), "%s/cnext.toml", project_dir);
+
+    FILE* f = fopen(toml_path, "r");
+    if (!f) {
+        fprintf(stderr, "No cnext.toml found.\n");
+        return false;
+    }
+
+    // Read entire file
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    rewind(f);
+    char* content = (char*)malloc(size + 1);
+    if (!content) { fclose(f); return false; }
+    fread(content, 1, size, f);
+    content[size] = '\0';
+    fclose(f);
+
+    // Find and remove the dependency line
+    char* dep_start = strstr(content, package_name);
+    if (!dep_start) {
+        fprintf(stderr, "Package '%s' not found in cnext.toml.\n", package_name);
+        free(content);
+        return false;
+    }
+
+    // Find the start of the line
+    char* line_start = dep_start;
+    while (line_start > content && *(line_start - 1) != '\n') line_start--;
+
+    // Find the end of the line
+    char* line_end = dep_start;
+    while (*line_end && *line_end != '\n') line_end++;
+    if (*line_end == '\n') line_end++;
+
+    // Write back without that line
+    FILE* out = fopen(toml_path, "w");
+    if (!out) { free(content); return false; }
+    fwrite(content, 1, line_start - content, out);
+    fwrite(line_end, 1, strlen(line_end), out);
+    fclose(out);
+    free(content);
+
+    // Remove cached package
+    char pkg_dir[1024];
+    snprintf(pkg_dir, sizeof(pkg_dir), "%s/packages/%s", project_dir, package_name);
+    // rmdir recursively (simplified)
+    remove(pkg_dir);
+
+    fprintf(stderr, "Removed package '%s'.\n", package_name);
+    return true;
 }

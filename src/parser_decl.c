@@ -237,6 +237,10 @@ static ASTNode* enum_declaration() {
     while (!check(TOKEN_RBRACE) && !check(TOKEN_EOF)) {
         if (match_token(TOKEN_IDENTIFIER)) {
             ASTNode* member = create_node(AST_IDENTIFIER, parser.previous);
+            // Support enum values: RED = 0xFF0000 or RED = 5
+            if (match_token(TOKEN_EQUAL)) {
+                member->left = expression();
+            }
             add_child(node, member);
             match_token(TOKEN_COMMA);
         } else {
@@ -491,6 +495,21 @@ static ASTNode* extend_declaration() {
     return node;
 }
 
+// type MyType = OtherType
+// type StringList = List<str>
+static ASTNode* type_alias_declaration(void) {
+    consume(TOKEN_IDENTIFIER, "Expect type alias name.");
+    Token name = parser.previous;
+    ASTNode* node = create_node(AST_TYPE_ALIAS, name);
+
+    consume(TOKEN_EQUAL, "Expect '=' after type alias name.");
+    ASTNode* target_type = parse_type();
+    node->left = target_type;
+
+    optionally_consume_semicolon();
+    return node;
+}
+
 ASTNode* declaration() {
     char* attr_name = NULL;
     if (check(TOKEN_AT)) {
@@ -499,6 +518,7 @@ ASTNode* declaration() {
     ASTNode* node = NULL;
     if (match_token(TOKEN_CONST)) node = var_declaration(true);
     else if (match_token(TOKEN_CONSTEXPR)) node = constexpr_declaration();
+    else if (match_token(TOKEN_TYPE_ALIAS)) node = type_alias_declaration();
     else if (match_token(TOKEN_IMPORT)) node = import_declaration();
     else if (match_token(TOKEN_STRUCT)) node = struct_declaration();
     else if (match_token(TOKEN_ENUM)) node = enum_declaration();

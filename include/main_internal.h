@@ -27,8 +27,12 @@ int _mkdir(const char* path);
 #include "codegen.h"
 #include "parser.h"
 #include "semantics.h"
+#include "formatter.h"
+#include "linter.h"
+#include "repl.h"
+#include "registry.h"
 
-#define CNEXT_VERSION "6.0"
+#define CNEXT_VERSION "9.0"
 #define CNEXT_TEMP_C "temp_out.c"
 #define CNEXT_PATH_MAX 4096
 

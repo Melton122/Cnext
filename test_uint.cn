@@ -1,0 +1,4 @@
+main {
+    uint x = 42
+    printin(x)
+}

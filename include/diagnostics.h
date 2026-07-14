@@ -2,13 +2,37 @@
 #define DIAGNOSTICS_H
 
 #include <stdio.h>
+#include <stdbool.h>
 
 // Terminal color support
 #ifdef _WIN32
 #include <windows.h>
 static HANDLE _diag_hConsole = NULL;
-static int _diag_color_support = -1; // -1=unknown, 0=no, 1=yes
+static int _diag_color_support = -1;
 #endif
+
+// Error codes
+typedef enum {
+    ERR_NONE = 0,
+    ERR_EXPECT_EXPR,        // E001
+    ERR_EXPECT_TOKEN,       // E002
+    ERR_UNDECLARED,         // E003
+    ERR_TYPE_MISMATCH,      // E004
+    ERR_UNEXPECTED_TOKEN,   // E005
+    ERR_MISSING_BRACE,      // E006
+    ERR_MISSING_PAREN,      // E007
+    ERR_MISSING_SEMICOLON,  // E008
+    ERR_DUPLICATE_DECL,     // E009
+    ERR_INVALID_ASSIGNMENT, // E010
+    ERR_TOO_MANY_ARGS,      // E011
+    ERR_TOO_FEW_ARGS,       // E012
+    ERR_RETURN_TYPE,        // E013
+    ERR_BREAK_OUTSIDE,      // E014
+    ERR_CONTINUE_OUTSIDE,   // E015
+    ERR_DIVISION_ZERO,      // E016
+    ERR_OVERFLOW,           // E017
+    ERR_MAX
+} ErrorCode;
 
 static void init_diagnostics(void) {
 #ifdef _WIN32
@@ -17,12 +41,10 @@ static void init_diagnostics(void) {
         DWORD mode = 0;
         _diag_color_support = (GetConsoleMode(_diag_hConsole, &mode)) ? 1 : 0;
     }
-#else
-    // Assume ANSI support on Unix/macOS
 #endif
 }
 
-// Color codes for terminal
+// Color codes
 #define COLOR_RESET   "\033[0m"
 #define COLOR_RED     "\033[31m"
 #define COLOR_YELLOW  "\033[33m"
@@ -30,14 +52,41 @@ static void init_diagnostics(void) {
 #define COLOR_CYAN    "\033[36m"
 #define COLOR_BOLD    "\033[1m"
 #define COLOR_DIM     "\033[2m"
+#define COLOR_MAGENTA "\033[35m"
 
-// Diagnostic message types
+// Diagnostic levels
 typedef enum {
     DIAG_ERROR,
     DIAG_WARNING,
     DIAG_NOTE,
     DIAG_HINT
 } DiagLevel;
+
+// Error info structure
+typedef struct {
+    ErrorCode code;
+    DiagLevel level;
+    int line;
+    int column;
+    const char* message;
+    const char* hint;
+    const char* note;
+} Diagnostic;
+
+// Global error counter
+static int _diag_error_count = 0;
+static int _diag_warning_count = 0;
+
+static inline int diag_get_error_count(void) { return _diag_error_count; }
+static inline int diag_get_warning_count(void) { return _diag_warning_count; }
+static inline void diag_reset_counts(void) { _diag_error_count = 0; _diag_warning_count = 0; }
+
+static const char* error_code_string(ErrorCode code) {
+    static char buf[8];
+    if (code == ERR_NONE) return "----";
+    snprintf(buf, sizeof(buf), "E%03d", (int)code);
+    return buf;
+}
 
 static const char* diag_color(DiagLevel level) {
     switch (level) {
@@ -59,59 +108,122 @@ static const char* diag_label(DiagLevel level) {
     }
 }
 
-// Suggestion mapping for common errors
-typedef struct {
-    const char* pattern;
-    const char* suggestion;
-} ErrorSuggestion;
-
-static const ErrorSuggestion suggestions[] = {
-    {"Expect '(' after",       "Did you forget parentheses? Try: func_name(args)"},
-    {"Expect ')' after",       "Missing closing parenthesis. Check for unmatched '('."},
-    {"Expect ';' after",       "Missing semicolon. Add ';' at end of statement."},
-    {"Expect '{' before",      "Missing opening brace. Check block structure."},
-    {"Expect '}' after",       "Missing closing brace. Check block structure."},
-    {"Undeclared identifier",  "Variable not declared. Use 'var x: type' or 'var x = val'."},
-    {"Expect expression",      "Invalid syntax here. Check operator usage."},
-    {"Type mismatch",          "Types don't match. Use 'as' for explicit casting."},
-    {"Cannot return value",    "Function returns void. Remove return value or add return type."},
-    {"Too many arguments",     "Check function signature for correct parameter count."},
-    {"Too few arguments",      "Missing required arguments. Check function signature."},
-    {NULL, NULL}
-};
-
-static const char* find_suggestion(const char* error_msg) {
-    for (int i = 0; suggestions[i].pattern; i++) {
-        if (strstr(error_msg, suggestions[i].pattern)) {
-            return suggestions[i].suggestion;
-        }
+// Source context for error display
+static void print_source_context(const char* source, int line) {
+    if (!source || line < 1) return;
+    const char* p = source;
+    int current_line = 1;
+    while (*p && current_line < line) {
+        if (*p == '\n') current_line++;
+        p++;
     }
-    return NULL;
+    if (!*p) return;
+    const char* line_start = p;
+    while (*p && *p != '\n') p++;
+    size_t line_len = (size_t)(p - line_start);
+    if (line_len > 0) {
+        fprintf(stderr, "%s  | %.*s%s\n", COLOR_DIM, (int)line_len, line_start, COLOR_RESET);
+    }
 }
 
-static void diag_emit(DiagLevel level, int line, const char* message, const char* source_line, const char* hint) {
+static void print_caret_at(const char* source, int line, int col, int length) {
+    if (!source || line < 1) return;
+    const char* p = source;
+    int current_line = 1;
+    while (*p && current_line < line) {
+        if (*p == '\n') current_line++;
+        p++;
+    }
+    if (!*p) return;
+    fprintf(stderr, "%s  | ", COLOR_DIM);
+    for (int i = 1; i < col; i++) fprintf(stderr, " ");
+    fprintf(stderr, "%s^", COLOR_GREEN);
+    for (int i = 1; i < length && i < 40; i++) fprintf(stderr, "~");
+    fprintf(stderr, "%s\n", COLOR_RESET);
+}
+
+// Main diagnostic emission function
+static void diag_emit(DiagLevel level, ErrorCode code, int line, int col,
+                      const char* message, const char* hint, const char* note) {
     init_diagnostics();
+
+    if (level == DIAG_ERROR) _diag_error_count++;
+    if (level == DIAG_WARNING) _diag_warning_count++;
+
     const char* color = diag_color(level);
     const char* label = diag_label(level);
+    const char* code_str = error_code_string(code);
 
+    // Header line: error [E001] [line]: message
     if (line > 0) {
-        fprintf(stderr, "%s%s%s [%d]: %s%s\n", color, COLOR_BOLD, label, line, message, COLOR_RESET);
+        fprintf(stderr, "%s%s%s %s[%s]%s %s[%d]%s: %s\n",
+            color, COLOR_BOLD, label, COLOR_MAGENTA, code_str, COLOR_RESET,
+            COLOR_DIM, line, COLOR_RESET, message);
     } else {
-        fprintf(stderr, "%s%s%s: %s%s\n", color, COLOR_BOLD, label, message, COLOR_RESET);
+        fprintf(stderr, "%s%s%s %s[%s]%s: %s\n",
+            color, COLOR_BOLD, label, COLOR_MAGENTA, code_str, COLOR_RESET, message);
     }
 
-    if (source_line && source_line[0]) {
-        fprintf(stderr, "%s  | %s%s\n", COLOR_DIM, source_line, COLOR_RESET);
-    }
-
-    const char* suggestion = find_suggestion(message);
-    if (suggestion && level == DIAG_ERROR) {
-        fprintf(stderr, "%s  --> %s%s\n", COLOR_GREEN, suggestion, COLOR_RESET);
-    }
-
+    // Hint line
     if (hint) {
-        fprintf(stderr, "%s  = %s%s\n", COLOR_DIM, hint, COLOR_RESET);
+        fprintf(stderr, "%s  = hint: %s%s\n", COLOR_GREEN, hint, COLOR_RESET);
     }
+
+    // Note line
+    if (note) {
+        fprintf(stderr, "%s  = note: %s%s\n", COLOR_CYAN, note, COLOR_RESET);
+    }
+}
+
+// Convenience functions
+static void diag_error(ErrorCode code, int line, const char* message, const char* hint) {
+    diag_emit(DIAG_ERROR, code, line, 0, message, hint, NULL);
+}
+
+static void diag_warning(ErrorCode code, int line, const char* message, const char* hint) {
+    diag_emit(DIAG_WARNING, code, line, 0, message, hint, NULL);
+}
+
+static void diag_note(int line, const char* message) {
+    diag_emit(DIAG_NOTE, ERR_NONE, line, 0, message, NULL, NULL);
+}
+
+static void diag_hint_msg(const char* message) {
+    diag_emit(DIAG_HINT, ERR_NONE, 0, 0, message, NULL, NULL);
+}
+
+// Suggestion mapping for common errors
+typedef struct {
+    ErrorCode code;
+    const char* hint;
+} ErrorHint;
+
+static const ErrorHint error_hints[] = {
+    {ERR_EXPECT_EXPR,      "Check operator usage or variable names."},
+    {ERR_EXPECT_TOKEN,     "Add the missing token shown above."},
+    {ERR_UNDECLARED,       "Declare the variable first: var name = value"},
+    {ERR_TYPE_MISMATCH,    "Types don't match. Use 'as' for explicit casting."},
+    {ERR_UNEXPECTED_TOKEN, "Unexpected token. Check syntax near this location."},
+    {ERR_MISSING_BRACE,    "Check block structure for unmatched braces."},
+    {ERR_MISSING_PAREN,    "Check for unmatched parentheses."},
+    {ERR_MISSING_SEMICOLON,"Add a semicolon at the end of the statement."},
+    {ERR_DUPLICATE_DECL,   "This name is already declared in this scope."},
+    {ERR_INVALID_ASSIGNMENT,"Cannot assign to this expression."},
+    {ERR_TOO_MANY_ARGS,    "Check function signature for correct parameter count."},
+    {ERR_TOO_FEW_ARGS,     "Missing required arguments. Check function signature."},
+    {ERR_RETURN_TYPE,      "Function returns void. Remove return value or add return type."},
+    {ERR_BREAK_OUTSIDE,    "'break' can only be used inside loops or switch."},
+    {ERR_CONTINUE_OUTSIDE, "'continue' can only be used inside loops."},
+    {ERR_DIVISION_ZERO,    "Division by zero is undefined."},
+    {ERR_OVERFLOW,         "Numeric literal is too large for this type."},
+    {ERR_NONE, NULL}
+};
+
+static const char* get_hint_for_error(ErrorCode code) {
+    for (int i = 0; error_hints[i].hint; i++) {
+        if (error_hints[i].code == code) return error_hints[i].hint;
+    }
+    return NULL;
 }
 
 #endif // DIAGNOSTICS_H

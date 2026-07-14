@@ -50,12 +50,22 @@ typedef enum {
     // Traits / Mixins
     TOKEN_TRAIT,
 
+    // v8.0: Type aliases
+    TOKEN_TYPE_ALIAS,   // type alias keyword
+
     // Types
     TOKEN_INT_TYPE,
+    TOKEN_LONG_TYPE,
     TOKEN_FLOAT_TYPE,
+    TOKEN_DOUBLE_TYPE,
     TOKEN_STR_TYPE,
     TOKEN_BOOL_TYPE,
     TOKEN_CHAR_TYPE,
+    TOKEN_BYTE_TYPE,
+    TOKEN_UINT_TYPE,
+    TOKEN_ULONG_TYPE,
+    TOKEN_USHORT_TYPE,
+    TOKEN_UBYTE_TYPE,
 
     // Literals
     TOKEN_IDENTIFIER,
@@ -159,6 +169,6 @@ typedef struct {
 } Token;
 
 void init_lexer(const char* source);
-Token next_token();
+Token next_token(void);
 
 #endif // LEXER_H

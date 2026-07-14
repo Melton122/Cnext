@@ -1,15 +1,16 @@
 #include "sourcemap.h"
+#include "checked_alloc.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 SourceMap* sourcemap_create(const char* source_file, const char* generated_file) {
-    SourceMap* map = (SourceMap*)calloc(1, sizeof(SourceMap));
+    SourceMap* map = (SourceMap*)checked_calloc(1, sizeof(SourceMap));
     map->capacity = 256;
-    map->entries = (SourceMapEntry*)malloc(sizeof(SourceMapEntry) * map->capacity);
+    map->entries = (SourceMapEntry*)checked_malloc(sizeof(SourceMapEntry) * map->capacity);
     map->count = 0;
-    map->source_filename = strdup(source_file);
-    map->generated_filename = strdup(generated_file);
+    map->source_filename = checked_strdup(source_file);
+    map->generated_filename = checked_strdup(generated_file);
     return map;
 }
 
@@ -17,7 +18,7 @@ void sourcemap_add(SourceMap* map, int src_line, int src_col, int gen_line, int 
     if (!map) return;
     if (map->count >= map->capacity) {
         map->capacity *= 2;
-        map->entries = (SourceMapEntry*)realloc(map->entries, sizeof(SourceMapEntry) * map->capacity);
+        map->entries = (SourceMapEntry*)checked_realloc(map->entries, sizeof(SourceMapEntry) * map->capacity);
     }
     map->entries[map->count].source_line = src_line;
     map->entries[map->count].source_col = src_col;

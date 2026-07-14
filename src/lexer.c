@@ -19,20 +19,20 @@ void init_lexer(const char* source) {
     lexer.unterminated_comment = false;
 }
 
-static bool is_at_end() {
+static bool is_at_end(void) {
     return *lexer.current == '\0';
 }
 
-static char advance() {
+static char advance(void) {
     lexer.current++;
     return lexer.current[-1];
 }
 
-static char peek() {
+static char peek(void) {
     return *lexer.current;
 }
 
-static char peek_next() {
+static char peek_next(void) {
     if (is_at_end()) return '\0';
     return lexer.current[1];
 }
@@ -62,7 +62,7 @@ static Token error_token(const char* message) {
     return token;
 }
 
-static void skip_whitespace() {
+static void skip_whitespace(void) {
     for (;;) {
         char c = peek();
         switch (c) {
@@ -109,7 +109,7 @@ static CnextTokenType check_keyword(int start, int length, const char* rest, Cne
     return TOKEN_IDENTIFIER;
 }
 
-static CnextTokenType identifier_type() {
+static CnextTokenType identifier_type(void) {
     switch (lexer.start[0]) {
         case 'a': {
             CnextTokenType t = check_keyword(1, 5, "ssert", TOKEN_ASSERT);
@@ -120,12 +120,13 @@ static CnextTokenType identifier_type() {
             if (t != TOKEN_IDENTIFIER) return t;
             return check_keyword(1, 1, "s", TOKEN_AS);
         }
-        case 'b': 
+        case 'b':
             if (lexer.current - lexer.start > 1) {
                 switch (lexer.start[1]) {
                     case 'r': return check_keyword(2, 3, "eak", TOKEN_BREAK);
                     case 'o': return check_keyword(1, 3, "ool", TOKEN_BOOL_TYPE);
                     case 'e': return check_keyword(2, 3, "nch", TOKEN_BENCH);
+                    case 'y': return check_keyword(2, 2, "te", TOKEN_BYTE_TYPE);
                 }
             }
             return check_keyword(1, 3, "ool", TOKEN_BOOL_TYPE);
@@ -155,7 +156,11 @@ static CnextTokenType identifier_type() {
                 }
             }
             break;
-        case 'd': return check_keyword(1, 6, "efault", TOKEN_DEFAULT);
+        case 'd': {
+            CnextTokenType t = check_keyword(1, 6, "efault", TOKEN_DEFAULT);
+            if (t != TOKEN_IDENTIFIER) return t;
+            return check_keyword(1, 6, "ouble", TOKEN_DOUBLE_TYPE);
+        }
         case 'e': 
             if (lexer.current - lexer.start > 1) {
                 switch (lexer.start[1]) {
@@ -282,8 +287,12 @@ static CnextTokenType identifier_type() {
                         if (t != TOKEN_IDENTIFIER) return t;
                         return check_keyword(2, 4, "read", TOKEN_THREAD);
                     }
+                    case 'y': {
+                        CnextTokenType t = check_keyword(2, 4, "peof", TOKEN_TYPEOF);
+                        if (t != TOKEN_IDENTIFIER) return t;
+                        return check_keyword(2, 1, "ype", TOKEN_TYPE_ALIAS);
+                    }
                     case 'e': return check_keyword(2, 2, "st", TOKEN_TEST);
-                    case 'y': return check_keyword(2, 4, "peof", TOKEN_TYPEOF);
                 }
             }
             break;
@@ -294,22 +303,50 @@ static CnextTokenType identifier_type() {
             return check_keyword(1, 3, "ith", TOKEN_WITH);
         }
         case 'y': return check_keyword(1, 4, "ield", TOKEN_YIELD);
-        case 'l': return check_keyword(1, 3, "ock", TOKEN_LOCK);
-        case 'u': {
-            CnextTokenType t = check_keyword(1, 5, "nlock", TOKEN_UNLOCK);
+        case 'l': {
+            CnextTokenType t = check_keyword(1, 3, "ock", TOKEN_LOCK);
             if (t != TOKEN_IDENTIFIER) return t;
+            return check_keyword(1, 3, "ong", TOKEN_LONG_TYPE);
+        }
+        case 'u': {
+            if (lexer.current - lexer.start > 1) {
+                switch (lexer.start[1]) {
+                    case 'n': {
+                        CnextTokenType t = check_keyword(2, 4, "lock", TOKEN_UNLOCK);
+                        if (t != TOKEN_IDENTIFIER) return t;
+                        break;
+                    }
+                    case 'i': {
+                        CnextTokenType t = check_keyword(2, 2, "nt", TOKEN_UINT_TYPE);
+                        if (t != TOKEN_IDENTIFIER) return t;
+                        t = check_keyword(2, 3, "ong", TOKEN_ULONG_TYPE);
+                        if (t != TOKEN_IDENTIFIER) return t;
+                        break;
+                    }
+                    case 's': {
+                        CnextTokenType t = check_keyword(2, 4, "hort", TOKEN_USHORT_TYPE);
+                        if (t != TOKEN_IDENTIFIER) return t;
+                        break;
+                    }
+                    case 'b': {
+                        CnextTokenType t = check_keyword(2, 3, "yte", TOKEN_UBYTE_TYPE);
+                        if (t != TOKEN_IDENTIFIER) return t;
+                        break;
+                    }
+                }
+            }
             break;
         }
     }
     return TOKEN_IDENTIFIER;
 }
 
-static Token identifier() {
+static Token identifier(void) {
     while (isalpha(peek()) || isdigit(peek()) || peek() == '_') advance();
     return make_token(identifier_type());
 }
 
-static Token number() {
+static Token number(void) {
     while (isdigit(peek())) advance();
     if (peek() == '.' && isdigit(peek_next())) {
         advance();
@@ -319,7 +356,7 @@ static Token number() {
     return make_token(TOKEN_NUMBER);
 }
 
-static Token string() {
+static Token string(void) {
     while (peek() != '"' && !is_at_end()) {
         if (peek() == '\\') {
             advance();
@@ -335,7 +372,7 @@ static Token string() {
     return make_token(TOKEN_STRING_LITERAL);
 }
 
-Token next_token() {
+Token next_token(void) {
     skip_whitespace();
     if (lexer.unterminated_comment) {
         lexer.unterminated_comment = false;

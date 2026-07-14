@@ -103,6 +103,10 @@
           "match": "\\b(coroutine|resume|with)\\b"
         },
         {
+          "name": "keyword.threading.cnext",
+          "match": "\\b(thread|spawn|mutex|channel|lock|unlock|send|recv)\\b"
+        },
+        {
           "name": "keyword.async.cnext",
           "match": "\\b(async|await|run_async)\\b"
         },
@@ -124,7 +128,7 @@
       "patterns": [
         {
           "name": "support.type.primitive.cnext",
-          "match": "\\b(int|float|str|bool|char|void)\\b"
+          "match": "\\b(int|long|float|double|str|bool|char|byte|void|uint|ulong|ushort|ubyte|short)\\b"
         },
         {
           "name": "support.type.iter.cnext",
@@ -152,7 +156,7 @@
       "patterns": [
         {
           "name": "variable.language.self.cnext",
-          "match": "\\bself\\b"
+          "match": "\\b(self|this)\\b"
         },
         {
           "name": "constant.language.cnext",

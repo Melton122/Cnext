@@ -1,6 +1,6 @@
 #include "parser_internal.h"
 
-static bool is_lambda_lookahead() {
+static bool is_lambda_lookahead(void) {
     const char* p = parser.current.start;
     int depth = 1; // We assume we are right after the opening '('
     bool in_string = false;
@@ -49,13 +49,13 @@ static bool is_lambda_lookahead() {
     return false;
 }
 
-static bool is_paren_after_id() {
+static bool is_paren_after_id(void) {
     const char* p = parser.current.start + parser.current.length;
     while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;
     return *p == '(';
 }
 
-static bool is_named_arg_lookahead() {
+static bool is_named_arg_lookahead(void) {
     const char* p = parser.current.start + parser.current.length;
     while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;
     if (*p != '=') return false;

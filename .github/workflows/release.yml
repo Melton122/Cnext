@@ -1,0 +1,91 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: cnext-linux
+            ext: ''
+          - os: macos-latest
+            artifact: cnext-macos
+            ext: ''
+          - os: windows-latest
+            artifact: cnext-windows
+            ext: '.exe'
+    
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Dependencies (Linux)
+      if: runner.os == 'Linux'
+      run: sudo apt-get update && sudo apt-get install -y gcc make libcurl4-openssl-dev
+      
+    - name: Install Dependencies (macOS)
+      if: runner.os == 'macOS'
+      run: brew install gcc make curl
+      
+    - name: Install Make (Windows)
+      if: runner.os == 'Windows'
+      run: choco install make -y
+      
+    - name: Build
+      run: make
+      
+    - name: Package
+      run: |
+        mkdir -p dist
+        cp cnext${{ matrix.ext }} dist/
+        cp -r include dist/ 2>/dev/null || true
+        cp -r examples dist/ 2>/dev/null || true
+        cp -r docs dist/ 2>/dev/null || true
+        cp README.md dist/ 2>/dev/null || true
+        cp LICENSE dist/ 2>/dev/null || true
+        
+    - name: Create Archive
+      run: |
+        cd dist
+        if [ "${{ runner.os }}" = "Windows" ]; then
+          7z a ../${{ matrix.artifact }}-${{ github.ref_name }}.zip *
+        else
+          tar -czf ../${{ matrix.artifact }}-${{ github.ref_name }}.tar.gz *
+        fi
+        
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.artifact }}
+        path: ${{ matrix.artifact }}-*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Download All Artifacts
+      uses: actions/download-artifact@v4
+      
+    - name: Generate Checksums
+      run: |
+        find . -type f \( -name "*.zip" -o -name "*.tar.gz" \) -exec sha256sum {} \; > checksums.txt
+        
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      with:
+        generate_release_notes: true
+        files: |
+          cnext-linux/*
+          cnext-macos/*
+          cnext-windows/*
+          checksums.txt

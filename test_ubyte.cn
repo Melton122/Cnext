@@ -1,0 +1,4 @@
+main {
+    ubyte x = 255
+    printin(x)
+}

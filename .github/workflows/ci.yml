@@ -6,20 +6,28 @@ on:
   pull_request:
     branches: [ main, master ]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-and-test:
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     
     runs-on: ${{ matrix.os }}
     
     steps:
     - uses: actions/checkout@v4
     
-    - name: Install GCC (Ubuntu)
+    - name: Install Dependencies (Linux)
       if: runner.os == 'Linux'
-      run: sudo apt-get update && sudo apt-get install -y gcc make
+      run: sudo apt-get update && sudo apt-get install -y gcc make libcurl4-openssl-dev
+      
+    - name: Install Dependencies (macOS)
+      if: runner.os == 'macOS'
+      run: brew install gcc make curl
       
     - name: Install Make (Windows)
       if: runner.os == 'Windows'
@@ -28,5 +36,19 @@ jobs:
     - name: Build
       run: make
       
+    - name: Build (Debug)
+      run: make clean && make DEBUG=1
+      
     - name: Run Tests
       run: make test
+      
+    - name: Run Python Tests
+      if: runner.os != 'Windows'
+      run: python3 tests/run_tests.py || python tests/run_tests.py
+      
+    - name: Upload Build Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: cnext-${{ matrix.os }}
+        path: cnext*
+        retention-days: 7

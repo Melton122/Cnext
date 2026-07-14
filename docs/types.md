@@ -4,7 +4,7 @@
 
 ### int
 
-Integer numbers:
+32-bit integer:
 
 ```cnext
 var x = 42
@@ -12,14 +12,32 @@ var negative = -10
 var zero = 0
 ```
 
+### long
+
+64-bit integer:
+
+```cnext
+long big = 9999999999
+long negative = -9999999999
+```
+
 ### float
 
-Floating-point numbers:
+32-bit floating-point:
 
 ```cnext
 var pi = 3.14159
 var e = 2.71828
 var negative = -1.5
+```
+
+### double
+
+64-bit floating-point:
+
+```cnext
+double precise = 3.14159265358979
+double e = 2.718281828459045
 ```
 
 ### str
@@ -49,6 +67,73 @@ Single characters:
 var c = 'a'
 var digit = '9'
 var newline = '\n'
+```
+
+### byte
+
+8-bit unsigned integer (0-255):
+
+```cnext
+byte small = 255
+byte tiny = 0
+```
+
+### uint
+
+32-bit unsigned integer:
+
+```cnext
+uint positive = 4294967295
+uint zero = 0
+```
+
+### ulong
+
+64-bit unsigned integer:
+
+```cnext
+ulong big_positive = 18446744073709551615
+```
+
+### ushort
+
+16-bit unsigned integer:
+
+```cnext
+ushort medium = 65535
+```
+
+### ubyte
+
+8-bit unsigned integer:
+
+```cnext
+ubyte tiny = 255
+```
+
+## Type Aliases
+
+Create custom type names:
+
+```cnext
+type MyInt = int
+type Name = str
+
+MyInt x = 100
+Name name = "Test"
+```
+
+## Nullable Types
+
+Add `?` to make types nullable:
+
+```cnext
+str? optional_str = null
+int? optional_int = 42
+
+if optional_str != null {
+    printin(optional_str)
+}
 ```
 
 ## Composite Types
@@ -94,9 +179,6 @@ int i = f as int      // 7
 
 int n = 5
 float fn = n as float  // 5.0
-
-str s = "123"
-// int x = s as int  // Not supported, use parsing functions
 ```
 
 ## Null Values
@@ -106,14 +188,4 @@ Classes and strings can be null:
 ```cnext
 str s = null
 bool is_null = (s == null)  // true
-```
-
-## Type Checking
-
-```cnext
-var x = 42
-// x is an int
-
-var arr = {1, 2, 3}
-// arr is an int[]
 ```

@@ -1,10 +1,15 @@
 #include "parser_internal.h"
 
+#define IS_BUILTIN_TYPE(t) \
+    ((t) == TOKEN_INT_TYPE || (t) == TOKEN_LONG_TYPE || \
+     (t) == TOKEN_FLOAT_TYPE || (t) == TOKEN_DOUBLE_TYPE || \
+     (t) == TOKEN_STR_TYPE || (t) == TOKEN_BOOL_TYPE || \
+     (t) == TOKEN_CHAR_TYPE || (t) == TOKEN_BYTE_TYPE || \
+     (t) == TOKEN_UINT_TYPE || (t) == TOKEN_ULONG_TYPE || \
+     (t) == TOKEN_USHORT_TYPE || (t) == TOKEN_UBYTE_TYPE)
+
 bool is_name_token(CnextTokenType type) {
-    return type == TOKEN_IDENTIFIER ||
-           type == TOKEN_INT_TYPE || type == TOKEN_FLOAT_TYPE ||
-           type == TOKEN_STR_TYPE || type == TOKEN_BOOL_TYPE ||
-           type == TOKEN_CHAR_TYPE;
+    return type == TOKEN_IDENTIFIER || IS_BUILTIN_TYPE(type);
 }
 
 void consume_name(const char* message) {
@@ -15,11 +20,9 @@ void consume_name(const char* message) {
     error_at_current(message);
 }
 
-bool is_type() {
+bool is_type(void) {
     CnextTokenType type = parser.current.type;
-    if (type == TOKEN_INT_TYPE || type == TOKEN_FLOAT_TYPE || 
-        type == TOKEN_STR_TYPE || type == TOKEN_BOOL_TYPE || 
-        type == TOKEN_CHAR_TYPE || type == TOKEN_VAR ||
+    if (IS_BUILTIN_TYPE(type) || type == TOKEN_VAR ||
         type == TOKEN_ITER) {
         return true;
     }
@@ -115,13 +118,17 @@ ASTNode* parse_type() {
             consume(TOKEN_RBRACKET, "Expect ']' after '[' for array type.");
             node->is_array = true;
         }
+        // Nullable type: str?, int?, etc.
+        if (match_token(TOKEN_QUESTION)) {
+            node->is_pointer = true; // Reuse is_pointer flag for nullable
+        }
         return node;
     }
     error_at_current("Expect type.");
     return NULL;
 }
 
-bool is_generic_call_lookahead() {
+bool is_generic_call_lookahead(void) {
     const char* p = parser.current.start;
     // Skip whitespace
     while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;

@@ -13,7 +13,8 @@
   <a href="#quick-start">Quick Start</a> •
   <a href="#documentation">Documentation</a> •
   <a href="#examples">Examples</a> •
-  <a href="#contributing">Contributing</a>
+  <a href="#contributing">Contributing</a> •
+  <a href="#testing">Testing</a>
 </p>
 
 ---
@@ -23,7 +24,9 @@ Cnext is a high-level, statically-typed language with a familiar syntax that tra
 ## Features
 
 - **Modern Syntax** — Clean, readable code with type inference (`var`), string interpolation, and optional semicolons
-- **Static Typing** — Catch errors at compile time with a powerful type system
+- **Rich Type System** — `int`, `long`, `float`, `double`, `str`, `bool`, `char`, `byte`, `uint`, `ulong`, `ushort`, `ubyte`
+- **Type Aliases** — `type MyInt = int` for clearer code
+- **Nullable Types** — `str?`, `int?` for optional values
 - **Generics** — Write reusable code with parameterized types
 - **Closures** — First-class functions with captured variables
 - **Pattern Matching** — Expressive `match` expressions with wildcards
@@ -33,7 +36,16 @@ Cnext is a high-level, statically-typed language with a familiar syntax that tra
 - **Async/Await** — Asynchronous programming with `async func` and `await`
 - **Multithreading** — Thread-safe programming with `Mutex` and `Channel`
 - **Standard Library** — Modules for I/O, math, JSON, networking, crypto, and more
+- **String Utilities** — `contains`, `starts_with`, `ends_with`, `to_upper`, `to_lower`, `trim`, `find`, `replace`, and more
 - **Package Manager** — Built-in dependency management with `cnext.toml`
+- **Code Formatter** — `cnext fmt` for consistent code style
+- **Linter** — `cnext lint` with rules for unreachable code, comparisons, and more
+- **REPL** — `cnext repl` for interactive experimentation
+- **Optimizer** — 9 passes: constant propagation, copy propagation, peephole, identity elimination, constant folding, dead code elimination, branch simplification, tail-call detection, loop optimizations
+- **Package Registry** — `cnext search/install/publish/login/logout/update/remove`
+- **Language Server** — LSP for VS Code, Neovim, Helix, Sublime, Emacs
+- **Cross-Platform** — Windows, Linux, macOS support with conditional compilation
+- **Developer Tools** — `cnext doctor`, `cnext init`, `cnext upgrade`, `cnext cache`, `cnext config`
 
 ## Quick Start
 
@@ -45,11 +57,13 @@ Cnext is a high-level, statically-typed language with a familiar syntax that tra
 git clone https://github.com/Melton122/cnext.git
 cd cnext
 make
+make install
 ```
 
 **Prerequisites:**
-- GCC or Clang compiler
+- GCC or Clang compiler (C11 support)
 - Make (Linux/macOS) or MinGW (Windows)
+- libcurl (Linux/macOS, for networking)
 
 ### Hello World
 
@@ -67,19 +81,42 @@ Run it:
 cnext run hello.cn
 ```
 
+### Build Options
+
+```bash
+cnext build file.cn --release    # Optimized build
+cnext build file.cn --debug      # Debug build with symbols
+cnext build file.cn --verbose    # Show generated C code
+cnext build file.cn --clean      # Remove build artifacts
+```
+
 ## Language Overview
 
 ### Variables and Types
 
 ```cnext
 int x = 42
+long big = 9999999999
 float pi = 3.14
+double precise = 2.718281828
 str name = "Cnext"
 bool flag = true
+char letter = 'A'
+byte small = 255
+uint unsigned_val = 4294967295
 
 // Type inference
 var auto_detected = 100  // int
 var greeting = "Hi"      // str
+
+// Type aliases
+type MyInt = int
+type Name = str
+MyInt my_num = 100
+
+// Nullable types
+str? optional_str = null
+int? optional_int = 42
 ```
 
 ### Functions
@@ -111,8 +148,8 @@ class Animal {
         self.name = n
     }
 
-    func speak() {
-        printin("...")
+    func speak() -> str {
+        return "..."
     }
 }
 
@@ -121,8 +158,8 @@ class Dog extends Animal {
         super.new(n)
     }
 
-    override func speak() {
-        printin("Woof!")
+    override func speak() -> str {
+        return "Woof!"
     }
 }
 ```
@@ -141,11 +178,6 @@ class Box<T> {
         self.value = v
     }
 }
-
-var numbers = {1, 2, 3}
-var first_num = first(numbers)  // 1
-
-var box = new Box<int>(42)
 ```
 
 ### Closures
@@ -180,90 +212,34 @@ func color_name(Color c) -> str {
 }
 ```
 
-### Generators and Coroutines
+### Enum with Values
 
 ```cnext
-// Generator with yield
-func fibonacci() -> iter<int> {
-    var a = 0, b = 1
-    while true {
-        yield a
-        var temp = a + b
-        a = b
-        b = temp
-    }
+enum HttpStatus {
+    OK = 200,
+    NOT_FOUND = 404,
+    ERROR = 500
 }
 
-for var x in fibonacci() {
-    if x > 100 { break }
-    printin(x)
-}
-
-// Coroutine with resume
-coroutine func counter() -> iter<int> {
-    var i = 0
-    while true {
-        yield i
-        i = i + 1
+func describe(HttpStatus code) -> str {
+    match code {
+        200 => "OK"
+        404 => "Not Found"
+        _ => "Error"
     }
 }
 ```
 
-### Async/Await
+### String Utilities
 
 ```cnext
-async func fetch_data(str url) -> str {
-    // Async operations
-    return "data from " + url
-}
+import string_utils
 
-async func main_async() {
-    var result = await fetch_data("https://example.com")
-    printin(result)
-}
-
-main {
-    run_async main_async()
-}
-```
-
-### Threading
-
-```cnext
-import thread
-
-main {
-    var m = mutex_new()
-    var ch = channel_new(8)
-
-    // Mutex for thread-safe access
-    mutex_lock(m)
-    // critical section
-    mutex_unlock(m)
-
-    // Channel for communication
-    channel_send(ch, "hello")
-    var msg = channel_recv(ch)
-}
-```
-
-### Error Handling
-
-```cnext
-func divide(int a, int b) -> int {
-    if b == 0 {
-        throw "Division by zero"
-    }
-    return a / b
-}
-
-try {
-    var result = divide(10, 0)
-} catch (str err) {
-    printin("Error: " + err)
-} finally {
-    printin("Cleanup")
-}
+str s = "Hello, World!"
+printin(len(s))                           // 13
+printin(string_utils.to_upper(s))         // HELLO, WORLD!
+printin(string_utils.contains(s, "World")) // true
+printin(string_utils.replace(s, "World", "Cnext"))  // Hello, Cnext!
 ```
 
 ## Standard Library
@@ -312,28 +288,194 @@ cnext install
 # Build the compiler
 make
 
+# Build with debug symbols
+make DEBUG=1
+
 # Run tests
 make test
 
+# Run full test suite (compiler + Python tests)
+make check
+
+# Install to /usr/local/bin (Linux/macOS)
+make install
+
+# Install to %LOCALAPPDATA%\Cnext\bin (Windows)
+mingw32-make install
+
 # Clean build artifacts
 make clean
+
+# Format source code
+make format
+
+# Show build benchmarks
+make bench
 ```
 
 ## Project Structure
 
 ```
 cnext/
-├── src/           # Compiler source code
-├── include/       # Header files and runtime
-├── tests/         # Test files
-├── examples/      # Example programs
-├── docs/          # Documentation
-└── packages/      # Installed packages
+├── src/                    # Compiler source code
+│   ├── main.c              # CLI entry point
+│   ├── lexer.c             # Tokenizer
+│   ├── parser*.c           # Parser (6 files)
+│   ├── ast.c               # AST nodes
+│   ├── codegen*.c          # Code generation (8 files)
+│   ├── semantics*.c        # Semantic analysis (5 files)
+│   ├── optimizer.c         # Optimizer
+│   ├── formatter.c         # Code formatter
+│   ├── linter.c            # Linter
+│   ├── repl.c              # REPL
+│   ├── registry.c          # Package registry
+│   └── semver.c            # Semantic versioning
+├── include/                # Header files and runtime
+│   ├── runtime.h           # Runtime library (all functions)
+│   ├── collections.h       # Data structures
+│   ├── string_utils.h      # String utilities
+│   └── diagnostics.h       # Error diagnostics
+├── tests/                  # Test files (50+ tests)
+├── examples/               # Example programs
+├── docs/                   # Documentation
+├── lsp/                    # Language Server Protocol
+├── website/                # Registry website and playground
+└── Makefile                # Build system
 ```
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+We welcome contributions! Here's how to get started:
+
+### Development Setup
+
+1. Fork the repository
+2. Clone your fork:
+   ```bash
+   git clone https://github.com/YOUR_USERNAME/cnext.git
+   cd cnext
+   ```
+3. Build the compiler:
+   ```bash
+   make
+   ```
+4. Run tests:
+   ```bash
+   make test
+   ```
+
+### Code Style
+
+- **Language:** C (GNU C11 standard)
+- **Indentation:** 4 spaces (no tabs)
+- **Braces:** Allman style (opening brace on new line)
+- **Naming:** `snake_case` for functions/variables, `UPPER_CASE` for macros
+- **Header guards:** `#ifndef CNEXT_NAME_H` / `#define CNEXT_NAME_H`
+- **No comments** unless the intent is non-obvious
+- **Use `checked_alloc.h`** for all allocations
+
+### Making Changes
+
+1. Create a feature branch:
+   ```bash
+   git checkout -b feature/my-feature
+   ```
+2. Make your changes
+3. Run tests:
+   ```bash
+   make test
+   make check  # Full test suite
+   ```
+4. Commit with a clear message:
+   ```bash
+   git commit -m "Add feature: description of change"
+   ```
+5. Push and create a pull request
+
+### Reporting Issues
+
+Found a bug? Please report it:
+
+1. Check if the issue already exists in [GitHub Issues](https://github.com/Melton122/cnext/issues)
+2. If not, create a new issue with:
+   - **Title:** Clear, concise description
+   - **Environment:** OS, compiler version (`cnext version`)
+   - **Steps to reproduce:** Minimal code example
+   - **Expected behavior:** What should happen
+   - **Actual behavior:** What actually happens
+
+### What to Work On
+
+**Good first issues:**
+- Fix typos in documentation
+- Add test cases for edge cases
+- Improve error messages
+- Add examples
+
+**Larger contributions:**
+- New standard library modules
+- Optimizer improvements
+- Cross-platform enhancements
+- Language features
+
+## Testing
+
+### Running Tests
+
+```bash
+# Run compiler built-in tests
+make test
+
+# Run full test suite
+make check
+
+# Run specific test
+cnext build tests/test_v9.cn
+./out.exe
+```
+
+### Writing Tests
+
+Create a test file in `tests/`:
+
+```cnext
+// EXPECT: expected output line 1
+// EXPECT: expected output line 2
+
+main {
+    // Your test code
+    printin("Hello, World!")
+}
+```
+
+### Test Categories
+
+- **Lexer tests:** Token recognition
+- **Parser tests:** Syntax parsing
+- **Semantic tests:** Type checking
+- **Codegen tests:** Code generation
+- **Runtime tests:** Runtime behavior
+- **Optimizer tests:** Optimization passes
+- **Integration tests:** Full program tests
+
+## Examples
+
+See the `examples/` directory for complete programs:
+- `hello.cn` - Basic hello world
+- `classes.cn` - OOP with classes
+- `closures.cn` - Closure examples
+- `generators.cn` - Generator functions
+- `http_server.cn` - HTTP server
+- `calculator.cn` - Calculator
+- `todo_cli.cn` - CLI todo app
+
+## Documentation
+
+- [Language Overview](docs/syntax.md)
+- [Type System](docs/types.md)
+- [Standard Library](docs/stdlib.md)
+- [Architecture](docs/architecture.md)
+- [Installation](docs/installation.md)
 
 ## License
 

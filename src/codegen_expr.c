@@ -204,10 +204,10 @@ void generate_expression(ASTNode* node) {
                         { zero_val = "0"; got_zero = true; }
                 }
                 if (!got_zero && node->expr_type != TOKEN_EOF) {
+                    const char* zt = type_token_to_c(node->expr_type);
                     if (node->expr_type == TOKEN_STR_TYPE) zero_val = "(CnextString){NULL, 0}";
-                    else if (node->expr_type == TOKEN_INT_TYPE) zero_val = "0";
-                    else if (node->expr_type == TOKEN_FLOAT_TYPE) zero_val = "0.0f";
-                    else if (node->expr_type == TOKEN_BOOL_TYPE) zero_val = "0";
+                    else if (zt) zero_val = "0";
+                    else zero_val = "0";
                 }
                 const char* class_type = NULL;
                 if (node->left->left && node->left->left->type_name) {
@@ -267,26 +267,14 @@ void generate_expression(ASTNode* node) {
                             ASTNode* lambda = clvar->lambda_node;
                             fprintf(out, "((");
                             if (lambda->left->type != AST_BLOCK) {
-                                switch (lambda->left->expr_type) {
-                                    case TOKEN_INT_TYPE: fprintf(out, "int"); break;
-                                    case TOKEN_FLOAT_TYPE: fprintf(out, "float"); break;
-                                    case TOKEN_STR_TYPE: fprintf(out, "CnextString"); break;
-                                    case TOKEN_BOOL_TYPE: fprintf(out, "bool"); break;
-                                    case TOKEN_CHAR_TYPE: fprintf(out, "char"); break;
-                                    default: fprintf(out, "void"); break;
-                                }
+                                const char* ct = type_token_to_c(lambda->left->expr_type);
+                                fprintf(out, "%s", ct ? ct : "void");
                             } else {
                                 for (int ri = 0; ri < lambda->left->child_count; ri++) {
                                     if (lambda->left->children[ri]->type == AST_RETURN &&
                                         lambda->left->children[ri]->left) {
-                                        switch (lambda->left->children[ri]->left->expr_type) {
-                                            case TOKEN_INT_TYPE: fprintf(out, "int"); break;
-                                            case TOKEN_FLOAT_TYPE: fprintf(out, "float"); break;
-                                            case TOKEN_STR_TYPE: fprintf(out, "CnextString"); break;
-                                            case TOKEN_BOOL_TYPE: fprintf(out, "bool"); break;
-                                            case TOKEN_CHAR_TYPE: fprintf(out, "char"); break;
-                                            default: fprintf(out, "void"); break;
-                                        }
+                                        const char* ct = type_token_to_c(lambda->left->children[ri]->left->expr_type);
+                                        fprintf(out, "%s", ct ? ct : "void");
                                         break;
                                     }
                                 }
@@ -590,10 +578,17 @@ void generate_expression(ASTNode* node) {
             } else if (node->left) {
                 switch (node->left->expr_type) {
                     case TOKEN_INT_TYPE: type_str = "int"; break;
+                    case TOKEN_LONG_TYPE: type_str = "long"; break;
                     case TOKEN_FLOAT_TYPE: type_str = "float"; break;
+                    case TOKEN_DOUBLE_TYPE: type_str = "double"; break;
                     case TOKEN_STR_TYPE: type_str = "str"; break;
                     case TOKEN_BOOL_TYPE: type_str = "bool"; break;
                     case TOKEN_CHAR_TYPE: type_str = "char"; break;
+                    case TOKEN_BYTE_TYPE: type_str = "byte"; break;
+                    case TOKEN_UINT_TYPE: type_str = "uint"; break;
+                    case TOKEN_ULONG_TYPE: type_str = "ulong"; break;
+                    case TOKEN_USHORT_TYPE: type_str = "ushort"; break;
+                    case TOKEN_UBYTE_TYPE: type_str = "ubyte"; break;
                     default: break;
                 }
             }
@@ -621,14 +616,8 @@ void generate_expression(ASTNode* node) {
                 fprintf(out, "struct _cl_env_%d {\n", cl_id);
                 for (CapturedVar* cv = captures; cv; cv = cv->next) {
                     fprintf(out, "    ");
-                    switch (cv->type) {
-                        case TOKEN_INT_TYPE: fprintf(out, "int"); break;
-                        case TOKEN_FLOAT_TYPE: fprintf(out, "float"); break;
-                        case TOKEN_STR_TYPE: fprintf(out, "CnextString"); break;
-                        case TOKEN_BOOL_TYPE: fprintf(out, "bool"); break;
-                        case TOKEN_CHAR_TYPE: fprintf(out, "char"); break;
-                        default: fprintf(out, "void*"); break;
-                    }
+                    const char* ct = type_token_to_c(cv->type);
+                    fprintf(out, "%s", ct ? ct : "void*");
                     if (cv->is_pointer || cv->is_class) fprintf(out, "*");
                     fprintf(out, "* %s;\n", cv->name);
                 }

@@ -1,0 +1,43 @@
+// Test optimizer features
+// This test verifies the optimizer correctly optimizes code
+
+main {
+    // Test constant folding
+    int x = 2 + 3
+    printin(x)
+    
+    // Test identity elimination
+    int y = 5 + 0
+    printin(y)
+    
+    int z = 10 * 1
+    printin(z)
+    
+    int w = 0 * 100
+    printin(w)
+    
+    // Test boolean folding
+    bool a = true
+    bool b = false
+    bool c = a && !b
+    printin(c)
+    
+    // Test unary folding
+    int neg = -5
+    printin(neg)
+    
+    // Test nested constants
+    int nested = (2 + 3) * 4
+    printin(nested)
+    
+    // Test dead code elimination
+    // The optimizer should remove code after return
+    func dead_code_test() -> int {
+        return 42
+        // This code should be eliminated
+        int unreachable = 100
+        return unreachable
+    }
+    
+    printin(dead_code_test())
+}

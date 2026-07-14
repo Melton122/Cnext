@@ -4,6 +4,7 @@
 #include "codegen.h"
 #include "semantics.h"
 #include "ast.h"
+#include "checked_alloc.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -179,12 +180,13 @@ bool run_repl(void) {
             fprintf(stderr, "Could not read generated code.\n");
             continue;
         }
-        fseek(f, 0, SEEK_END);
+        if (fseek(f, 0, SEEK_END) != 0) { fclose(f); continue; }
         long fsize = ftell(f);
+        if (fsize < 0) { fclose(f); continue; }
         rewind(f);
-        char* gen = (char*)malloc(fsize + 1);
-        fread(gen, 1, fsize, f);
-        gen[fsize] = '\0';
+        char* gen = (char*)checked_malloc(fsize + 1);
+        size_t read = fread(gen, 1, fsize, f);
+        gen[read] = '\0';
         fclose(f);
 
         // Save for .c command

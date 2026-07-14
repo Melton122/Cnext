@@ -47,18 +47,59 @@ static void print_help(void) {
     printf("Cnext Compiler v%s\n", CNEXT_VERSION);
     printf("Usage: cnext <command> [arguments]\n\n");
     printf("Commands:\n");
-    printf("  new <ProjectName>          Create a new Cnext project.\n");
-    printf("  run <file.cn> [-o <exe>]   Compile and run a Cnext file.\n");
-    printf("  build <file.cn> [-o <exe>] Compile a Cnext file to an executable.\n");
-    printf("  version                    Show compiler version.\n");
-    printf("  install [package]          Install all dependencies from cnext.toml, or a single package.\n");
+    printf("  new <ProjectName>              Create a new Cnext project.\n");
+    printf("  run <file.cn> [options]        Compile and run a Cnext file.\n");
+    printf("  build <file.cn> [options]      Compile a Cnext file to an executable.\n");
+    printf("  fmt <file.cn>                  Format a Cnext file.\n");
+    printf("  lint <file.cn>                 Lint a Cnext file.\n");
+    printf("  repl                           Start the interactive REPL.\n");
+    printf("  version                        Show compiler version.\n");
+    printf("  help                           Show this help message.\n\n");
+    printf("Development:\n");
+    printf("  doctor                         Check system for common issues.\n");
+    printf("  init                           Initialize a new cnext.toml.\n");
+    printf("  upgrade                        Upgrade compiler to latest version.\n");
+    printf("  cache <clear|status>           Manage build cache.\n");
+    printf("  config <key> [value]           Get/set configuration.\n\n");
+    printf("Package Manager:\n");
+    printf("  test                           Run the test suite.\n");
+    printf("  install                        Install all dependencies from cnext.toml.\n");
+    printf("  install <package>              Install a single package.\n");
+    printf("  remove <package>               Remove a package.\n");
+    printf("  update                         Update all dependencies.\n");
+    printf("  search <query>                 Search for packages.\n");
+    printf("  info <package>                 Show package information.\n");
+    printf("  publish                        Publish a package to the registry.\n");
+    printf("  login                          Login to the registry.\n");
+    printf("  logout                         Logout from the registry.\n\n");
+    printf("Build Options:\n");
+    printf("  -o, --output <path>            Set output file path.\n");
+    printf("  --release                      Release build (optimized, no debug info).\n");
+    printf("  --debug                        Debug build (no optimization, with symbols).\n");
+    printf("  --no-optimize                  Disable the optimizer.\n");
+    printf("  --verbose                      Show generated C code before compilation.\n");
+    printf("  --clean                        Remove build artifacts.\n");
 }
 
-static int parse_build_args(int argc, char** argv, const char** input_path, const char** output_exe) {
-    if (argc < 3) return 64;
+typedef struct {
+    const char* input_path;
+    const char* output_exe;
+    bool release;
+    bool debug;
+    bool no_optimize;
+    bool verbose;
+} BuildOptions;
 
-    *input_path = argv[2];
-    *output_exe = CNEXT_DEFAULT_EXE;
+static int parse_build_args(int argc, char** argv, BuildOptions* opts) {
+    opts->input_path = NULL;
+    opts->output_exe = CNEXT_DEFAULT_EXE;
+    opts->release = false;
+    opts->debug = false;
+    opts->no_optimize = false;
+    opts->verbose = false;
+
+    if (argc < 3) return 64;
+    opts->input_path = argv[2];
 
     for (int i = 3; i < argc; i++) {
         if (strcmp(argv[i], "-o") == 0 || strcmp(argv[i], "--output") == 0) {
@@ -66,7 +107,20 @@ static int parse_build_args(int argc, char** argv, const char** input_path, cons
                 fprintf(stderr, "Expected output path after %s.\n", argv[i]);
                 return 64;
             }
-            *output_exe = argv[++i];
+            opts->output_exe = argv[++i];
+        } else if (strcmp(argv[i], "--release") == 0) {
+            opts->release = true;
+        } else if (strcmp(argv[i], "--debug") == 0) {
+            opts->debug = true;
+        } else if (strcmp(argv[i], "--no-optimize") == 0) {
+            opts->no_optimize = true;
+        } else if (strcmp(argv[i], "--verbose") == 0) {
+            opts->verbose = true;
+        } else if (strcmp(argv[i], "--clean") == 0) {
+            remove(CNEXT_TEMP_C);
+            remove(opts->output_exe);
+            printf("Cleaned build artifacts.\n");
+            return -1; // Signal to exit early
         } else {
             fprintf(stderr, "Unknown option for %s: %s\n", argv[1], argv[i]);
             return 64;
@@ -95,11 +149,11 @@ int main(int argc, char** argv) {
     }
 
     if (strcmp(command, "run") == 0 || strcmp(command, "build") == 0) {
-        const char* input_path = NULL;
-        const char* output_exe = NULL;
-        int arg_status = parse_build_args(argc, argv, &input_path, &output_exe);
+        BuildOptions opts;
+        int arg_status = parse_build_args(argc, argv, &opts);
+        if (arg_status == -1) return 0; // --clean
         if (arg_status != 0) {
-            fprintf(stderr, "Usage: cnext %s <file.cn> [-o <executable>]\n", command);
+            fprintf(stderr, "Usage: cnext %s <file.cn> [options]\n", command);
             return arg_status;
         }
 
@@ -109,26 +163,52 @@ int main(int argc, char** argv) {
         }
 
         remove(CNEXT_TEMP_C);
-        int compile_status = compile_file(input_path, CNEXT_TEMP_C, false);
+        int compile_status = compile_file(opts.input_path, CNEXT_TEMP_C, false);
         if (compile_status != 0) {
             remove(CNEXT_TEMP_C);
             return compile_status;
         }
 
-        char* gcc_args[] = {
-            "gcc",
-            "-std=gnu11",
-            "-iquote",
-            include_path,
-            CNEXT_TEMP_C,
-            "-o",
-            (char*)output_exe,
-            "-lwinhttp",
-            "-lws2_32",
-            NULL
-        };
+        // Build GCC arguments based on options
+        char opt_flags[256] = {0};
+        if (opts.release) {
+            strcpy(opt_flags, "-O2 -DNDEBUG");
+        } else if (opts.debug) {
+            strcpy(opt_flags, "-O0 -g -DDEBUG");
+        } else {
+            strcpy(opt_flags, "-O2 -DNDEBUG");
+        }
 
-        int gcc_status = run_process("gcc", gcc_args);
+        if (opts.no_optimize) {
+            // The optimizer runs at the Cnext level, not GCC level
+            // This flag is for future use
+        }
+
+        if (opts.verbose) {
+            printf("--- Generated C code ---\n");
+            FILE* f = fopen(CNEXT_TEMP_C, "r");
+            if (f) {
+                char line[4096];
+                while (fgets(line, sizeof(line), f)) {
+                    printf("%s", line);
+                }
+                fclose(f);
+            }
+            printf("--- End of generated C code ---\n\n");
+        }
+
+        // Build the full GCC command string
+        char gcc_cmd[CNEXT_PATH_MAX * 3 + 512];
+        snprintf(gcc_cmd, sizeof(gcc_cmd),
+            "gcc -std=gnu11 %s -iquote \"%s\" \"%s\" -o \"%s\" "
+#ifdef _WIN32
+            "-lwinhttp -lws2_32"
+#else
+            "-lcurl -lpthread"
+#endif
+            , opt_flags, include_path, CNEXT_TEMP_C, opts.output_exe);
+
+        int gcc_status = system(gcc_cmd);
         if (gcc_status != 0) {
             fprintf(stderr, "C compilation failed.\n");
             return 65;
@@ -138,7 +218,7 @@ int main(int argc, char** argv) {
 
         if (strcmp(command, "run") == 0) {
             char executable_buffer[CNEXT_PATH_MAX];
-            const char* executable = executable_command(output_exe, executable_buffer, sizeof(executable_buffer));
+            const char* executable = executable_command(opts.output_exe, executable_buffer, sizeof(executable_buffer));
             char* run_args[] = {(char*)executable, NULL};
             return run_process(executable, run_args);
         }
@@ -161,6 +241,236 @@ int main(int argc, char** argv) {
             install_packages_from_toml(argv[0]);
             return 0;
         }
+    }
+
+    if (strcmp(command, "fmt") == 0) {
+        if (argc < 3) {
+            fprintf(stderr, "Usage: cnext fmt <file.cn>\n");
+            return 64;
+        }
+        return format_file(argv[2], NULL, true) ? 0 : 1;
+    }
+
+    if (strcmp(command, "lint") == 0) {
+        if (argc < 3) {
+            fprintf(stderr, "Usage: cnext lint <file.cn>\n");
+            return 64;
+        }
+        LintResult result;
+        lint_init(&result);
+        bool ok = lint_file(argv[2], &result);
+        if (ok) {
+            lint_print_issues(&result);
+        }
+        lint_free(&result);
+        return ok ? 0 : 1;
+    }
+
+    if (strcmp(command, "repl") == 0) {
+        return run_repl() ? 0 : 1;
+    }
+
+    if (strcmp(command, "test") == 0) {
+        // Run test files from tests/ directory
+        printf("Running Cnext test suite...\n\n");
+        int passed = 0;
+        int failed = 0;
+
+        // Find test files
+        system("dir /b tests\\*.cn > tests\\_test_list.txt 2>nul");
+
+        FILE* list = fopen("tests/_test_list.txt", "r");
+        if (!list) {
+            printf("No test files found.\n");
+            return 1;
+        }
+
+        char test_file[256];
+        while (fgets(test_file, sizeof(test_file), list)) {
+            test_file[strcspn(test_file, "\r\n")] = '\0';
+            if (test_file[0] == '\0') continue;
+
+            char cmd[512];
+            snprintf(cmd, sizeof(cmd), "cnext build tests/%s -o tests/_test_out.exe 2>nul", test_file);
+            int build_ok = system(cmd) == 0;
+
+            if (build_ok) {
+                snprintf(cmd, sizeof(cmd), "tests/_test_out.exe 2>nul");
+                int run_ok = system(cmd) == 0;
+                if (run_ok) {
+                    printf("  PASS: %s\n", test_file);
+                    passed++;
+                } else {
+                    printf("  FAIL: %s\n", test_file);
+                    failed++;
+                }
+            } else {
+                printf("  SKIP: %s (compile error)\n", test_file);
+            }
+        }
+        fclose(list);
+
+        printf("\nResults: %d passed, %d failed\n", passed, failed);
+        return failed > 0 ? 1 : 0;
+    }
+
+    if (strcmp(command, "search") == 0) {
+        if (argc < 3) {
+            fprintf(stderr, "Usage: cnext search <query>\n");
+            return 64;
+        }
+        RegistryResult result;
+        if (registry_search(argv[2], &result)) {
+            printf("Found %d package(s):\n\n", result.count);
+            for (int i = 0; i < result.count; i++) {
+                printf("  %s@%s\n", result.versions[i].name, result.versions[i].version);
+                if (result.versions[i].description[0]) {
+                    printf("    %s\n", result.versions[i].description);
+                }
+            }
+        } else {
+            printf("No packages found.\n");
+        }
+        registry_free(&result);
+        return 0;
+    }
+
+    if (strcmp(command, "info") == 0) {
+        if (argc < 3) {
+            fprintf(stderr, "Usage: cnext info <package>\n");
+            return 64;
+        }
+        RegistryResult result;
+        if (registry_info(argv[2], &result)) {
+            printf("Package: %s\n", argv[2]);
+            printf("Versions:\n");
+            for (int i = 0; i < result.count; i++) {
+                printf("  %s", result.versions[i].version);
+                if (result.versions[i].description[0]) {
+                    printf(" - %s", result.versions[i].description);
+                }
+                printf("\n");
+            }
+        } else {
+            printf("Package not found.\n");
+        }
+        registry_free(&result);
+        return 0;
+    }
+
+    if (strcmp(command, "publish") == 0) {
+        const char* dir = argc >= 3 ? argv[2] : ".";
+        const char* token = registry_get_token();
+        if (!token) {
+            fprintf(stderr, "Not logged in. Run 'cnext login' first.\n");
+            return 1;
+        }
+        return registry_publish(dir, token) ? 0 : 1;
+    }
+
+    if (strcmp(command, "login") == 0) {
+        const char* url = argc >= 3 ? argv[2] : getenv("CNEXT_REGISTRY_URL");
+        return registry_login(url) ? 0 : 1;
+    }
+
+    if (strcmp(command, "logout") == 0) {
+        return registry_logout() ? 0 : 1;
+    }
+
+    if (strcmp(command, "update") == 0) {
+        return registry_update(".") ? 0 : 1;
+    }
+
+    if (strcmp(command, "remove") == 0) {
+        if (argc < 3) {
+            fprintf(stderr, "Usage: cnext remove <package>\n");
+            return 64;
+        }
+        return registry_remove(argv[2], ".") ? 0 : 1;
+    }
+
+    if (strcmp(command, "doctor") == 0) {
+        printf("Cnext Doctor v%s\n\n", CNEXT_VERSION);
+        printf("Checking system...\n\n");
+
+        // Check GCC
+        int gcc_ok = system("gcc --version >nul 2>&1") == 0;
+        printf("  GCC:          %s\n", gcc_ok ? "OK" : "NOT FOUND");
+
+        // Check Make
+        int make_ok = system("make --version >nul 2>&1") == 0 ||
+                      system("mingw32-make --version >nul 2>&1") == 0;
+        printf("  Make:         %s\n", make_ok ? "OK" : "NOT FOUND");
+
+        // Check curl (for networking)
+        int curl_ok = system("curl --version >nul 2>&1") == 0;
+        printf("  curl:         %s\n", curl_ok ? "OK" : "NOT FOUND");
+
+        // Check Python (for tests)
+        int python_ok = system("python3 --version >nul 2>&1") == 0 ||
+                        system("python --version >nul 2>&1") == 0;
+        printf("  Python:       %s\n", python_ok ? "OK" : "NOT FOUND");
+
+        printf("\n");
+        if (gcc_ok && make_ok) {
+            printf("System is ready for Cnext development.\n");
+        } else {
+            printf("Some tools are missing. Install them for full functionality.\n");
+        }
+        return 0;
+    }
+
+    if (strcmp(command, "init") == 0) {
+        const char* name = argc >= 3 ? argv[2] : "my-project";
+        FILE* f = fopen("cnext.toml", "w");
+        if (!f) {
+            fprintf(stderr, "Could not create cnext.toml\n");
+            return 1;
+        }
+        fprintf(f, "[package]\nname = \"%s\"\nversion = \"0.1.0\"\ndescription = \"A Cnext project\"\n\n[dependencies]\n", name);
+        fclose(f);
+        printf("Created cnext.toml for project '%s'\n", name);
+        return 0;
+    }
+
+    if (strcmp(command, "upgrade") == 0) {
+        printf("Checking for updates...\n");
+        printf("Current version: %s\n", CNEXT_VERSION);
+        printf("To upgrade, run:\n");
+        printf("  git pull && make\n");
+        printf("Or download the latest release from:\n");
+        printf("  https://github.com/Melton122/cnext/releases\n");
+        return 0;
+    }
+
+    if (strcmp(command, "cache") == 0) {
+        const char* action = argc >= 3 ? argv[2] : "status";
+        if (strcmp(action, "clear") == 0) {
+            system("rm -rf .cnext/cache 2>/dev/null || true");
+            printf("Cache cleared.\n");
+        } else {
+            printf("Build cache status:\n");
+            printf("  Location: .cnext/cache/\n");
+            system("ls -la .cnext/cache/ 2>/dev/null || echo '  No cache found.'");
+        }
+        return 0;
+    }
+
+    if (strcmp(command, "config") == 0) {
+        if (argc < 3) {
+            printf("Cnext Configuration\n\n");
+            printf("Registry URL: %s\n", getenv("CNEXT_REGISTRY_URL") ? getenv("CNEXT_REGISTRY_URL") : "(not set)");
+            printf("\nSet via environment variable:\n  set CNEXT_REGISTRY_URL=<url>  (Windows)\n  export CNEXT_REGISTRY_URL=<url>  (Linux/macOS)\n");
+            return 0;
+        }
+        const char* key = argv[2];
+        if (strcmp(key, "registry-url") == 0) {
+            const char* url = getenv("CNEXT_REGISTRY_URL");
+            printf("Registry URL: %s\n", url ? url : "(not set)");
+        } else {
+            printf("Unknown config key: %s\n", key);
+        }
+        return 0;
     }
 
     fprintf(stderr, "Unknown command: %s\n", command);

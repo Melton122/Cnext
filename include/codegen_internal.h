@@ -26,7 +26,14 @@ extern SourceMap* codegen_sourcemap;
 extern int codegen_gen_line;
 extern int codegen_last_src_line;
 
+/* --- Counters (defined in codegen_node.c) --- */
+extern int bench_counter;
+extern int loop_counter;
+extern int try_counter;
+extern int match_counter;
+
 /* --- Utility Functions (codegen_emit.c) --- */
+const char* type_token_to_c(CnextTokenType type);
 void write_indent(void);
 void track_source_line(int src_line);
 char* copy_token_text(Token token);
