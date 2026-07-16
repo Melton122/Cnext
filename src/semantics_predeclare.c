@@ -23,6 +23,7 @@ void predeclare_global(ASTNode* node) {
                 sym->type = TOKEN_IDENTIFIER;
                 sym->is_const = true;
                 sym->type_name = strndup(tp->token.start, tp->token.length);
+                if (!sym->name || !sym->type_name) { free(sym->name); free(sym->type_name); free(sym); continue; }
                 sym->decl_node = tp;
                 sym->next = sem_current_scope->symbols;
                 sem_current_scope->symbols = sym;

@@ -7,7 +7,7 @@
 // --- Basic integer math ---
 
 static inline int math_abs(int x) {
-    return x < 0 ? -x : x;
+    return (x < 0) ? (x == (-2147483647 - 1) ? x : -x) : x;
 }
 
 static inline int math_max(int a, int b) {

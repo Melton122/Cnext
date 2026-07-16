@@ -43,8 +43,28 @@ static unsigned int hashmap_hash(const char* key, int capacity) {
     return hash % capacity;
 }
 
+static void hashmap_resize(HashMap* map) {
+    int new_cap = map->capacity * 2;
+    HashMapEntry** new_buckets = (HashMapEntry**)calloc(new_cap, sizeof(HashMapEntry*));
+    if (!new_buckets) return;
+    for (int i = 0; i < map->capacity; i++) {
+        HashMapEntry* e = map->buckets[i];
+        while (e) {
+            HashMapEntry* next = e->next;
+            unsigned int idx = hashmap_hash(e->key, new_cap);
+            e->next = new_buckets[idx];
+            new_buckets[idx] = e;
+            e = next;
+        }
+    }
+    free(map->buckets);
+    map->buckets = new_buckets;
+    map->capacity = new_cap;
+}
+
 static void hashmap_put(HashMap* map, const char* key, void* value) {
     if (!map || !key) return;
+    if (map->size >= map->capacity / 2) hashmap_resize(map);
     unsigned int idx = hashmap_hash(key, map->capacity);
     HashMapEntry* entry = map->buckets[idx];
     while (entry) {
@@ -57,6 +77,7 @@ static void hashmap_put(HashMap* map, const char* key, void* value) {
     entry = (HashMapEntry*)malloc(sizeof(HashMapEntry));
     if (!entry) return;
     entry->key = strdup(key);
+    if (!entry->key) { free(entry); return; }
     entry->value = value;
     entry->next = map->buckets[idx];
     map->buckets[idx] = entry;
@@ -137,7 +158,9 @@ static int list_add(int h, int val) {
     if (h < 0 || h >= _lc || !_lists[h]) return -1;
     List* l = _lists[h];
     if (l->len >= l->cap) {
-        l->cap *= 2;
+        int new_cap = l->cap * 2;
+        if (new_cap < l->cap) return -1; // overflow check
+        l->cap = new_cap;
         int* nd = (int*)realloc(l->data, l->cap * sizeof(int));
         if (!nd) return -1;
         l->data = nd;
@@ -225,13 +248,27 @@ static void map_set(int h, int key, int val) {
     Map* m = _maps[h];
     if (m->len * 2 >= m->cap) {
         int oldcap = m->cap;
-        m->cap *= 2;
+        int newcap = oldcap * 2;
+        if (newcap < oldcap) return; // overflow check
+        m->cap = newcap;
         MapEntry* old = m->entries;
         m->entries = (MapEntry*)calloc(m->cap, sizeof(MapEntry));
         if (!m->entries) { m->entries = old; m->cap = oldcap; return; }
         m->len = 0;
         for (int i = 0; i < oldcap; i++) {
-            if (old[i].used) map_set(h, old[i].key, old[i].val);
+            if (old[i].used) {
+                // Direct insert to avoid recursive rehash
+                unsigned int idx = hash_int(old[i].key) % (unsigned int)m->cap;
+                while (m->entries[idx].used) {
+                    if (m->entries[idx].key == old[i].key) { m->entries[idx].val = old[i].val; goto next_entry; }
+                    idx = (idx + 1) % (unsigned int)m->cap;
+                }
+                m->entries[idx].used = 1;
+                m->entries[idx].key = old[i].key;
+                m->entries[idx].val = old[i].val;
+                m->len++;
+                next_entry:;
+            }
         }
         free(old);
     }
@@ -330,7 +367,9 @@ static void set_add(int h, int val) {
     if (set_has(h, val)) return;
     Set* s = _sets[h];
     if (s->len >= s->cap) {
-        s->cap *= 2;
+        int new_cap = s->cap * 2;
+        if (new_cap < s->cap) return; // overflow check
+        s->cap = new_cap;
         int* nd = (int*)realloc(s->data, s->cap * sizeof(int));
         if (!nd) return;
         s->data = nd;

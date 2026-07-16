@@ -106,7 +106,6 @@ static CnextString path_normalize(CnextString path) {
             if (w > seg_start) {
                 w--;
                 while (w > seg_start && buf[w-1] != '/') w--;
-                if (w > 0 && buf[w-1] == '/') w--;
             }
             i += 2;
             continue;

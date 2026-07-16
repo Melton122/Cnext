@@ -575,7 +575,7 @@ static bool is_tail_call(ASTNode* node, const char* func_name) {
     if (!node || node->type != AST_RETURN || !node->left) return false;
     if (node->left->type != AST_CALL || !node->left->left) return false;
     if (node->left->left->type != AST_IDENTIFIER) return false;
-    return node->left->left->token.length == strlen(func_name) &&
+    return (size_t)node->left->left->token.length == strlen(func_name) &&
            memcmp(node->left->left->token.start, func_name, strlen(func_name)) == 0;
 }
 
@@ -659,6 +659,8 @@ static void optimize_node(ASTNode* node) {
 
     // Identity elimination
     if (node->type == AST_BINARY) {
+        ASTNode* old_left = node->left;
+        ASTNode* old_right = node->right;
         ASTNode* simplified = eliminate_identities(node);
         if (simplified) {
             node->type = simplified->type;
@@ -668,6 +670,8 @@ static void optimize_node(ASTNode* node) {
             simplified->left = NULL;
             simplified->right = NULL;
             free(simplified);
+            if (old_left != node->left) free_ast(old_left);
+            if (old_right != node->right) free_ast(old_right);
         }
     }
 
@@ -698,6 +702,18 @@ static void optimize_node(ASTNode* node) {
             node->child_count = folded->child_count;
             node->child_capacity = folded->child_capacity;
             free(folded);
+        } else if (is_int_literal(node->condition)) {
+            long val = parse_int_value(node->condition->token);
+            if (val == 0) {
+                free_ast(node->left);
+                node->left = NULL;
+                free_ast(node->right);
+                node->right = NULL;
+                free_ast(node->condition);
+                node->condition = NULL;
+                node->type = AST_BLOCK;
+                opt_count++;
+            }
         }
     }
 
@@ -725,15 +741,6 @@ static void optimize_node(ASTNode* node) {
 // - Loop invariant code motion: move constant expressions out of loops
 // - Strength reduction: x*2 -> x+x, x*0 -> 0
 // ========================================================================
-
-static bool contains_loop(ASTNode* node) {
-    if (!node) return false;
-    if (node->type == AST_WHILE || node->type == AST_FOR || node->type == AST_FOR_IN) return true;
-    for (int i = 0; i < node->child_count; i++) {
-        if (contains_loop(node->children[i])) return true;
-    }
-    return contains_loop(node->left) || contains_loop(node->right);
-}
 
 static void optimize_loops(ASTNode* node) {
     if (!node) return;

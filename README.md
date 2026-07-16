@@ -65,6 +65,16 @@ make install
 - Make (Linux/macOS) or MinGW (Windows)
 - libcurl (Linux/macOS, for networking)
 
+### Create a New Project
+
+```bash
+cnext new my_app
+cd my_app
+cnext run src/main.cn
+```
+
+This creates a project with sample files demonstrating variables, functions, classes, and modules.
+
 ### Hello World
 
 Create a file `hello.cn`:

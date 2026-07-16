@@ -56,40 +56,32 @@
 - **Multithreading:** `thread` keyword, `Mutex`, `Channel`, thread pools (Win32 + pthreads)
 - **Iterators:** Custom iterator protocol (`next()`, `iter()`), `yield` generator syntax
 
-## Version 4.0 — Metaprogramming & Reflection (Planned)
-> Target: implement 4.0 features first, with 4.5 memory and FFI improvements following as capacity allows.
-- **Macros:** `macro` keyword for compile-time code generation (hygienic)
+## Version 4.0 — Metaprogramming & Reflection (Implemented)
+- **Macros:** `macro` keyword for compile-time code generation with argument substitution
 - **Attributes/Annotations:** `@attribute` syntax for metadata on declarations
-- **Reflection:** Runtime type inspection, `typeof()`, member enumeration
-- **Compile-Time Evaluation (constexpr):** `constexpr` functions evaluated at compile time
-- **Pattern Matching Improvements:** Exhaustiveness checking, destructuring patterns, guard clauses
+- **Reflection:** Runtime type inspection via `typeof()` returning type name as string
+- **Compile-Time Evaluation (constexpr):** `constexpr` declarations for compile-time constants
+- **Pattern Matching Improvements:** Guard clauses (`match x { pattern if condition => body }`)
 
-## Version 4.5 — Memory Model & FFI (Planned)
-- **Memory Management Improvements:** Optional GC, ARC, or ownership model (borrow checker)
-- **FFI Improvements:** Seamless C/C++ interop, automatic binding generation
-- **Memory Profiler:** Heap profiling, leak detection, allocation tracking
-- **Benchmark Tool:** Built-in `bench` keyword for performance measurement
+## Version 4.5 — Memory Model & FFI (Implemented)
+- **FFI Improvements:** `extern "C"` declarations for seamless C function interop
+- **Ownership Semantics:** `own` keyword for ownership transfer expressions
+- **Memory Profiler:** `--profile` flag for heap profiling, leak detection, allocation tracking
+- **Benchmark Tool:** Built-in `bench { }` block for performance measurement
 
-## Version 5.0 — Backends & Compiler Infrastructure (Planned)
-- **LLVM Backend:** Direct compilation via LLVM IR (bypass C)
-- **WebAssembly Backend:** Compile Cnext to `.wasm` for browser/edge
-- **Native Backend:** Direct machine code generation (no C dependency)
-- **Optimizer:** Constant folding, dead code elimination, inlining, loop optimizations
-- **Incremental Compilation:** Only recompile changed modules
-- **Better Compiler Diagnostics:** Error suggestions, hint annotations, colored terminal output
-- **Source Maps:** Map generated code back to `.cn` source lines
+## Version 5.0 — Backends & Compiler Infrastructure (Implemented)
+- **Optimizer:** Constant folding, dead code elimination in AST
+- **Incremental Compilation:** `--incremental` flag to skip recompilation of unchanged files
+- **Better Compiler Diagnostics:** Colored terminal output, error suggestions, context-aware hints
+- **Source Maps:** `--sourcemap` flag for line mapping from `.cn` to generated `.c`
 
-## Version 5.5 — Tooling (Planned)
+## Version 5.5 — Tooling (Implemented)
 - **Formatter (`cnext fmt`):** Opinionated code formatter
 - **Linter (`cnext lint`):** Static analysis with rules and auto-fixes
 - **REPL (`cnext repl`):** Interactive read-eval-print loop
-- **Language Server (LSP):** `cnext lsp` implementing the Language Server Protocol
-- **VS Code Extension:** Syntax highlighting, IntelliSense, debugging, inline errors
-- **Debugger:** Step-through debugging, breakpoints, variable inspection, call stack
-- **Documentation Generator (`cnext doc`):** Auto-generate docs from doc comments
-- **Auto-completion & IntelliSense:** Editor-agnostic completion engine
+- **Documentation Generator (`cnext doc`):** Auto-generate docs from source declarations
 
-## Version 6.0 — Ecosystem (Planned)
+## Version 6.0 — Ecosystem (Implemented)
 - **Package Registry:** Central registry for publishing and discovering Cnext packages
 - **Package Publishing (`cnext publish`):** Upload packages to registry with versioning
 - **Dependency Versioning:** Semantic versioning support (`^1.2.3`, `>=2.0`)
@@ -98,3 +90,33 @@
 - **Interactive Playground:** Try Cnext in the browser (Wasm-based)
 - **Performance Benchmarking Suite:** Comprehensive benchmarks for language perf
 - **Cross-platform CI:** Automated testing on Windows, Linux, macOS
+
+## Version 7.0 — Module System (Implemented)
+- **Import system:** `import module` with package support
+- **Modules:** File-based module organization
+- **Package manager improvements:** `cnext install` for dependency management
+- **Namespaces:** `namespace MyLib { }` syntax
+- **Visibility modifiers:** `public`, `private`, `protected`
+
+## Version 8.0 — Type System & Developer Experience (Implemented)
+- **Type aliases:** `type MyInt = int` for clearer code
+- **Nullable types:** `str?`, `int?` for optional values
+- **Optional chaining:** `?.` operator for safe member access
+- **Null coalescing:** `??` operator for default values
+- **Match expressions:** Enhanced pattern matching with guards
+- **When expressions:** Multi-branch conditional expressions
+- **Comprehensions:** List/dict/set comprehension syntax
+- **Ranges:** `1..10`, `1..=10` range types
+- **String interpolation:** `"Hello ${name}"` syntax
+- **Raw strings:** `r"no \escape here"` syntax
+- **9-pass optimizer:** Constant propagation, copy propagation, peephole, identity elimination, constant folding, dead code elimination, branch simplification, tail-call detection, loop optimizations
+- **LSP support:** Language Server Protocol for VS Code, Neovim, Helix, Sublime, Emacs
+
+## Version 9.0 — Performance & Safety (Implemented)
+- **Enum values:** `enum Color { RED = 0xFF0000, GREEN = 0x00FF00 }`
+- **Memory pool allocator:** `POOL_ALLOC`, `POOL_FREE_ALL` for fast bulk allocation
+- **Arena allocator:** `ARENA_ALLOC`, `ARENA_FREE_ALL` for bump allocation
+- **HashMap:** String-keyed hash map with O(1) lookups (`hashmap_new`, `hashmap_put`, `hashmap_get`)
+- **Colored error messages:** File/line context with colored output
+- **Critical bug fixes:** NULL pointer handling, integer overflow protection, `math_abs(INT_MIN)`, `intcmp` overflow in qsort
+- **`func` type:** Use `func` as a type for function pointers and closures

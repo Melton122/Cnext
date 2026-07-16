@@ -90,7 +90,19 @@ typedef enum {
     // v3.5: Async/Await
     AST_ASYNC_FUNC_DECL,// async func ...
     AST_AWAIT_EXPR,     // await expr
-    AST_RUN_ASYNC       // run_async func()
+    AST_RUN_ASYNC,       // run_async func()
+    // v4.0: Reflection and macros
+    AST_ATTRIBUTE,      // @attribute(name, args) on declarations
+    AST_CONSTEXPR_DECL, // constexpr var = expr
+    AST_MACRO_INVOCATION, // macro_name(args) — expanded inline
+    // v4.0: Pattern matching improvements
+    AST_GUARD,          // guard condition in match arm
+    // v4.5: Memory & FFI
+    AST_EXTERN_DECL,    // extern "C" { func ... } — C function declarations
+    AST_BENCH_DECL,     // bench { code } — performance measurement block
+    AST_OWN_EXPR,       // own expr — ownership transfer expression
+    // v8.0: Type aliases
+    AST_TYPE_ALIAS      // type MyType = OtherType
 } ASTNodeType;
 
 typedef struct ASTNode {
@@ -131,7 +143,7 @@ typedef struct ASTNode {
     // Types
     Token var_type; // the token representing the type
     Token return_type;
-    TokenType expr_type;
+    CnextTokenType expr_type;
     
     // v3.0: Default argument value
     struct ASTNode* default_value;

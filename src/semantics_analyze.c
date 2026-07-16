@@ -22,6 +22,7 @@ void analyze_function(ASTNode* node, bool define_name) {
         sym->type = TOKEN_IDENTIFIER; // Opaque type
         sym->is_const = true;
         sym->type_name = strndup(tp->token.start, tp->token.length);
+        if (!sym->name || !sym->type_name) { free(sym->name); free(sym->type_name); free(sym); continue; }
         sym->decl_node = tp;
         sym->next = sem_current_scope->symbols;
         sem_current_scope->symbols = sym;
@@ -188,7 +189,7 @@ void analyze_node(ASTNode* node) {
             loop_depth++;
             sem_push_scope();
             analyze_expression(node->condition);
-            define_symbol(node->init->token, TOKEN_VAR, false, NULL, node->init);
+            if (node->init) define_symbol(node->init->token, TOKEN_VAR, false, NULL, node->init);
             analyze_node(node->left);
             sem_pop_scope();
             loop_depth--;

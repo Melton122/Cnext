@@ -83,7 +83,14 @@ bool has_path_separator(const char* path) {
 bool dirname_from_path(const char* path, char* buffer, size_t buffer_size) {
     const char* last_slash = strrchr(path, '/');
     const char* last_backslash = strrchr(path, '\\');
-    const char* sep = last_slash > last_backslash ? last_slash : last_backslash;
+    const char* sep = NULL;
+    if (last_slash && last_backslash) {
+        sep = last_slash > last_backslash ? last_slash : last_backslash;
+    } else if (last_slash) {
+        sep = last_slash;
+    } else {
+        sep = last_backslash;
+    }
     if (!sep) return false;
 
     size_t length = (size_t)(sep - path);

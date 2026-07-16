@@ -189,3 +189,53 @@ Classes and strings can be null:
 str s = null
 bool is_null = (s == null)  // true
 ```
+
+## Struct Types
+
+```cnext
+struct Point {
+    int x
+    int y
+}
+
+Point p = Point { x: 10, y: 20 }
+printin(p.x)  // 10
+```
+
+## Function Types
+
+Use `func` as a type for function pointers and closures:
+
+```cnext
+// Function parameter typed as func
+func apply(int x, func f) -> int {
+    return f(x)
+}
+
+var dbl = (int x) => x * 2
+printin(apply(5, dbl))  // 10
+
+// Return type as func
+func make_adder(int x) -> func {
+    return (int a) => a + x
+}
+
+var add5 = make_adder(5)
+printin(add5(3))  // 8
+```
+
+## Iterator Types
+
+```cnext
+// Iterator type for generators
+coroutine func count_to(int n) -> iter<int> {
+    for int i = 1; i <= n; i = i + 1 {
+        yield i
+    }
+}
+
+var counter = count_to(5)
+for int val in counter {
+    printin(val)  // 1, 2, 3, 4, 5
+}
+```

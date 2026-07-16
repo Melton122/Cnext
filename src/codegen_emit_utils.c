@@ -60,6 +60,7 @@ void track_source_line(int src_line) {
 }
 
 void write_indent(void) {
+    if (!out) return;
     for (int i = 0; i < indent_level; i++) {
         fprintf(out, "    ");
     }
@@ -69,8 +70,10 @@ void generate_type(Token token, bool is_pointer) {
     const char* c_type = type_token_to_c(token.type);
     if (c_type) {
         fprintf(out, "%s", c_type);
-    } else if (token.type == TOKEN_VAR || token.type == TOKEN_FUNC) {
+    } else if (token.type == TOKEN_VAR) {
         fprintf(out, "__auto_type");
+    } else if (token.type == TOKEN_FUNC) {
+        fprintf(out, "CnextClosure");
     } else if (token.type == TOKEN_IDENTIFIER) {
         char name[256];
         int nlen = token.length < 255 ? token.length : 255;
@@ -142,6 +145,49 @@ void generate_interp_expression(const char* start, const char* end) {
             return;
         }
     }
+    if (!dot && paren && paren > start) {
+        int fname_len = (int)(paren - start);
+        char fname[256];
+        if (fname_len < 255) {
+            memcpy(fname, start, fname_len);
+            fname[fname_len] = '\0';
+            ClosureVar* clvar = find_closure_var(fname);
+            if (clvar) {
+                ASTNode* lambda = clvar->lambda_node;
+                fprintf(out, "((");
+                if (lambda && lambda->left && lambda->left->type != AST_BLOCK) {
+                    const char* ct = type_token_to_c(lambda->left->expr_type);
+                    fprintf(out, "%s", ct ? ct : "void");
+                } else if (lambda && lambda->left && lambda->left->type == AST_BLOCK) {
+                    for (int ri = 0; ri < lambda->left->child_count; ri++) {
+                        if (lambda->left->children[ri]->type == AST_RETURN &&
+                            lambda->left->children[ri]->left) {
+                            const char* ct = type_token_to_c(lambda->left->children[ri]->left->expr_type);
+                            fprintf(out, "%s", ct ? ct : "void");
+                            break;
+                        }
+                    }
+                } else {
+                    fprintf(out, "void*");
+                }
+                fprintf(out, "(*)(");
+                fprintf(out, "void*");
+                for (int ai = 0; ai < lambda->child_count; ai++) {
+                    fprintf(out, ", ");
+                    generate_type(lambda->children[ai]->var_type, lambda->children[ai]->is_pointer);
+                }
+                fprintf(out, "))");
+                fprintf(out, "%.*s.fn)(%.*s.env", fname_len, start, fname_len, start);
+                const char* args_start = paren + 1;
+                int args_len = (int)(end - args_start - 1);
+                if (args_len > 0) {
+                    fprintf(out, ", %.*s", args_len, args_start);
+                }
+                fprintf(out, ")");
+                return;
+            }
+        }
+    }
     fprintf(out, "%.*s", expr_len, start);
 }
 
@@ -206,6 +252,9 @@ void generate_function(ASTNode* node, const char* prefix) {
     }
 
     track_source_line(node->token.line);
+    ASTNode* prev_func_params = current_func_params;
+    current_func_params = node;
+    current_func_returns_void = (node->return_type.type == TOKEN_EOF || type_token_to_c(node->return_type.type) == NULL);
     generate_type(node->return_type, false);
     if (prefix) {
         fprintf(out, " %s_%.*s(", prefix, node->token.length, node->token.start);
@@ -231,6 +280,7 @@ void generate_function(ASTNode* node, const char* prefix) {
     fprintf(out, ") ");
     generate_block(node->left);
     fprintf(out, "\n");
+    current_func_params = prev_func_params;
 }
 
 ASTNode* find_func_decl(ASTNode* prog, const char* name) {

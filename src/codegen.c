@@ -22,6 +22,8 @@ ClosureInfo* closure_list = NULL;
 int closure_counter = 0;
 ClosureVar* closure_vars = NULL;
 Scope* current_scope = NULL;
+ASTNode* current_func_params = NULL;
+bool current_func_returns_void = false;
 
 // Class variable tracking (managed in codegen_types.c, defined here)
 ClassVar* class_vars = NULL;
@@ -107,6 +109,7 @@ void set_codegen_profile_mode(bool enabled) {
 }
 
 bool generate_c_code(ASTNode* program, const char* output_filename, bool test_mode) {
+    if (!program) return false;
     codegen_test_mode = test_mode;
     codegen_in_test = false;
     program_node = program;
@@ -299,6 +302,7 @@ bool generate_c_code(ASTNode* program, const char* output_filename, bool test_mo
         fprintf(stderr, "Could not open output file \"%s\".\n", output_filename);
         remove(body_temp_name);
         remove(spec_temp_name);
+        remove(closure_temp_name);
         return false;
     }
     

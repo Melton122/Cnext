@@ -1,5 +1,5 @@
 =====================================
-  Cnext v3.5 - Installation Guide
+  Cnext v9.0 - Installation Guide
 =====================================
 
 QUICK START
@@ -33,6 +33,10 @@ COMMANDS
   cnext build <file.cn>     Compile to an executable
   cnext test [file.cn]      Run tests
   cnext new <project>       Create a new project
+  cnext fmt <file.cn>       Format a Cnext file
+  cnext lint <file.cn>      Lint a Cnext file
+  cnext repl                Start interactive REPL
+  cnext doc <file.cn>       Generate documentation
   cnext install [package]   Install packages
   cnext version             Show version
   cnext help                Show help

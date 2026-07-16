@@ -143,6 +143,20 @@ def main():
         "test_encoding.cn",
         "test_process.cn",
         "test_slices.cn",
+        "test_casting.cn",
+        "test_lambdas.cn",
+        "test_named_args.cn",
+        "test_null.cn",
+        "test_null_safety_ops.cn",
+        "test_operator_overloading.cn",
+        "test_optimizer.cn",
+        "test_tuples.cn",
+        "test_typeof.cn",
+        "test_variadic.cn",
+        "test_default_args.cn",
+        "test_constexpr.cn",
+        "test_v4_features.cn",
+        "test_v9.cn",
     ]
     
     all_passed = True

@@ -36,7 +36,7 @@ static CnextString process_run(CnextString command) {
     if (!CreatePipe(&rd, &wr, &sa, 0)) { free(cmd); return (CnextString){NULL, 0}; }
     char* full = (char*)malloc(strlen(cmd) + 32);
     if (!full) { CloseHandle(rd); CloseHandle(wr); free(cmd); return (CnextString){NULL, 0}; }
-    sprintf(full, "cmd.exe /c %s", cmd);
+    snprintf(full, strlen(cmd) + 32, "cmd.exe /c %s", cmd);
     STARTUPINFOA si = {0};
     si.cb = sizeof(si);
     si.dwFlags = STARTF_USESTDHANDLES;
@@ -66,7 +66,8 @@ static CnextString process_run(CnextString command) {
     return (CnextString){out, (size_t)read_bytes};
 #else
     char* full = (char*)malloc(strlen(cmd) + 16);
-    sprintf(full, "%s 2>&1", cmd);
+    if (!full) { free(cmd); return (CnextString){NULL, 0}; }
+    snprintf(full, strlen(cmd) + 16, "%s 2>&1", cmd);
     FILE* fp = popen(full, "r");
     free(full);
     if (!fp) { free(cmd); return (CnextString){NULL, 0}; }
@@ -75,7 +76,13 @@ static CnextString process_run(CnextString command) {
     if (!out) { pclose(fp); free(cmd); return (CnextString){NULL, 0}; }
     while (fgets(out + len, (int)(cap - len), fp)) {
         len += strlen(out + len);
-        if (len + 1 >= cap) { cap *= 2; out = (char*)realloc(out, cap); }
+        if (len + 1 >= cap) {
+            size_t new_cap = cap * 2;
+            char* new_out = (char*)realloc(out, new_cap);
+            if (!new_out) break;
+            out = new_out;
+            cap = new_cap;
+        }
     }
     pclose(fp);
     while (len > 0 && (out[len-1] == '\n' || out[len-1] == '\r')) len--;

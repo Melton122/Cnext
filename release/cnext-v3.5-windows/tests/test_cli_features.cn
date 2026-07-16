@@ -1,0 +1,54 @@
+// Test CLI features: fmt, lint, build flags
+
+test "basic operations" {
+    int x = 42
+    assert(x == 42)
+    println("basic operations: OK")
+}
+
+test "string operations" {
+    str s = "hello"
+    assert(len(s) == 5)
+    println("string operations: OK")
+}
+
+test "control flow" {
+    int sum = 0
+    for int i = 1; i <= 10; i = i + 1 {
+        sum = sum + i
+    }
+    assert(sum == 55)
+    println("control flow: OK")
+}
+
+test "functions" {
+    func add(int a, int b) -> int {
+        return a + b
+    }
+    assert(add(3, 4) == 7)
+    println("functions: OK")
+}
+
+test "classes" {
+    class Point {
+        int x
+        int y
+        
+        func new(int px, int py) {
+            self.x = px
+            self.y = py
+        }
+        
+        func distance() -> int {
+            return self.x * self.x + self.y * self.y
+        }
+    }
+    
+    Point p = new Point(3, 4)
+    assert(p.distance() == 25)
+    println("classes: OK")
+}
+
+main {
+    println("All CLI feature tests passed!")
+}

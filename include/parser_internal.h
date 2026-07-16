@@ -49,6 +49,9 @@ void register_macro(ASTNode* decl);
 ASTNode* deep_copy_ast(ASTNode* node);
 void substitute_params(ASTNode* node, ASTNode** params, int param_count,
                        ASTNode** args, int arg_count);
+bool macro_depth_ok(void);
+void macro_depth_push(void);
+void macro_depth_pop(void);
 
 /* --- Type Parsing (parser_type.c) --- */
 bool is_name_token(CnextTokenType type);

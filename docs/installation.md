@@ -1,11 +1,30 @@
 # Installation
 
-## Prerequisites
+## Quick Install
 
-- **GCC** or **Clang** compiler (with C11 support)
-- **Make** (Linux/macOS) or **MinGW** (Windows)
-- **Git** (for cloning the repository)
-- **libcurl** (Linux/macOS, for networking features)
+### Pre-built Release (Recommended)
+
+**Windows:**
+1. Download `cnext-v3.5-windows.zip` from the [Releases page](https://github.com/Melton122/cnext/releases)
+2. Extract to `C:\Cnext`
+3. Run `install.bat` (as Administrator) or add `C:\Cnext\bin` to your PATH
+4. Open a new terminal and run `cnext version`
+
+**Linux:**
+```bash
+git clone https://github.com/Melton122/cnext.git
+cd cnext
+make
+sudo make install
+```
+
+**macOS:**
+```bash
+git clone https://github.com/Melton122/cnext.git
+cd cnext
+make
+make install
+```
 
 ## Building from Source
 

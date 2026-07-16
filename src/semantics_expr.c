@@ -295,6 +295,7 @@ CnextTokenType analyze_expression(ASTNode* node) {
             for (int i = 0; i < node->child_count; i++) {
                 analyze_expression(node->children[i]);
             }
+            type = TOKEN_IDENTIFIER;
             break;
         }
         case AST_SUPER_EXPR:

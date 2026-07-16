@@ -86,9 +86,12 @@ install: $(EXEC)
 ifeq ($(UNAME_S),Windows)
 	@if not exist "$(INSTALL_DIR)" mkdir "$(INSTALL_DIR)"
 	copy /Y $(EXEC) "$(INSTALL_DIR)\$(EXEC)"
+	@echo Copying include directory...
+	@xcopy /E /Y /Q "include\*" "$(INSTALL_DIR)\..\include\" >nul 2>&1
 else
 	$(MKDIR) "$(INSTALL_DIR)" 2>/dev/null || true
 	cp $(EXEC) "$(INSTALL_DIR)/$(EXEC)"
+	cp -r include "$(INSTALL_DIR)/../include" 2>/dev/null || true
 endif
 	@echo "Installed $(EXEC) to $(INSTALL_DIR)"
 	@echo "Add $(INSTALL_DIR) to your PATH to use 'cnext' globally."
@@ -96,8 +99,10 @@ endif
 uninstall:
 ifeq ($(UNAME_S),Windows)
 	@if exist "$(INSTALL_DIR)\$(EXEC)" del /f "$(INSTALL_DIR)\$(EXEC)"
+	@if exist "$(INSTALL_DIR)\..\include" rmdir /S /Q "$(INSTALL_DIR)\..\include" 2>nul
 else
 	$(RM) "$(INSTALL_DIR)/$(EXEC)" 2>/dev/null || true
+	rm -rf "$(INSTALL_DIR)/../include" 2>/dev/null || true
 endif
 	@echo "Removed $(EXEC) from $(INSTALL_DIR)"
 

@@ -19,6 +19,7 @@ static inline void thread_join(void* thread) {
 /* Mutex functions */
 static inline void* mutex_new(void) {
     CnextMutex* m = (CnextMutex*)malloc(sizeof(CnextMutex));
+    if (!m) return NULL;
     *m = cnext_mutex_new();
     _cnext_track(m);
     return m;
@@ -34,11 +35,14 @@ static inline void mutex_unlock(void* mutex) {
 
 static inline void mutex_free(void* mutex) {
     cnext_mutex_free((CnextMutex*)mutex);
+    _cnext_untrack(mutex);
+    free(mutex);
 }
 
 /* Channel functions */
 static inline void* channel_new(int capacity) {
     CnextChannel* ch = (CnextChannel*)malloc(sizeof(CnextChannel));
+    if (!ch) return NULL;
     *ch = cnext_channel_new(capacity);
     _cnext_track(ch);
     return ch;
@@ -54,6 +58,8 @@ static inline CnextString channel_recv(void* channel) {
 
 static inline void channel_free(void* channel) {
     cnext_channel_free((CnextChannel*)channel);
+    _cnext_untrack(channel);
+    free(channel);
 }
 
 #endif /* CNEXT_THREAD_H */

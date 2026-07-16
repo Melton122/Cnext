@@ -15,7 +15,7 @@ bool module_path_parse(ModulePath* out, const char* import_str) {
     const char* at = strchr(p, '@');
     if (at && at > p) {
         int len = (int)(at - p);
-        if (len >= (int)sizeof(import_str)) len = (int)sizeof(import_str) - 1;
+        if (len >= (int)strlen(import_str)) len = (int)strlen(import_str) - 1;
         strncpy(version_part, at + 1, sizeof(version_part) - 1);
         // We'll parse the path first, then come back to version
     }
@@ -35,28 +35,28 @@ bool module_path_parse(ModulePath* out, const char* import_str) {
 
     if (slash_count == 0) {
         // Simple: "http" or "my_module"
-        strncpy(out->name, name_buf, sizeof(out->name) - 1);
-        strncpy(out->namespace, "std", sizeof(out->namespace) - 1);
+        snprintf(out->name, sizeof(out->name), "%s", name_buf);
+        snprintf(out->namespace, sizeof(out->namespace), "std");
     } else if (slash_count == 1) {
         // Namespaced: "std/http" or "org/pkg"
         char* slash = strchr(name_buf, '/');
         if (slash) {
             *slash = '\0';
-            strncpy(out->namespace, name_buf, sizeof(out->namespace) - 1);
-            strncpy(out->name, slash + 1, sizeof(out->name) - 1);
+            snprintf(out->namespace, sizeof(out->namespace), "%s", name_buf);
+            snprintf(out->name, sizeof(out->name), "%s", slash + 1);
         }
     } else if (slash_count == 2) {
         // Submodule: "std/http/server"
         char* first_slash = strchr(name_buf, '/');
         if (first_slash) {
             *first_slash = '\0';
-            strncpy(out->namespace, name_buf, sizeof(out->namespace) - 1);
+            snprintf(out->namespace, sizeof(out->namespace), "%s", name_buf);
             char* rest = first_slash + 1;
             char* second_slash = strchr(rest, '/');
             if (second_slash) {
                 *second_slash = '\0';
-                strncpy(out->name, rest, sizeof(out->name) - 1);
-                strncpy(out->submodule, second_slash + 1, sizeof(out->submodule) - 1);
+                snprintf(out->name, sizeof(out->name), "%s", rest);
+                snprintf(out->submodule, sizeof(out->submodule), "%s", second_slash + 1);
             }
         }
     }

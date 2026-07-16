@@ -375,3 +375,66 @@ printin(s1.length)  // 5
 bool equal = (s1 == s2)    // false
 bool not_equal = (s1 != s2)  // true
 ```
+
+## Additional Keywords
+
+### `own` — Ownership Transfer
+
+```cnext
+own str data = get_string()
+```
+
+### `constexpr` — Compile-Time Constants
+
+```cnext
+constexpr int MAX_SIZE = 1024
+```
+
+### `typeof` — Type Inspection
+
+```cnext
+str type_name = typeof(42)  // "int"
+```
+
+### `extern` — C FFI
+
+```cnext
+extern "C" func printf(str fmt, ...)
+```
+
+### `macro` — Compile-Time Code Generation
+
+```cnext
+macro swap(a, b) {
+    var temp = a
+    a = b
+    b = temp
+}
+```
+
+### `bench` — Performance Measurement
+
+```cnext
+bench {
+    // code to benchmark
+}
+```
+
+### `@attribute` — Annotations
+
+```cnext
+@deprecated
+func old_function() { }
+```
+
+### Null Coalescing `??`
+
+```cnext
+str name = get_name() ?? "default"
+```
+
+### Optional Chaining `?.`
+
+```cnext
+str val = obj?.field?.subfield
+```

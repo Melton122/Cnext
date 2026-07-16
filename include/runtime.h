@@ -16,6 +16,10 @@
  * a single .c file that is compiled directly to an executable. This avoids
  * the need for a separate runtime library link step. For multi-file projects,
  * consider extracting these into a runtime.c file and linking separately.
+ *
+ * Thread safety: The global arena/pool/ref tracking are process-wide statics.
+ * Generated programs using threads should use per-thread arenas or protect
+ * shared allocators with mutexes. This is acceptable for v1.0.
  * ======================================================================== */
 
 /* --- String Type --- */
@@ -85,6 +89,14 @@ static CnextArena _cnext_global_arena = {NULL, 0, 0};
 static void* cnext_arena_alloc(CnextArena* arena, size_t size) {
     // Align to 8 bytes
     size = (size + 7) & ~(size_t)7;
+
+    if (size > CNEXT_ARENA_BLOCK_SIZE) {
+        // Too large for arena, use regular malloc
+        void* ptr = malloc(size);
+        if (!ptr) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
+        arena->total_allocated += size;
+        return ptr;
+    }
 
     if (!arena->current || arena->current->used + size > CNEXT_ARENA_BLOCK_SIZE) {
         _ArenaBlock* block = (_ArenaBlock*)malloc(sizeof(_ArenaBlock));
@@ -307,9 +319,12 @@ typedef struct {
 } CnextClosure;
 
 static inline void cnext_closure_decref(CnextClosure* c) {
-    if (c && c->env && --c->refcount <= 0) {
-        free(c->env);
-        c->env = NULL;
+    if (!c) return;
+    if (--c->refcount <= 0) {
+        if (c->env) {
+            free(c->env);
+            c->env = NULL;
+        }
         c->fn = NULL;
     }
 }
@@ -330,7 +345,7 @@ typedef struct {
     CnextString repr;
 } CnextTuple;
 
-static inline void printin_tuple(CnextTuple x) { printf("%s\n", x.repr.data); }
+static inline void printin_tuple(CnextTuple x) { printf("%s\n", x.repr.data ? x.repr.data : "(null)"); }
 
 #define printin(...) do { __auto_type _x = (__VA_ARGS__); _Generic((_x), \
     int: printin_int, \
@@ -357,7 +372,7 @@ static inline void printin_tuple(CnextTuple x) { printf("%s\n", x.repr.data); }
 /* --- Input --- */
 
 static inline CnextString cnext_input(CnextString prompt) {
-    printf("%s", prompt.data);
+    if (prompt.data) printf("%s", prompt.data);
     char* buffer = (char*)malloc(256);
     if (!buffer) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
     if (fgets(buffer, 256, stdin)) {
@@ -393,20 +408,20 @@ static inline CnextString cnext_concat(CnextString s1, CnextString s2) {
 
 /* --- To-String Conversion --- */
 
-static inline CnextString cnext_to_string_int(int x) { char* b = (char*)malloc(32); snprintf(b, 32, "%d", x); _cnext_track(b); return (CnextString){b, strlen(b)}; }
-static inline CnextString cnext_to_string_uint(unsigned int x) { char* b = (char*)malloc(32); snprintf(b, 32, "%u", x); _cnext_track(b); return (CnextString){b, strlen(b)}; }
-static inline CnextString cnext_to_string_long(long x) { char* b = (char*)malloc(32); snprintf(b, 32, "%ld", x); _cnext_track(b); return (CnextString){b, strlen(b)}; }
-static inline CnextString cnext_to_string_ulong(unsigned long x) { char* b = (char*)malloc(32); snprintf(b, 32, "%lu", x); _cnext_track(b); return (CnextString){b, strlen(b)}; }
-static inline CnextString cnext_to_string_llong(long long x) { char* b = (char*)malloc(32); snprintf(b, 32, "%lld", x); _cnext_track(b); return (CnextString){b, strlen(b)}; }
-static inline CnextString cnext_to_string_ullong(unsigned long long x) { char* b = (char*)malloc(32); snprintf(b, 32, "%llu", x); _cnext_track(b); return (CnextString){b, strlen(b)}; }
-static inline CnextString cnext_to_string_size_t(size_t x) { char* b = (char*)malloc(32); snprintf(b, 32, "%zu", x); _cnext_track(b); return (CnextString){b, strlen(b)}; }
-static inline CnextString cnext_to_string_float(float x) { char* b = (char*)malloc(64); snprintf(b, 64, "%f", x); _cnext_track(b); return (CnextString){b, strlen(b)}; }
-static inline CnextString cnext_to_string_double(double x) { char* b = (char*)malloc(64); snprintf(b, 64, "%f", x); _cnext_track(b); return (CnextString){b, strlen(b)}; }
+static inline CnextString cnext_to_string_int(int x) { char* b = (char*)malloc(32); if (!b) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); } snprintf(b, 32, "%d", x); _cnext_track(b); return (CnextString){b, strlen(b)}; }
+static inline CnextString cnext_to_string_uint(unsigned int x) { char* b = (char*)malloc(32); if (!b) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); } snprintf(b, 32, "%u", x); _cnext_track(b); return (CnextString){b, strlen(b)}; }
+static inline CnextString cnext_to_string_long(long x) { char* b = (char*)malloc(32); if (!b) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); } snprintf(b, 32, "%ld", x); _cnext_track(b); return (CnextString){b, strlen(b)}; }
+static inline CnextString cnext_to_string_ulong(unsigned long x) { char* b = (char*)malloc(32); if (!b) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); } snprintf(b, 32, "%lu", x); _cnext_track(b); return (CnextString){b, strlen(b)}; }
+static inline CnextString cnext_to_string_llong(long long x) { char* b = (char*)malloc(32); if (!b) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); } snprintf(b, 32, "%lld", x); _cnext_track(b); return (CnextString){b, strlen(b)}; }
+static inline CnextString cnext_to_string_ullong(unsigned long long x) { char* b = (char*)malloc(32); if (!b) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); } snprintf(b, 32, "%llu", x); _cnext_track(b); return (CnextString){b, strlen(b)}; }
+static inline CnextString cnext_to_string_size_t(size_t x) { char* b = (char*)malloc(32); if (!b) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); } snprintf(b, 32, "%zu", x); _cnext_track(b); return (CnextString){b, strlen(b)}; }
+static inline CnextString cnext_to_string_float(float x) { char* b = (char*)malloc(64); if (!b) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); } snprintf(b, 64, "%f", x); _cnext_track(b); return (CnextString){b, strlen(b)}; }
+static inline CnextString cnext_to_string_double(double x) { char* b = (char*)malloc(64); if (!b) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); } snprintf(b, 64, "%f", x); _cnext_track(b); return (CnextString){b, strlen(b)}; }
 static inline CnextString cnext_to_string_str(CnextString x) { return x; }
-static inline CnextString cnext_to_string_cstr(const char* x) { return (CnextString){(char*)x, strlen(x)}; }
+static inline CnextString cnext_to_string_cstr(const char* x) { if (!x) return (CnextString){(char*)"", 0}; return (CnextString){(char*)x, strlen(x)}; }
 static inline CnextString cnext_to_string_bool(bool x) { return x ? (CnextString){(char*)"true", 4} : (CnextString){(char*)"false", 5}; }
-static inline CnextString cnext_to_string_ptr(void* x) { char* b = (char*)malloc(32); snprintf(b, 32, "%p", x); _cnext_track(b); return (CnextString){b, strlen(b)}; }
-static inline CnextString cnext_to_string_char(char x) { char* b = (char*)malloc(2); b[0] = x; b[1] = '\0'; _cnext_track(b); return (CnextString){b, 1}; }
+static inline CnextString cnext_to_string_ptr(void* x) { char* b = (char*)malloc(32); if (!b) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); } snprintf(b, 32, "%p", x); _cnext_track(b); return (CnextString){b, strlen(b)}; }
+static inline CnextString cnext_to_string_char(char x) { char* b = (char*)malloc(2); if (!b) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); } b[0] = x; b[1] = '\0'; _cnext_track(b); return (CnextString){b, 1}; }
 
 #define cnext_to_string(...) _Generic((__VA_ARGS__), \
     int: cnext_to_string_int, \
@@ -572,6 +587,7 @@ static inline CnextString cnext_str_reverse(CnextString s) {
 }
 
 static inline int cnext_str_to_int(CnextString s) {
+    if (!s.data || s.length == 0) return 0;
     char buf[64];
     size_t len = s.length < 63 ? s.length : 63;
     memcpy(buf, s.data, len);
@@ -580,6 +596,7 @@ static inline int cnext_str_to_int(CnextString s) {
 }
 
 static inline double cnext_str_to_double(CnextString s) {
+    if (!s.data || s.length == 0) return 0.0;
     char buf[64];
     size_t len = s.length < 63 ? s.length : 63;
     memcpy(buf, s.data, len);
@@ -629,7 +646,34 @@ static inline size_t _cnext_array_check(size_t length, size_t index) {
 /* --- Threading --- */
 
 #ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef NOGDI
+#define NOGDI
+#endif
 #include <windows.h>
+#ifdef ERROR
+#undef ERROR
+#endif
+#ifdef WARNING
+#undef WARNING
+#endif
+#ifdef OK
+#undef OK
+#endif
+#ifdef near
+#undef near
+#endif
+#ifdef far
+#undef far
+#endif
+#ifdef small
+#undef small
+#endif
 
 typedef HANDLE CnextThread;
 typedef CRITICAL_SECTION CnextMutex;
@@ -664,6 +708,7 @@ static inline CnextChannel cnext_channel_new(int capacity) {
     CnextChannel ch;
     ch.capacity = capacity > 0 ? capacity : 16;
     ch.buffer = (CnextString*)malloc(sizeof(CnextString) * ch.capacity);
+    if (!ch.buffer) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
     ch.head = 0; ch.tail = 0; ch.count = 0;
     InitializeCriticalSection(&ch.mutex);
     ch.not_empty = CreateEvent(NULL, FALSE, FALSE, NULL);
@@ -745,6 +790,7 @@ static inline CnextChannel cnext_channel_new(int capacity) {
     CnextChannel ch;
     ch.capacity = capacity > 0 ? capacity : 16;
     ch.buffer = (CnextString*)malloc(sizeof(CnextString) * ch.capacity);
+    if (!ch.buffer) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
     ch.head = 0; ch.tail = 0; ch.count = 0;
     pthread_mutex_init(&ch.mutex, NULL);
     pthread_cond_init(&ch.not_empty, NULL);

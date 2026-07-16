@@ -1,0 +1,45 @@
+// Test string utility functions
+// This test verifies the new string functions work correctly
+
+main {
+    str s = "Hello, World!"
+    
+    // Test basic string operations
+    printin(len(s))
+    
+    // Test string concatenation
+    str greeting = "Hello"
+    str target = "World"
+    str result = greeting + ", " + target + "!"
+    printin(result)
+    
+    // Test string comparison
+    str a = "abc"
+    str b = "abc"
+    if a == b {
+        printin("equal")
+    } else {
+        printin("not equal")
+    }
+    
+    // Test string indexing
+    printin(s[0])
+    printin(s[7])
+    
+    // Test string slicing
+    printin(s[0:5])
+    printin(s[7:12])
+    
+    // Test string in condition
+    if len(s) > 0 {
+        printin("not empty")
+    }
+    
+    // Test string with loops
+    str word = "test"
+    int char_count = 0
+    for int i = 0; i < len(word); i = i + 1 {
+        char_count = char_count + 1
+    }
+    printin(char_count)
+}

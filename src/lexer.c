@@ -290,7 +290,7 @@ static CnextTokenType identifier_type(void) {
                     case 'y': {
                         CnextTokenType t = check_keyword(2, 4, "peof", TOKEN_TYPEOF);
                         if (t != TOKEN_IDENTIFIER) return t;
-                        return check_keyword(2, 1, "ype", TOKEN_TYPE_ALIAS);
+                        return check_keyword(2, 2, "pe", TOKEN_TYPE_ALIAS);
                     }
                     case 'e': return check_keyword(2, 2, "st", TOKEN_TEST);
                 }

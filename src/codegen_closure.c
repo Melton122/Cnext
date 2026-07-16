@@ -12,8 +12,10 @@ void push_scope(void) {
 void pop_scope(void) {
     if (!current_scope) return;
     for (ScopeClosureVar* cv = current_scope->closures; cv; cv = cv->next) {
-        write_indent();
-        fprintf(out, "cnext_closure_decref(&%s);\n", cv->name);
+        if (out) {
+            write_indent();
+            fprintf(out, "cnext_closure_decref(&%s);\n", cv->name);
+        }
     }
     ScopeClosureVar* cv = current_scope->closures;
     while (cv) {
@@ -135,4 +137,37 @@ void free_captures(CapturedVar* list) {
         free(list);
         list = next;
     }
+}
+
+bool is_func_param(const char* name, int name_len) {
+    if (!current_func_params) return false;
+    for (int i = 0; i < current_func_params->child_count; i++) {
+        ASTNode* param = current_func_params->children[i];
+        if (param->token.length == name_len &&
+            strncmp(param->token.start, name, name_len) == 0 &&
+            param->var_type.type == TOKEN_FUNC) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool is_func_typed_var(const char* name, int name_len) {
+    if (find_closure_var(name)) return true;
+    if (!program_node) return false;
+    for (int i = 0; i < program_node->child_count; i++) {
+        ASTNode* child = program_node->children[i];
+        if (child->type == AST_MAIN && child->left) {
+            for (int j = 0; j < child->left->child_count; j++) {
+                ASTNode* stmt = child->left->children[j];
+                if (stmt->type == AST_VAR_DECL &&
+                    stmt->token.length == name_len &&
+                    strncmp(stmt->token.start, name, name_len) == 0 &&
+                    stmt->var_type.type == TOKEN_FUNC) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
 }

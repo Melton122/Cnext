@@ -12,6 +12,13 @@ static inline CnextString str_trim(CnextString s) {
     const char* end = s.data + s.length - 1;
     while (start <= end && isspace((unsigned char)*start)) start++;
     while (end >= start && isspace((unsigned char)*end)) end--;
+    if (start > end) {
+        char* buffer = (char*)malloc(1);
+        if (!buffer) return (CnextString){NULL, 0};
+        buffer[0] = '\0';
+        _cnext_track(buffer);
+        return (CnextString){buffer, 0};
+    }
     size_t new_len = (size_t)(end - start + 1);
     char* buffer = (char*)malloc(new_len + 1);
     if (!buffer) return (CnextString){NULL, 0};
@@ -115,7 +122,11 @@ static inline CnextString str_replace(CnextString s, CnextString old, CnextStrin
         _cnext_track(buffer);
         return (CnextString){buffer, s.length};
     }
-    size_t new_len = s.length + count * (new_str.length - old.length);
+    size_t diff = new_str.length > old.length ? new_str.length - old.length : 0;
+    if (diff > 0 && count > 0 && count > (SIZE_MAX - s.length) / diff) {
+        return (CnextString){NULL, 0}; // overflow
+    }
+    size_t new_len = s.length + count * diff - count * (old.length > new_str.length ? old.length - new_str.length : 0);
     char* buffer = (char*)malloc(new_len + 1);
     if (!buffer) return (CnextString){NULL, 0};
     char* w = buffer;

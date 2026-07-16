@@ -90,3 +90,33 @@
 - **Interactive Playground:** Try Cnext in the browser (Wasm-based)
 - **Performance Benchmarking Suite:** Comprehensive benchmarks for language perf
 - **Cross-platform CI:** Automated testing on Windows, Linux, macOS
+
+## Version 7.0 — Module System (Implemented)
+- **Import system:** `import module` with package support
+- **Modules:** File-based module organization
+- **Package manager improvements:** `cnext install` for dependency management
+- **Namespaces:** `namespace MyLib { }` syntax
+- **Visibility modifiers:** `public`, `private`, `protected`
+
+## Version 8.0 — Type System & Developer Experience (Implemented)
+- **Type aliases:** `type MyInt = int` for clearer code
+- **Nullable types:** `str?`, `int?` for optional values
+- **Optional chaining:** `?.` operator for safe member access
+- **Null coalescing:** `??` operator for default values
+- **Match expressions:** Enhanced pattern matching with guards
+- **When expressions:** Multi-branch conditional expressions
+- **Comprehensions:** List/dict/set comprehension syntax
+- **Ranges:** `1..10`, `1..=10` range types
+- **String interpolation:** `"Hello ${name}"` syntax
+- **Raw strings:** `r"no \escape here"` syntax
+- **9-pass optimizer:** Constant propagation, copy propagation, peephole, identity elimination, constant folding, dead code elimination, branch simplification, tail-call detection, loop optimizations
+- **LSP support:** Language Server Protocol for VS Code, Neovim, Helix, Sublime, Emacs
+
+## Version 9.0 — Performance & Safety (Implemented)
+- **Enum values:** `enum Color { RED = 0xFF0000, GREEN = 0x00FF00 }`
+- **Memory pool allocator:** `POOL_ALLOC`, `POOL_FREE_ALL` for fast bulk allocation
+- **Arena allocator:** `ARENA_ALLOC`, `ARENA_FREE_ALL` for bump allocation
+- **HashMap:** String-keyed hash map with O(1) lookups (`hashmap_new`, `hashmap_put`, `hashmap_get`)
+- **Colored error messages:** File/line context with colored output
+- **Critical bug fixes:** NULL pointer handling, integer overflow protection, `math_abs(INT_MIN)`, `intcmp` overflow in qsort
+- **`func` type:** Use `func` as a type for function pointers and closures

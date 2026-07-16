@@ -21,6 +21,7 @@ static void _md5(const uint8_t* init, uint64_t len, uint8_t out[16]) {
     uint32_t r[64] = {7,12,17,22,7,12,17,22,7,12,17,22,7,12,17,22,5,9,14,20,5,9,14,20,5,9,14,20,5,9,14,20,4,11,16,23,4,11,16,23,4,11,16,23,4,11,16,23,6,10,15,21,6,10,15,21,6,10,15,21,6,10,15,21};
     uint64_t blen = ((len + 8) / 64 + 1) * 64;
     uint8_t* buf = (uint8_t*)calloc(blen, 1);
+    if (!buf) { memset(out, 0, 16); return; }
     memcpy(buf, init, len);
     buf[len] = 0x80;
     for (int i = 0; i < 8; i++) buf[blen - 8 + i] = (uint8_t)((len * 8) >> (i * 8));

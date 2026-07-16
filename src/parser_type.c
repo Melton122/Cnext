@@ -23,7 +23,7 @@ void consume_name(const char* message) {
 bool is_type(void) {
     CnextTokenType type = parser.current.type;
     if (IS_BUILTIN_TYPE(type) || type == TOKEN_VAR ||
-        type == TOKEN_ITER) {
+        type == TOKEN_ITER || type == TOKEN_FUNC) {
         return true;
     }
     if (type == TOKEN_IDENTIFIER) {
@@ -97,6 +97,12 @@ ASTNode* parse_type() {
         add_type_arg(iter_type, elem_type);
         consume(TOKEN_GREATER, "Expect '>' after iter type argument.");
         return iter_type;
+    }
+    // Check for func type (opaque function pointer)
+    if (check(TOKEN_FUNC)) {
+        advance_token();
+        ASTNode* node = create_node(AST_IDENTIFIER, parser.previous);
+        return node;
     }
     if (is_type()) {
         advance_token();

@@ -3,62 +3,67 @@
 The Lexer breaks down a `.cn` file into the following tokens.
 
 ## Keywords
-- `main`
-- `if`
-- `else`
-- `while`
-- `for`
-- `func`
-- `return`
-- `class`
-- `new`
-- `self`
-- `var`
-- `let`
+- `main` - Entry point
+- `if` / `else` - Conditional statements
+- `while` / `for` - Loops
+- `func` - Function declaration
+- `return` - Return from function
+- `class` / `struct` / `enum` - Type declarations
+- `new` / `self` / `super` - Object creation and access
+- `var` / `const` - Variable declarations
+- `import` - Module imports
+- `break` / `continue` - Loop control
+- `try` / `catch` / `finally` / `throw` - Error handling
+- `match` / `case` / `default` - Pattern matching
+- `extends` / `implements` / `override` - Inheritance
+- `interface` / `trait` - Type contracts
+- `async` / `await` / `yield` - Asynchronous code
+- `coroutine` - Coroutine functions
+- `type` - Type aliases
+- `macro` - Macro declarations
+- `constexpr` - Compile-time constants
+- `extern` - External declarations
+- `typeof` - Type reflection
+- `operator` - Operator overloading
+- `test` / `assert` - Testing
 
 ## Types
-- `int`
-- `float`
-- `str`
-- `bool`
-- `char`
+- `int` - 32-bit integer
+- `long` - 64-bit integer
+- `float` - 32-bit float
+- `double` - 64-bit float
+- `str` - String
+- `bool` - Boolean
+- `char` - Character
+- `byte` - 8-bit unsigned
+- `uint` - 32-bit unsigned
+- `ulong` - 64-bit unsigned
+- `ushort` - 16-bit unsigned
+- `ubyte` - 8-bit unsigned
 
 ## Literals
 - `NUMBER`: Integer numbers (e.g., `42`)
 - `FLOAT_LITERAL`: Floating-point numbers (e.g., `3.14`)
 - `STRING_LITERAL`: Characters enclosed in double quotes (e.g., `"Hello"`)
 - `CHAR_LITERAL`: Single character enclosed in single quotes (e.g., `'a'`)
-- `TRUE_LITERAL`: Boolean `true`
-- `FALSE_LITERAL`: Boolean `false`
-
-## Identifiers
-- `IDENTIFIER`: Alphanumeric string starting with a letter or underscore (e.g., `age`, `greet_user`).
 
 ## Operators
-- `+` (Plus)
-- `-` (Minus)
-- `*` (Multiply)
-- `/` (Divide)
-- `=` (Assign)
-- `+=`, `-=`, `*=`, `/=` (Compound Assign)
-- `==` (Equal)
-- `!=` (Not Equal)
-- `<` (Less Than)
-- `<=` (Less Than or Equal)
-- `>` (Greater Than)
-- `>=` (Greater Than or Equal)
-- `&&` (Logical AND)
-- `||` (Logical OR)
-- `!` (Logical NOT)
-- `->` (Return type arrow)
+- Arithmetic: `+`, `-`, `*`, `/`, `%`
+- Comparison: `==`, `!=`, `<`, `>`, `<=`, `>=`
+- Logical: `&&`, `||`, `!`
+- Assignment: `=`, `+=`, `-=`, `*=`, `/=`
+- Increment/Decrement: `++`, `--`
+- Arrow: `->`, `=>`
+- Range: `..`
 
 ## Punctuation
-- `{` `}` (Curly braces for blocks)
-- `(` `)` (Parentheses for grouping and parameters)
-- `[` `]` (Brackets for arrays)
-- `,` (Comma)
-- `;` (Optional Semicolon)
-
-## Special
-- `EOF`: End of file
-- `ERROR`: Invalid character or unclosed literal
+- `{` `}` - Blocks
+- `(` `)` - Grouping / parameters
+- `[` `]` - Arrays / indexing
+- `;` - Statement separator
+- `,` - List separator
+- `.` - Member access
+- `:` - Type annotation
+- `?` - Nullable type
+- `@` - Attributes
+- `...` - Variadic arguments

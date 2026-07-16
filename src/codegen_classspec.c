@@ -48,8 +48,11 @@ void generate_generic_class_specialization(ASTNode* class_decl, const char* mang
     Token* resolved_args, bool* resolved_is_array, int resolved_count)
 {
     for (int i = 0; i < class_decl->type_param_count && i < resolved_count; i++) {
-        push_type_subst(strndup(class_decl->type_params[i]->token.start, class_decl->type_params[i]->token.length),
-                        resolved_args[i], resolved_is_array[i]);
+        char tp_name[256] = {0};
+        int tp_len = class_decl->type_params[i]->token.length < 255 ? class_decl->type_params[i]->token.length : 255;
+        strncpy(tp_name, class_decl->type_params[i]->token.start, tp_len);
+        tp_name[tp_len] = '\0';
+        push_type_subst(tp_name, resolved_args[i], resolved_is_array[i]);
     }
 
     fprintf(out, "typedef struct %s {\n", mangled_name);

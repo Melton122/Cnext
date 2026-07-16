@@ -2,25 +2,6 @@
 
 All notable changes to Cnext will be documented in this file.
 
-## What to Test in v9.0
-
-**New Features to Test:**
-- Enum values: `enum Color { RED = 0xFF0000, GREEN = 0x00FF00 }`
-- HashMap: `hashmap_new`, `hashmap_put`, `hashmap_get`, `hashmap_contains`, `hashmap_remove`
-- Memory pool allocator: `POOL_ALLOC`, `POOL_FREE_ALL`
-- Improved error messages with colored output
-
-**Bug Fixes to Verify:**
-- NULL pointer handling in string operations
-- Integer overflow protection in string repeat/concat/replace
-- math_abs(INT_MIN) behavior
-- intcmp in qsort operations
-
-**Cross-Platform Testing:**
-- Windows: Build with MinGW, install to %LOCALAPPDATA%\Cnext\bin
-- Linux: Build with GCC, install to /usr/local/bin
-- macOS: Build with Clang, install to /usr/local/bin
-
 ## [9.0.0] - 2026
 
 ### Added
@@ -28,15 +9,24 @@ All notable changes to Cnext will be documented in this file.
 - **Memory pool allocator:** Fast bulk allocation for performance-critical code
 - **HashMap:** String-keyed hash map with O(1) lookups (`hashmap_new`, `hashmap_put`, `hashmap_get`)
 - **Improved error handling:** Colored error messages with file/line context
+- **Enhanced `cnext new`:** Projects now include sample files demonstrating variables, functions, classes, and imports
+- **Better install feedback:** `cnext install` shows progress, handles standard modules, and reports success/failure counts
+- **Type inference from `new`:** `var dog = new Dog(...)` now correctly infers the class type
 
 ### Fixed
 - **Critical:** NULL pointer dereferences in runtime (`printin_str`, `printin_cstr`, `cnext_concat`)
 - **Critical:** Integer overflow in string operations (`cnext_str_repeat`, `str_repeat`, `cnext_str_replace`)
 - **Critical:** `math_abs(INT_MIN)` undefined behavior
 - **Critical:** `intcmp` subtraction overflow corrupting `qsort` results
-- **High:** Documentation version mismatches (Makefile, installation.md)
-- **High:** Missing types in documentation (long, double, byte, uint, ulong, ushort, ubyte)
-- **High:** Missing keywords in documentation (20+ keywords added)
+- Class method calls on `var` declarations (`dog.info()` now works)
+- Lambda calls inside string interpolation (`"result: {double_it(5)}"`)
+- Windows API name collisions (`Rectangle`, `ERROR`, `WARNING`, `OK`)
+- Match arms in void functions no longer emit invalid `return` statements
+- Method calls on `var` declarations with `new` expressions
+- Type inference from `new` expressions for proper symbol resolution
+- 70+ runtime, arena, closure, and codegen bugs from pre-release audit
+- Documentation version mismatches (Makefile, installation.md)
+- Missing types and keywords in documentation
 
 ### Changed
 - **Version bumped to 9.0.0**

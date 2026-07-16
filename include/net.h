@@ -42,7 +42,9 @@ static inline CnextString http_get(CnextString url) {
     uc.dwUrlPathLength = 1024;
 
     wchar_t wurl[1024];
-    MultiByteToWideChar(CP_UTF8, 0, url.data, -1, wurl, 1024);
+    if (MultiByteToWideChar(CP_UTF8, 0, url.data, -1, wurl, 1024) == 0) {
+        return (CnextString){NULL, 0};
+    }
     if (!WinHttpCrackUrl(wurl, 0, 0, &uc)) return (CnextString){NULL, 0};
 
     HINTERNET hSession = WinHttpOpen(L"Cnext/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, NULL, NULL, 0);
@@ -102,7 +104,9 @@ static inline CnextString http_post(CnextString url, CnextString body) {
     uc.dwUrlPathLength = 1024;
 
     wchar_t wurl[1024];
-    MultiByteToWideChar(CP_UTF8, 0, url.data, -1, wurl, 1024);
+    if (MultiByteToWideChar(CP_UTF8, 0, url.data, -1, wurl, 1024) == 0) {
+        return (CnextString){NULL, 0};
+    }
     if (!WinHttpCrackUrl(wurl, 0, 0, &uc)) return (CnextString){NULL, 0};
 
     HINTERNET hSession = WinHttpOpen(L"Cnext/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, NULL, NULL, 0);
@@ -243,10 +247,10 @@ static inline bool download_file(CnextString url, CnextString dest_path) {
     CnextString data = http_get(url);
     if (!data.data) return false;
     FILE* fp = fopen(dest_path.data, "wb");
-    if (!fp) { free(data.data); return false; }
+    if (!fp) { cnext_free(data); return false; }
     fwrite(data.data, 1, data.length, fp);
     fclose(fp);
-    free(data.data);
+    cnext_free(data);
     return true;
 }
 
@@ -309,7 +313,6 @@ static inline void tcp_close(int sock) {
     if (sock != -1) {
         closesocket((SOCKET)sock);
     }
-    WSACleanup();
 }
 
 #else

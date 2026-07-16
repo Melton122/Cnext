@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 echo ========================================
-echo   Cnext v6.0 Installer
+echo   Cnext v9.0 Installer
 echo ========================================
 echo.
 

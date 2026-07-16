@@ -110,44 +110,68 @@ static inline long time_parse(CnextString formatted, CnextString fmt) {
 
 static inline int time_year(long timestamp) {
     time_t ts = (time_t)timestamp;
-    struct tm* t = localtime(&ts);
-    if (!t) return 0;
-    return t->tm_year + 1900;
+    struct tm t;
+#ifdef _WIN32
+    localtime_s(&t, &ts);
+#else
+    localtime_r(&ts, &t);
+#endif
+    return t.tm_year + 1900;
 }
 
 static inline int time_month(long timestamp) {
     time_t ts = (time_t)timestamp;
-    struct tm* t = localtime(&ts);
-    if (!t) return 0;
-    return t->tm_mon + 1;
+    struct tm t;
+#ifdef _WIN32
+    localtime_s(&t, &ts);
+#else
+    localtime_r(&ts, &t);
+#endif
+    return t.tm_mon + 1;
 }
 
 static inline int time_day(long timestamp) {
     time_t ts = (time_t)timestamp;
-    struct tm* t = localtime(&ts);
-    if (!t) return 0;
-    return t->tm_mday;
+    struct tm t;
+#ifdef _WIN32
+    localtime_s(&t, &ts);
+#else
+    localtime_r(&ts, &t);
+#endif
+    return t.tm_mday;
 }
 
 static inline int time_hour(long timestamp) {
     time_t ts = (time_t)timestamp;
-    struct tm* t = localtime(&ts);
-    if (!t) return 0;
-    return t->tm_hour;
+    struct tm t;
+#ifdef _WIN32
+    localtime_s(&t, &ts);
+#else
+    localtime_r(&ts, &t);
+#endif
+    return t.tm_hour;
 }
 
 static inline int time_minute(long timestamp) {
     time_t ts = (time_t)timestamp;
-    struct tm* t = localtime(&ts);
-    if (!t) return 0;
-    return t->tm_min;
+    struct tm t;
+#ifdef _WIN32
+    localtime_s(&t, &ts);
+#else
+    localtime_r(&ts, &t);
+#endif
+    return t.tm_min;
 }
 
 static inline int time_second(long timestamp) {
     time_t ts = (time_t)timestamp;
-    struct tm* t = localtime(&ts);
-    if (!t) return 0;
-    return t->tm_sec;
+    struct tm t;
+#ifdef _WIN32
+    localtime_s(&t, &ts);
+#else
+    localtime_r(&ts, &t);
+#endif
+    return t.tm_sec;
 }
 
 #endif

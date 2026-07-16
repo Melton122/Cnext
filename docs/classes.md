@@ -232,3 +232,20 @@ enum Color {
 Color c = RED
 printin(c == RED)  // true
 ```
+
+### Enum with Explicit Values
+
+```cnext
+enum HttpStatus {
+    OK = 200,
+    NOT_FOUND = 404,
+    ERROR = 500
+}
+
+HttpStatus code = OK
+match code {
+    200 => printin("OK")
+    404 => printin("Not Found")
+    _ => printin("Error")
+}
+```

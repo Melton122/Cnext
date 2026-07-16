@@ -11,7 +11,7 @@ test "constant folding" {
     int z = 100 / 4
     assert(z == 25)
     
-    println("constant folding: OK")
+    printin("constant folding: OK")
 }
 
 test "identity elimination" {
@@ -43,7 +43,7 @@ test "identity elimination" {
     int g = 0 * 999
     assert(g == 0)
     
-    println("identity elimination: OK")
+    printin("identity elimination: OK")
 }
 
 test "boolean folding" {
@@ -59,7 +59,7 @@ test "boolean folding" {
     assert(true)
     assert(!false)
     
-    println("boolean folding: OK")
+    printin("boolean folding: OK")
 }
 
 test "unary folding" {
@@ -69,7 +69,7 @@ test "unary folding" {
     bool y = !false
     assert(y == true)
     
-    println("unary folding: OK")
+    printin("unary folding: OK")
 }
 
 test "nested constant expressions" {
@@ -79,9 +79,9 @@ test "nested constant expressions" {
     int y = 100 / (5 + 5)
     assert(y == 10)
     
-    println("nested constants: OK")
+    printin("nested constants: OK")
 }
 
 main {
-    println("All optimizer tests passed!")
+    printin("All optimizer tests passed!")
 }

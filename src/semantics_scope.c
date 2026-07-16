@@ -123,6 +123,7 @@ void define_symbol(Token token, CnextTokenType type, bool is_const, const char* 
     sym->is_const = is_const;
     sym->type_name = copy_cstring(type_name);
     sym->decl_node = decl_node;
+    if (!sym->name) { free(sym); return; }
     sym->next = sem_current_scope->symbols;
     sem_current_scope->symbols = sym;
 }
@@ -134,6 +135,7 @@ void define_type_symbol(ASTNode* node, CnextTokenType type) {
     sym->type = type;
     sym->is_const = true;
     sym->type_name = strndup(node->token.start, node->token.length);
+    if (!sym->name || !sym->type_name) { free(sym->name); free(sym->type_name); free(sym); return; }
     sym->decl_node = node;
     sym->next = sem_current_scope->symbols;
     sem_current_scope->symbols = sym;
@@ -167,7 +169,7 @@ bool is_named_type_symbol(CnextTokenType type) {
 
 bool validate_type_token(Token token) {
     if (token.type == TOKEN_EOF || is_builtin_value_type(token.type) ||
-        token.type == TOKEN_ITER) return true;
+        token.type == TOKEN_ITER || token.type == TOKEN_FUNC) return true;
     if (token.type != TOKEN_IDENTIFIER) {
         report_token_error(token, "Invalid type:");
         return false;

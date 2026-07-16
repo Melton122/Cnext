@@ -223,6 +223,11 @@ static ASTNode* primary() {
             // Check for macro expansion
             ASTNode* macro_decl = lookup_macro(node->token.start, node->token.length);
             if (macro_decl && macro_decl->type == AST_MACRO_DECL) {
+                if (!macro_depth_ok()) {
+                    error_at_current("Macro expansion depth limit exceeded (possible recursive macro).");
+                    free_ast(call);
+                    return node;
+                }
                 // Collect arguments
                 ASTNode** args = NULL;
                 int arg_count = 0;
@@ -231,15 +236,18 @@ static ASTNode* primary() {
                     do {
                         if (arg_count >= arg_cap) {
                             arg_cap = arg_cap ? arg_cap * 2 : 8;
-                            args = realloc(args, sizeof(ASTNode*) * arg_cap);
+                            ASTNode** na = realloc(args, sizeof(ASTNode*) * arg_cap);
+                            if (na) args = na;
                         }
                         args[arg_count++] = expression();
                     } while (match_token(TOKEN_COMMA));
                 }
                 consume(TOKEN_RPAREN, "Expect ')' after arguments.");
                 // Expand macro: deep copy body and substitute parameters
+                macro_depth_push();
                 ASTNode* expanded = deep_copy_ast(macro_decl->left);
                 substitute_params(expanded, macro_decl->children, macro_decl->child_count, args, arg_count);
+                macro_depth_pop();
                 free(args);
                 free_ast(call);
                 // Return the expanded block as an expression statement

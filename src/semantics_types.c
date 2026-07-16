@@ -79,6 +79,11 @@ void analyze_var_declaration(ASTNode* node) {
         CnextTokenType inferred = node->init->expr_type;
         if (inferred != TOKEN_EOF && inferred != TOKEN_VAR) {
             node->var_type.type = inferred;
+            if (inferred == TOKEN_IDENTIFIER && node->init->token.length > 0) {
+                node->var_type.start = node->init->token.start;
+                node->var_type.length = node->init->token.length;
+                node->var_type.line = node->init->token.line;
+            }
         }
     }
 

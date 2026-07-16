@@ -35,7 +35,7 @@ static void lint_add(LintResult* result, int line, int col, char severity, const
     issue->fix = fix ? checked_strdup(fix) : NULL;
 }
 
-static char char_buffer[256];
+static char char_buffer[512];
 
 // Track declared identifiers for unused variable/function warnings
 #define MAX_DECLS 256
@@ -50,10 +50,6 @@ bool lint_source(const char* source, LintResult* result) {
     init_lexer(source);
 
     Token prev_token = {TOKEN_EOF, "", 0, 0};
-    Token prev_prev_token = {TOKEN_EOF, "", 0, 0};
-    bool in_func = false;
-    bool in_if = false;
-    bool in_while = false;
     int paren_depth = 0;
     int brace_depth = 0;
     bool after_return = false;
@@ -82,7 +78,6 @@ bool lint_source(const char* source, LintResult* result) {
         if (token.type == TOKEN_LPAREN) paren_depth++;
         if (token.type == TOKEN_RPAREN) {
             if (paren_depth > 0) paren_depth--;
-            in_if = false;
         }
 
         // Rule: comparison with true/false literals
@@ -101,11 +96,6 @@ bool lint_source(const char* source, LintResult* result) {
                     token.length, token.start);
                 lint_add(result, token.line, 1, 'W', char_buffer, NULL);
             }
-        }
-
-        // Rule: function declaration
-        if (token.type == TOKEN_FUNC) {
-            in_func = true;
         }
 
         // Rule: assignment in condition (likely should be ==)
@@ -143,10 +133,6 @@ bool lint_source(const char* source, LintResult* result) {
         if (token.type == TOKEN_SEMICOLON) {
             // Reset after semicolons (end of statement)
         }
-
-        // Rule: empty if/while body
-        if (token.type == TOKEN_IF) in_if = true;
-        if (token.type == TOKEN_WHILE) in_while = true;
 
         // Rule: == true / == false
         if (token.type == TOKEN_EQ_EQ && prev_token.type == TOKEN_TRUE) {
@@ -256,15 +242,17 @@ bool lint_source(const char* source, LintResult* result) {
             }
         }
 
-        prev_prev_token = prev_token;
         prev_token = token;
     }
 
     // Report unused variables and functions
     for (int i = 0; i < decl_count; i++) {
         if (!decls[i].used && !decls[i].is_func) {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-truncation"
             snprintf(char_buffer, sizeof(char_buffer),
                 "Variable '%s' is declared but never used", decls[i].name);
+#pragma GCC diagnostic pop
             lint_add(result, decls[i].line, 1, 'W', char_buffer, "Remove or use the variable");
         }
         // Don't warn about unused functions - they may be part of an API

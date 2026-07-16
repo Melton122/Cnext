@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <math.h>
 
-static uint64_t random_state[2];
+static uint64_t random_state[2] = {0x123456789ABCDEF0ULL, 0xFEDCBA9876543210ULL};
 
 static inline void random_seed(int seed) {
     random_state[0] = (uint64_t)seed;

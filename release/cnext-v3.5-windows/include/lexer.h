@@ -50,12 +50,22 @@ typedef enum {
     // Traits / Mixins
     TOKEN_TRAIT,
 
+    // v8.0: Type aliases
+    TOKEN_TYPE_ALIAS,   // type alias keyword
+
     // Types
     TOKEN_INT_TYPE,
+    TOKEN_LONG_TYPE,
     TOKEN_FLOAT_TYPE,
+    TOKEN_DOUBLE_TYPE,
     TOKEN_STR_TYPE,
     TOKEN_BOOL_TYPE,
     TOKEN_CHAR_TYPE,
+    TOKEN_BYTE_TYPE,
+    TOKEN_UINT_TYPE,
+    TOKEN_ULONG_TYPE,
+    TOKEN_USHORT_TYPE,
+    TOKEN_UBYTE_TYPE,
 
     // Literals
     TOKEN_IDENTIFIER,
@@ -141,17 +151,24 @@ typedef enum {
     // v4.0: Reflection and macros
     TOKEN_TYPEOF,       // typeof
     TOKEN_MACRO,        // macro
-    TOKEN_AT            // @ attribute marker
-} TokenType;
+    TOKEN_CONSTEXPR,    // constexpr
+    TOKEN_AT,           // @ attribute marker
+
+    // v4.5: Memory & FFI
+    TOKEN_EXTERN,       // extern
+    TOKEN_OWN,          // own
+    TOKEN_BENCH,        // bench
+    TOKEN_DOLLAR        // $ (for FFI naming: $function_name)
+} CnextTokenType;
 
 typedef struct {
-    TokenType type;
+    CnextTokenType type;
     const char* start;
     int length;
     int line;
 } Token;
 
 void init_lexer(const char* source);
-Token next_token();
+Token next_token(void);
 
 #endif // LEXER_H

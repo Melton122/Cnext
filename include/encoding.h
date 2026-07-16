@@ -101,6 +101,7 @@ static CnextString url_encode(CnextString input) {
     if (!input.data) return (CnextString){NULL, 0};
     size_t len = input.length;
     size_t cap = len * 3 + 1;
+    if (len > (SIZE_MAX - 1) / 3) return (CnextString){NULL, 0}; // overflow check
     char* buf = (char*)malloc(cap);
     if (!buf) return (CnextString){NULL, 0};
     size_t w = 0;

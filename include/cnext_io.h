@@ -21,7 +21,7 @@ static inline CnextString read_file(CnextString path) {
     fclose(file);
 
     _cnext_track(buffer);
-    return (CnextString){buffer, size};
+    return (CnextString){buffer, read};
 }
 
 static inline bool write_file(CnextString path, CnextString content) {

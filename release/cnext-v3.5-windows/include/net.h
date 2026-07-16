@@ -5,6 +5,7 @@
 #include <string.h>
 #include <stdbool.h>
 
+#ifdef _WIN32
 // Windows networking
 #include <winsock2.h>
 #include <windows.h>
@@ -16,8 +17,20 @@
 #pragma comment(lib, "ws2_32.lib")
 #endif
 
+#else
+// POSIX networking
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netdb.h>
+#include <arpa/inet.h>
+#include <errno.h>
+#include <curl/curl.h>
+#endif
+
 // --- HTTP ---
 
+#ifdef _WIN32
 static inline CnextString http_get(CnextString url) {
     URL_COMPONENTS uc = {0};
     uc.dwStructSize = sizeof(uc);
@@ -139,6 +152,93 @@ static inline CnextString http_post(CnextString url, CnextString body) {
     return (CnextString){buffer, length};
 }
 
+#else
+// POSIX HTTP implementation using libcurl
+
+struct CnextCurlBuffer {
+    char* data;
+    size_t length;
+    size_t capacity;
+};
+
+static size_t curl_write_callback(void* contents, size_t size, size_t nmemb, void* userp) {
+    struct CnextCurlBuffer* buf = (struct CnextCurlBuffer*)userp;
+    size_t total = size * nmemb;
+    if (buf->length + total + 1 > buf->capacity) {
+        size_t new_cap = (buf->length + total + 1) * 2;
+        char* newdata = (char*)realloc(buf->data, new_cap);
+        if (!newdata) return 0;
+        buf->data = newdata;
+        buf->capacity = new_cap;
+    }
+    memcpy(buf->data + buf->length, contents, total);
+    buf->length += total;
+    buf->data[buf->length] = '\0';
+    return total;
+}
+
+static inline CnextString http_get(CnextString url) {
+    CURL* curl = curl_easy_init();
+    if (!curl) return (CnextString){NULL, 0};
+
+    struct CnextCurlBuffer buf = {0};
+    buf.capacity = 4096;
+    buf.data = (char*)malloc(buf.capacity);
+    if (!buf.data) { curl_easy_cleanup(curl); return (CnextString){NULL, 0}; }
+    buf.data[0] = '\0';
+
+    curl_easy_setopt(curl, CURLOPT_URL, url.data);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_callback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buf);
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+
+    CURLcode res = curl_easy_perform(curl);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK) {
+        free(buf.data);
+        return (CnextString){NULL, 0};
+    }
+
+    _cnext_track(buf.data);
+    return (CnextString){buf.data, buf.length};
+}
+
+static inline CnextString http_post(CnextString url, CnextString body) {
+    CURL* curl = curl_easy_init();
+    if (!curl) return (CnextString){NULL, 0};
+
+    struct CnextCurlBuffer buf = {0};
+    buf.capacity = 4096;
+    buf.data = (char*)malloc(buf.capacity);
+    if (!buf.data) { curl_easy_cleanup(curl); return (CnextString){NULL, 0}; }
+    buf.data[0] = '\0';
+
+    curl_easy_setopt(curl, CURLOPT_URL, url.data);
+    curl_easy_setopt(curl, CURLOPT_POST, 1L);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.data);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long)body.length);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_callback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buf);
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+
+    CURLcode res = curl_easy_perform(curl);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK) {
+        free(buf.data);
+        return (CnextString){NULL, 0};
+    }
+
+    _cnext_track(buf.data);
+    return (CnextString){buf.data, buf.length};
+}
+#endif
+
+// --- Download (cross-platform) ---
+
 static inline bool download_file(CnextString url, CnextString dest_path) {
     CnextString data = http_get(url);
     if (!data.data) return false;
@@ -152,6 +252,7 @@ static inline bool download_file(CnextString url, CnextString dest_path) {
 
 // --- TCP ---
 
+#ifdef _WIN32
 static inline int tcp_connect(CnextString host, int port) {
     WSADATA wsaData;
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) return -1;
@@ -210,5 +311,60 @@ static inline void tcp_close(int sock) {
     }
     WSACleanup();
 }
+
+#else
+// POSIX TCP implementation
+
+static inline int tcp_connect(CnextString host, int port) {
+    struct addrinfo hints = {0}, *result = NULL;
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP;
+
+    char port_str[16];
+    snprintf(port_str, sizeof(port_str), "%d", port);
+
+    if (getaddrinfo(host.data, port_str, &hints, &result) != 0) return -1;
+
+    int sock = -1;
+    for (struct addrinfo* ptr = result; ptr != NULL; ptr = ptr->ai_next) {
+        sock = socket(ptr->ai_family, ptr->ai_socktype, ptr->ai_protocol);
+        if (sock == -1) continue;
+        if (connect(sock, ptr->ai_addr, ptr->ai_addrlen) == 0) break;
+        close(sock);
+        sock = -1;
+    }
+    freeaddrinfo(result);
+    return sock;
+}
+
+static inline bool tcp_send(int sock, CnextString data) {
+    if (sock == -1) return false;
+    ssize_t sent = send(sock, data.data, data.length, 0);
+    return sent == (ssize_t)data.length;
+}
+
+static inline CnextString tcp_receive(int sock, int max_bytes) {
+    if (sock == -1) return (CnextString){NULL, 0};
+    char* recvbuf = (char*)malloc(max_bytes + 1);
+    if (!recvbuf) return (CnextString){NULL, 0};
+
+    ssize_t iResult = recv(sock, recvbuf, max_bytes, 0);
+    if (iResult > 0) {
+        recvbuf[iResult] = '\0';
+        _cnext_track(recvbuf);
+        return (CnextString){recvbuf, (size_t)iResult};
+    } else {
+        free(recvbuf);
+        return (CnextString){NULL, 0};
+    }
+}
+
+static inline void tcp_close(int sock) {
+    if (sock != -1) {
+        close(sock);
+    }
+}
+#endif
 
 #endif

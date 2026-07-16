@@ -2,7 +2,7 @@
   "name": "cnext",
   "displayName": "Cnext Language Support",
   "description": "Syntax highlighting, snippets, and build tasks for the Cnext programming language",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "publisher": "cnext-lang",
   "license": "MIT",
   "engines": {

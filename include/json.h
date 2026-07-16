@@ -50,25 +50,33 @@ typedef struct {
 
 static inline void sb_init(sb_t* sb) {
     sb->data = (char*)malloc(256);
+    if (!sb->data) { sb->len = 0; sb->cap = 0; return; }
     sb->data[0] = '\0';
     sb->len = 0;
     sb->cap = 256;
 }
 
-static inline void sb_append(sb_t* sb, const char* s) {
+static inline bool sb_append(sb_t* sb, const char* s) {
     size_t n = strlen(s);
     if (sb->len + n + 1 > sb->cap) {
-        sb->cap = (sb->len + n + 1) * 2;
-        sb->data = (char*)realloc(sb->data, sb->cap);
+        size_t new_cap = (sb->len + n + 1) * 2;
+        char* newdata = (char*)realloc(sb->data, new_cap);
+        if (!newdata) return false;
+        sb->data = newdata;
+        sb->cap = new_cap;
     }
     memcpy(sb->data + sb->len, s, n + 1);
     sb->len += n;
+    return true;
 }
 
-static inline void sb_append_char(sb_t* sb, char c) {
+static inline bool sb_append_char(sb_t* sb, char c) {
     if (sb->len + 2 > sb->cap) {
-        sb->cap *= 2;
-        sb->data = (char*)realloc(sb->data, sb->cap);
+        size_t new_cap = sb->cap * 2;
+        char* newdata = (char*)realloc(sb->data, new_cap);
+        if (!newdata) return false;
+        sb->data = newdata;
+        sb->cap = new_cap;
     }
     sb->data[sb->len] = c;
     sb->data[sb->len + 1] = '\0';
@@ -164,6 +172,7 @@ static inline json_value_t* json_parse_number(json_parser_t* p) {
         while (p->pos < p->len && isdigit((unsigned char)p->json[p->pos])) p->pos++;
     }
     char* num_str = (char*)malloc(p->pos - start + 1);
+    if (!num_str) return NULL;
     memcpy(num_str, p->json + start, p->pos - start);
     num_str[p->pos - start] = '\0';
     char* endptr = NULL;
@@ -171,6 +180,7 @@ static inline json_value_t* json_parse_number(json_parser_t* p) {
     free(num_str);
 
     json_value_t* node = (json_value_t*)malloc(sizeof(json_value_t));
+    if (!node) return NULL;
     node->type = JSON_NUMBER;
     node->u.n = val;
     return node;
@@ -179,6 +189,7 @@ static inline json_value_t* json_parse_number(json_parser_t* p) {
 static inline json_value_t* json_parse_array(json_parser_t* p) {
     if (!json_expect(p, '[')) return NULL;
     json_value_t* node = (json_value_t*)malloc(sizeof(json_value_t));
+    if (!node) return NULL;
     node->type = JSON_ARRAY;
     node->u.a.count = 0;
     node->u.a.items = NULL;
@@ -190,12 +201,15 @@ static inline json_value_t* json_parse_array(json_parser_t* p) {
 
     size_t cap = 4;
     node->u.a.items = (json_value_t**)malloc(sizeof(json_value_t*) * cap);
+    if (!node->u.a.items) { json_free(node); return NULL; }
     while (1) {
         json_value_t* item = json_parse_value(p);
         if (!item) { json_free(node); return NULL; }
         if (node->u.a.count >= cap) {
             cap *= 2;
-            node->u.a.items = (json_value_t**)realloc(node->u.a.items, sizeof(json_value_t*) * cap);
+            json_value_t** ni = (json_value_t**)realloc(node->u.a.items, sizeof(json_value_t*) * cap);
+            if (!ni) { json_free(item); json_free(node); return NULL; }
+            node->u.a.items = ni;
         }
         node->u.a.items[node->u.a.count++] = item;
         if (json_peek(p) == ',') { json_advance(p); continue; }
@@ -208,6 +222,7 @@ static inline json_value_t* json_parse_array(json_parser_t* p) {
 static inline json_value_t* json_parse_object(json_parser_t* p) {
     if (!json_expect(p, '{')) return NULL;
     json_value_t* node = (json_value_t*)malloc(sizeof(json_value_t));
+    if (!node) return NULL;
     node->type = JSON_OBJECT;
     node->u.o.count = 0;
     node->u.o.keys = NULL;
@@ -221,6 +236,7 @@ static inline json_value_t* json_parse_object(json_parser_t* p) {
     size_t cap = 4;
     node->u.o.keys = (char**)malloc(sizeof(char*) * cap);
     node->u.o.values = (json_value_t**)malloc(sizeof(json_value_t*) * cap);
+    if (!node->u.o.keys || !node->u.o.values) { free(node->u.o.keys); free(node->u.o.values); json_free(node); return NULL; }
     while (1) {
         char* key = json_parse_string(p);
         if (!key) { json_free(node); return NULL; }
@@ -229,8 +245,11 @@ static inline json_value_t* json_parse_object(json_parser_t* p) {
         if (!value) { free(key); json_free(node); return NULL; }
         if (node->u.o.count >= cap) {
             cap *= 2;
-            node->u.o.keys = (char**)realloc(node->u.o.keys, sizeof(char*) * cap);
-            node->u.o.values = (json_value_t**)realloc(node->u.o.values, sizeof(json_value_t*) * cap);
+            char** nk = (char**)realloc(node->u.o.keys, sizeof(char*) * cap);
+            json_value_t** nv = (json_value_t**)realloc(node->u.o.values, sizeof(json_value_t*) * cap);
+            if (!nk || !nv) { free(nk); free(nv); free(key); json_free(value); json_free(node); return NULL; }
+            node->u.o.keys = nk;
+            node->u.o.values = nv;
         }
         node->u.o.keys[node->u.o.count] = key;
         node->u.o.values[node->u.o.count] = value;
@@ -248,6 +267,7 @@ static inline json_value_t* json_parse_value(json_parser_t* p) {
         char* s = json_parse_string(p);
         if (!s) return NULL;
         json_value_t* node = (json_value_t*)malloc(sizeof(json_value_t));
+        if (!node) { free(s); return NULL; }
         node->type = JSON_STRING;
         node->u.s = s;
         return node;
@@ -260,6 +280,7 @@ static inline json_value_t* json_parse_value(json_parser_t* p) {
         else if (p->pos + 5 <= p->len && strncmp(p->json + p->pos, "false", 5) == 0) { val = false; p->pos += 5; }
         else return NULL;
         json_value_t* node = (json_value_t*)malloc(sizeof(json_value_t));
+        if (!node) return NULL;
         node->type = JSON_BOOL;
         node->u.b = val;
         return node;
@@ -268,6 +289,7 @@ static inline json_value_t* json_parse_value(json_parser_t* p) {
         if (p->pos + 4 <= p->len && strncmp(p->json + p->pos, "null", 4) == 0) { p->pos += 4; }
         else return NULL;
         json_value_t* node = (json_value_t*)malloc(sizeof(json_value_t));
+        if (!node) return NULL;
         node->type = JSON_NULL;
         return node;
     }

@@ -14,13 +14,6 @@ typedef struct {
     bool trailing_commas; // Add trailing commas in multi-line expressions
 } FormatterConfig;
 
-static FormatterConfig default_config = {
-    .indent_size = 4,
-    .use_tabs = false,
-    .max_line_length = 80,
-    .trailing_commas = true
-};
-
 typedef struct {
     char* data;
     int length;
@@ -131,7 +124,9 @@ bool format_source(const char* source, char** output) {
         }
 
         // Emit token text
-        sb_append(&sb, token.start, token.length);
+        if (token.type != TOKEN_RBRACE) {
+            sb_append(&sb, token.start, token.length);
+        }
 
         // Indentation changes
         if (token.type == TOKEN_LBRACE) {
@@ -142,11 +137,10 @@ bool format_source(const char* source, char** output) {
             if (indent > 0) indent--;
             sb_append_char(&sb, '\n');
             need_indent = true;
-            // Re-indent this line
             for (int i = 0; i < indent; i++) {
                 sb_append_str(&sb, "    ");
             }
-            sb_append(&sb, token.start, token.length); // Re-emit }
+            sb_append(&sb, token.start, token.length);
         }
 
         // Semicolons and newlines

@@ -115,28 +115,48 @@ bool download_package(const char* name, const char* url) {
 }
 
 bool install_single_package(const char* name, const char* argv0) {
+    if (is_standard_module(name)) {
+        printf("Package '%s' is a standard module (no install needed).\n", name);
+        return true;
+    }
+
     char registry_path[CNEXT_PATH_MAX];
     if (!find_registry_path(argv0, registry_path, sizeof(registry_path))) {
-        fprintf(stderr, "No registry found. Cannot resolve package '%s'.\n", name);
+        fprintf(stderr, "Error: No registry found. Cannot resolve package '%s'.\n", name);
+        fprintf(stderr, "Create a registry.txt file or set CNEXT_REGISTRY_URL.\n");
         return false;
     }
 
     char url[1024];
     if (!resolve_package_url(name, registry_path, url, sizeof(url))) {
-        fprintf(stderr, "Package '%s' not found in registry.\n", name);
+        fprintf(stderr, "Error: Package '%s' not found in registry.\n", name);
+        fprintf(stderr, "Available packages can be found with: cnext search %s\n", name);
         return false;
     }
 
-    return download_package(name, url);
+    printf("Installing package '%s'...\n", name);
+    bool ok = download_package(name, url);
+    if (ok) {
+        printf("Package '%s' installed successfully.\n", name);
+    } else {
+        fprintf(stderr, "Failed to install package '%s'.\n", name);
+    }
+    return ok;
 }
 
 void install_packages_from_toml(const char* argv0) {
     FILE* f = fopen("cnext.toml", "r");
-    if (!f) return;
+    if (!f) {
+        fprintf(stderr, "Error: No cnext.toml found in the current directory.\n");
+        fprintf(stderr, "Run 'cnext init' to create one, or 'cnext install <package>' for a single package.\n");
+        return;
+    }
 
     char registry_path[CNEXT_PATH_MAX];
     bool have_registry = find_registry_path(argv0, registry_path, sizeof(registry_path));
 
+    int installed = 0;
+    int failed = 0;
     char line[512];
     bool in_deps = false;
     while (fgets(line, sizeof(line), f)) {
@@ -152,22 +172,41 @@ void install_packages_from_toml(const char* argv0) {
             char name[256] = {0};
             char value[768] = {0};
             if (sscanf(line, " %255[^= ] = \"%767[^\"]\"", name, value) == 2) {
-                if (strncmp(value, "http", 4) == 0 || strncmp(value, "file://", 7) == 0) {
-                    download_package(name, value);
+                if (is_standard_module(name)) {
+                    printf("Package '%s' is a standard module (no install needed).\n", name);
+                    installed++;
+                } else if (strncmp(value, "http", 4) == 0 || strncmp(value, "file://", 7) == 0) {
+                    if (download_package(name, value)) {
+                        installed++;
+                    } else {
+                        failed++;
+                    }
                 } else if (have_registry) {
                     char url[1024];
                     if (resolve_package_url(name, registry_path, url, sizeof(url))) {
-                        download_package(name, url);
+                        if (download_package(name, url)) {
+                            installed++;
+                        } else {
+                            failed++;
+                        }
                     } else {
-                        fprintf(stderr, "Package '%s' not found in registry.\n", name);
+                        fprintf(stderr, "Error: Package '%s' not found in registry.\n", name);
+                        failed++;
                     }
                 } else {
-                    fprintf(stderr, "No registry found. Cannot resolve package '%s'.\n", name);
+                    fprintf(stderr, "Error: No registry found. Cannot resolve package '%s'.\n", name);
+                    failed++;
                 }
             }
         }
     }
     fclose(f);
+
+    if (installed > 0 || failed > 0) {
+        printf("\nInstall complete: %d installed, %d failed.\n", installed, failed);
+    } else {
+        printf("No dependencies found in cnext.toml.\n");
+    }
 }
 
 char* build_source_with_packages(const char* source, const char* project_dir) {
@@ -217,12 +256,19 @@ char* build_source_with_packages(const char* source, const char* project_dir) {
                             if (pkg_source) {
                                 char* pkg_combined = build_source_with_packages(pkg_source, project_dir);
                                 if (pkg_combined) {
-                                    size_t new_len = strlen(pkg_combined) + strlen(combined) + 1;
+                                    size_t len1 = strlen(pkg_combined);
+                                    size_t len2 = strlen(combined);
+                                    if (len1 > SIZE_MAX - len2 - 1) {
+                                        free(pkg_combined);
+                                        free(pkg_source);
+                                        free(combined);
+                                        return NULL;
+                                    }
+                                    size_t new_len = len1 + len2 + 1;
                                     char* new_combined = (char*)malloc(new_len);
                                     if (new_combined) {
-                                        new_combined[0] = '\0';
-                                        strcat(new_combined, pkg_combined);
-                                        strcat(new_combined, combined);
+                                        memcpy(new_combined, pkg_combined, len1);
+                                        memcpy(new_combined + len1, combined, len2 + 1);
                                         free(combined);
                                         combined = new_combined;
                                     }
@@ -240,7 +286,13 @@ char* build_source_with_packages(const char* source, const char* project_dir) {
         if (*p) p++;
     }
 
-    size_t total_len = strlen(combined) + strlen(source) + 1;
+    size_t len_combined = strlen(combined);
+    size_t len_source = strlen(source);
+    if (len_combined > SIZE_MAX - len_source - 1) {
+        free(combined);
+        return NULL;
+    }
+    size_t total_len = len_combined + len_source + 1;
     char* result = (char*)malloc(total_len);
     if (!result) {
         free(combined);

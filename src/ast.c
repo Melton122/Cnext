@@ -70,52 +70,69 @@ typedef struct FreedNode {
     struct FreedNode* next;
 } FreedNode;
 
-static bool was_seen(FreedNode* seen, ASTNode* node) {
-    while (seen) {
-        if (seen->node == node) return true;
-        seen = seen->next;
+// Minimal hash set for cycle detection — O(1) amortized lookup
+#define SEEN_TABLE_SIZE 1024
+
+typedef struct {
+    FreedNode* buckets[SEEN_TABLE_SIZE];
+    int count;
+} SeenSet;
+
+static inline unsigned int seen_hash(ASTNode* node) {
+    return (unsigned int)((uintptr_t)node >> 3) % SEEN_TABLE_SIZE;
+}
+
+static bool was_seen(SeenSet* set, ASTNode* node) {
+    unsigned int idx = seen_hash(node);
+    for (FreedNode* e = set->buckets[idx]; e; e = e->next) {
+        if (e->node == node) return true;
     }
     return false;
 }
 
-static void remember_node(FreedNode** seen, ASTNode* node) {
+static void remember_node(SeenSet* set, ASTNode* node) {
+    unsigned int idx = seen_hash(node);
     FreedNode* entry = (FreedNode*)checked_malloc(sizeof(FreedNode));
     entry->node = node;
-    entry->next = *seen;
-    *seen = entry;
+    entry->next = set->buckets[idx];
+    set->buckets[idx] = entry;
+    set->count++;
 }
 
-static void free_seen_list(FreedNode* seen) {
-    while (seen) {
-        FreedNode* next = seen->next;
-        free(seen);
-        seen = next;
+static void free_seen_set(SeenSet* set) {
+    for (int i = 0; i < SEEN_TABLE_SIZE; i++) {
+        FreedNode* e = set->buckets[i];
+        while (e) {
+            FreedNode* next = e->next;
+            free(e);
+            e = next;
+        }
     }
 }
 
-static void free_ast_internal(ASTNode* node, FreedNode** seen) {
+static void free_ast_internal(ASTNode* node, SeenSet* set) {
     if (!node) return;
-    if (was_seen(*seen, node)) return;
-    remember_node(seen, node);
+    if (was_seen(set, node)) return;
+    remember_node(set, node);
 
     for (int i = 0; i < node->child_count; i++) {
-        free_ast_internal(node->children[i], seen);
+        free_ast_internal(node->children[i], set);
     }
     free(node->children);
     for (int i = 0; i < node->type_param_count; i++) {
-        free_ast_internal(node->type_params[i], seen);
+        free_ast_internal(node->type_params[i], set);
     }
     free(node->type_params);
     for (int i = 0; i < node->type_arg_count; i++) {
-        free_ast_internal(node->type_args[i], seen);
+        free_ast_internal(node->type_args[i], set);
     }
     free(node->type_args);
-    free_ast_internal(node->left, seen);
-    free_ast_internal(node->right, seen);
-    free_ast_internal(node->condition, seen);
-    free_ast_internal(node->init, seen);
-    free_ast_internal(node->increment, seen);
-    free_ast_internal(node->default_value, seen);
+    free_ast_internal(node->left, set);
+    free_ast_internal(node->right, set);
+    free_ast_internal(node->condition, set);
+    free_ast_internal(node->init, set);
+    free_ast_internal(node->increment, set);
+    free_ast_internal(node->default_value, set);
     free(node->type_name);
     free(node->parent_name);
     free(node->implements_names);
@@ -124,7 +141,8 @@ static void free_ast_internal(ASTNode* node, FreedNode** seen) {
 }
 
 void free_ast(ASTNode* node) {
-    FreedNode* seen = NULL;
-    free_ast_internal(node, &seen);
-    free_seen_list(seen);
+    SeenSet set;
+    memset(&set, 0, sizeof(set));
+    free_ast_internal(node, &set);
+    free_seen_set(&set);
 }

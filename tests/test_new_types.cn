@@ -3,37 +3,37 @@
 test "long type" {
     long x = 9999999999
     assert(x > 0)
-    println("long: " + str(x))
+    printin("long: {x}")
 }
 
 test "double type" {
     double pi = 3.14159265358979
     assert(pi > 3.0)
-    println("double: " + str(pi))
+    printin("double: {pi}")
 }
 
 test "byte type" {
     byte b = 42
     assert(b == 42)
-    println("byte: " + str(b))
+    printin("byte: {b}")
 }
 
 test "uint type" {
     uint u = 4294967295
     assert(u > 0)
-    println("uint: " + str(u))
+    printin("uint: {u}")
 }
 
 test "ushort type" {
     ushort us = 65535
     assert(us > 0)
-    println("ushort: " + str(us))
+    printin("ushort: {us}")
 }
 
 test "ubyte type" {
     ubyte ub = 255
     assert(ub == 255)
-    println("ubyte: " + str(ub))
+    printin("ubyte: {ub}")
 }
 
 test "type arithmetic" {
@@ -41,7 +41,7 @@ test "type arithmetic" {
     long b = 20
     long c = a + b
     assert(c == 30)
-    println("int + long = " + str(c))
+    printin("int + long = {c}")
 }
 
 test "float promotion" {
@@ -49,9 +49,9 @@ test "float promotion" {
     double y = 2.5
     double z = x + y
     assert(z == 7.5)
-    println("int + double = " + str(z))
+    printin("int + double = {z}")
 }
 
 main {
-    println("All new type tests passed!")
+    printin("All new type tests passed!")
 }

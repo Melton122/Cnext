@@ -34,12 +34,153 @@ static int create_project(const char* project_name) {
     if (join_path(main_path, sizeof(main_path), src, "main.cn") == 0) {
         FILE* f = fopen(main_path, "w");
         if (f) {
-            fprintf(f, "main {\n    printin(\"Hello, %s!\")\n}\n", project_name);
+            fprintf(f,
+                "// %s - A Cnext project\n\n"
+                "func double_value(int x) -> int {\n"
+                "    return x * 2\n"
+                "}\n\n"
+                "class Animal {\n"
+                "    str name\n\n"
+                "    func new(str n) {\n"
+                "        self.name = n\n"
+                "    }\n\n"
+                "    func speak() -> str {\n"
+                "        return \"Hello from {self.name}!\"\n"
+                "    }\n"
+                "}\n\n"
+                "main {\n"
+                "    printin(\"=== Welcome to %s! ===\")\n"
+                "    printin(\"\")\n\n"
+                "    int age = 25\n"
+                "    str name = \"Cnext Developer\"\n"
+                "    bool active = true\n"
+                "    printin(\"Hello, {name}! You are {age} years old.\")\n"
+                "    printin(\"\")\n\n"
+                "    int doubled = double_value(age)\n"
+                "    printin(\"{age} doubled is {doubled}\")\n"
+                "    printin(\"\")\n\n"
+                "    int[] numbers = {1, 2, 3, 4, 5}\n"
+                "    printin(\"Counting to 5:\")\n"
+                "    for n in numbers {\n"
+                "        printin(\"  {n}\")\n"
+                "    }\n"
+                "    printin(\"\")\n\n"
+                "    var dog = new Animal(\"Rex\")\n"
+                "    printin(dog.speak())\n"
+                "    printin(\"\")\n\n"
+                "    printin(\"Ready to build something amazing!\")\n"
+                "}\n",
+                project_name, project_name);
             fclose(f);
         }
     }
 
-    printf("Project '%s' created.\n", project_name);
+    char greeting_path[CNEXT_PATH_MAX];
+    if (join_path(greeting_path, sizeof(greeting_path), src, "greeting.cn") == 0) {
+        FILE* f = fopen(greeting_path, "w");
+        if (f) {
+            fprintf(f,
+                "// Greeting utilities\n\n"
+                "func greet(str name) -> str {\n"
+                "    return \"Hello, {name}!\"\n"
+                "}\n\n"
+                "func shout(str message) -> str {\n"
+                "    return message.upper()\n"
+                "}\n");
+            fclose(f);
+        }
+    }
+
+    char models_path[CNEXT_PATH_MAX];
+    if (join_path(models_path, sizeof(models_path), src, "models.cn") == 0) {
+        FILE* f = fopen(models_path, "w");
+        if (f) {
+            fprintf(f,
+                "// Data models\n\n"
+                "class Person {\n"
+                "    str name\n"
+                "    int age\n\n"
+                "    func new(str n, int a) {\n"
+                "        self.name = n\n"
+                "        self.age = a\n"
+                "    }\n\n"
+                "    func greet() -> str {\n"
+                "        return \"Hi, I'm {self.name} and I'm {self.age} years old.\"\n"
+                "    }\n"
+                "}\n\n"
+                "class Student extends Person {\n"
+                "    str school\n\n"
+                "    func new(str n, int a, str s) {\n"
+                "        super.new(n, a)\n"
+                "        self.school = s\n"
+                "    }\n\n"
+                "    override func greet() -> str {\n"
+                "        return \"Hi, I'm {self.name} from {self.school}.\"\n"
+                "    }\n"
+                "}\n");
+            fclose(f);
+        }
+    }
+
+    char gitignore_path[CNEXT_PATH_MAX];
+    if (join_path(gitignore_path, sizeof(gitignore_path), project_name, ".gitignore") == 0) {
+        FILE* f = fopen(gitignore_path, "w");
+        if (f) {
+            fprintf(f,
+                "# Build artifacts\n"
+                "build/\n"
+                "out.exe\n"
+                "out\n"
+                "temp_out.c\n\n"
+                "# Packages\n"
+                "packages/\n\n"
+                "# IDE\n"
+                ".vscode/\n"
+                ".idea/\n\n"
+                "# OS\n"
+                ".DS_Store\n"
+                "Thumbs.db\n");
+            fclose(f);
+        }
+    }
+
+    char readme_path[CNEXT_PATH_MAX];
+    if (join_path(readme_path, sizeof(readme_path), project_name, "README.md") == 0) {
+        FILE* f = fopen(readme_path, "w");
+        if (f) {
+            fprintf(f,
+                "# %s\n\n"
+                "A Cnext project.\n\n"
+                "## Quick Start\n\n"
+                "```bash\n"
+                "# Run the project\n"
+                "cnext run src/main.cn\n\n"
+                "# Build an executable\n"
+                "cnext build src/main.cn -o %s.exe\n"
+                "```\n\n"
+                "## Project Structure\n\n"
+                "```\n"
+                "%s/\n"
+                "  src/\n"
+                "    main.cn        # Entry point\n"
+                "    greeting.cn    # Greeting utilities\n"
+                "    models.cn      # Data models\n"
+                "  packages/        # Third-party packages\n"
+                "  build/           # Build output\n"
+                "  cnext.toml       # Project config\n"
+                "```\n\n"
+                "## Learn More\n\n"
+                "- [Language Guide](https://github.com/Melton122/cnext/blob/main/docs/getting-started.md)\n"
+                "- [Standard Library](https://github.com/Melton122/cnext/blob/main/docs/stdlib.md)\n"
+                "- [Examples](https://github.com/Melton122/cnext/tree/main/examples)\n",
+                project_name, project_name, project_name);
+            fclose(f);
+        }
+    }
+
+    printf("Project '%s' created.\n\n", project_name);
+    printf("  cd %s\n", project_name);
+    printf("  cnext run src/main.cn\n\n");
     return 0;
 }
 
@@ -60,7 +201,8 @@ static void print_help(void) {
     printf("  init                           Initialize a new cnext.toml.\n");
     printf("  upgrade                        Upgrade compiler to latest version.\n");
     printf("  cache <clear|status>           Manage build cache.\n");
-    printf("  config <key> [value]           Get/set configuration.\n\n");
+    printf("  config <key> [value]           Get/set configuration.\n");
+    printf("  doc [output_dir]               Generate documentation from source.\n\n");
     printf("Package Manager:\n");
     printf("  test                           Run the test suite.\n");
     printf("  install                        Install all dependencies from cnext.toml.\n");
@@ -469,6 +611,21 @@ int main(int argc, char** argv) {
             printf("Registry URL: %s\n", url ? url : "(not set)");
         } else {
             printf("Unknown config key: %s\n", key);
+        }
+        return 0;
+    }
+
+    if (strcmp(command, "doc") == 0) {
+        if (argc < 3) {
+            fprintf(stderr, "Usage: cnext doc <file.cn> [output_dir]\n");
+            return 1;
+        }
+        const char* output_dir = argc >= 4 ? argv[3] : "docs/api";
+        if (generate_docs(argv[2], output_dir)) {
+            printf("Documentation generated in %s\n", output_dir);
+        } else {
+            fprintf(stderr, "Failed to generate documentation.\n");
+            return 1;
         }
         return 0;
     }

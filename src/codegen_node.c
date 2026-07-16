@@ -6,6 +6,7 @@ int try_counter = 0;
 int match_counter = 0;
 
 void generate_block(ASTNode* node) {
+    if (!node) { fprintf(out, "{}\n"); return; }
     push_scope();
     track_source_line(node->token.line);
     fprintf(out, "{\n");
@@ -271,8 +272,24 @@ void generate_node(ASTNode* node) {
                     fprintf(out, " %.*s", node->token.length, node->token.start);
                 }
                 if (node->init) {
-                    fprintf(out, " = ");
-                    generate_expression(node->init);
+                    if (node->init->type == AST_LAMBDA && node->var_type.type == TOKEN_FUNC) {
+                        CapturedVar* wrap_caps = NULL;
+                        detect_captures_walk(node->init->left, &wrap_caps, node->init, program_node);
+                        int wrap_cap_count = 0;
+                        for (CapturedVar* cv = wrap_caps; cv; cv = cv->next) wrap_cap_count++;
+                        free_captures(wrap_caps);
+                        if (wrap_cap_count == 0) {
+                            fprintf(out, " = (CnextClosure){ (void*)");
+                            generate_expression(node->init);
+                            fprintf(out, ", NULL, 1 }");
+                        } else {
+                            fprintf(out, " = ");
+                            generate_expression(node->init);
+                        }
+                    } else {
+                        fprintf(out, " = ");
+                        generate_expression(node->init);
+                    }
                 }
                 fprintf(out, ";\n");
             }
@@ -281,21 +298,20 @@ void generate_node(ASTNode* node) {
                 track_class_var(node->token.start, node->token.length,
                                 node->var_type.start, node->var_type.length);
             }
+            if (node->init && node->init->type == AST_NEW_EXPR &&
+                node->init->token.length > 0 &&
+                node->init->token.start[0] >= 'A' && node->init->token.start[0] <= 'Z') {
+                track_class_var(node->token.start, node->token.length,
+                                node->init->token.start, node->init->token.length);
+            }
             if (node->init && node->init->type == AST_LAMBDA) {
-                CapturedVar* caps = NULL;
-                detect_captures_walk(node->init->left, &caps, node->init, program_node);
-                int cap_count = 0;
-                for (CapturedVar* cv = caps; cv; cv = cv->next) cap_count++;
-                if (cap_count > 0) {
-                    ClosureVar* cv = (ClosureVar*)malloc(sizeof(ClosureVar));
-                    cv->var_name = strndup(node->token.start, node->token.length);
-                    cv->closure_id = closure_counter - 1;
-                    cv->lambda_node = node->init;
-                    cv->next = closure_vars;
-                    closure_vars = cv;
-                    register_scope_closure(node->token.start, node->token.length);
-                }
-                free_captures(caps);
+                ClosureVar* cv = (ClosureVar*)malloc(sizeof(ClosureVar));
+                cv->var_name = strndup(node->token.start, node->token.length);
+                cv->closure_id = closure_counter - 1;
+                cv->lambda_node = node->init;
+                cv->next = closure_vars;
+                closure_vars = cv;
+                register_scope_closure(node->token.start, node->token.length);
             }
             break;
         case AST_CONSTEXPR_DECL:
@@ -367,9 +383,11 @@ void generate_node(ASTNode* node) {
                 write_indent();
                 fprintf(out, "if (_cnext_tf > 0) { _cnext_free_all(); return 1; }\n");
             }
-            for (int i = 0; i < node->left->child_count; i++) {
-                write_indent();
-                generate_node(node->left->children[i]);
+            if (node->left) {
+                for (int i = 0; i < node->left->child_count; i++) {
+                    write_indent();
+                    generate_node(node->left->children[i]);
+                }
             }
             pop_scope();
             write_indent();
@@ -434,30 +452,30 @@ void generate_node(ASTNode* node) {
             break;
         case AST_FOR:
             fprintf(out, "for (");
-            if (node->init->type == AST_VAR_DECL) {
+            if (node->init && node->init->type == AST_VAR_DECL) {
                 generate_type(node->init->var_type, false);
                 fprintf(out, " %.*s", node->init->token.length, node->init->token.start);
                 if (node->init->init) {
                     fprintf(out, " = ");
                     generate_expression(node->init->init);
                 }
-            } else if (node->init->type == AST_ASSIGN) {
+            } else if (node->init && node->init->type == AST_ASSIGN) {
                 generate_expression(node->init->left);
                 fprintf(out, " %.*s ", node->init->token.length, node->init->token.start);
                 generate_expression(node->init->right);
-            } else if (node->init->type == AST_EXPR_STMT) {
+            } else if (node->init && node->init->type == AST_EXPR_STMT) {
                 generate_expression(node->init->left);
             }
             fprintf(out, "; ");
-            generate_expression(node->condition);
+            if (node->condition) generate_expression(node->condition);
             fprintf(out, "; ");
-            if (node->increment->type == AST_ASSIGN) {
+            if (node->increment && node->increment->type == AST_ASSIGN) {
                 generate_expression(node->increment->left);
                 fprintf(out, " %.*s ", node->increment->token.length, node->increment->token.start);
                 generate_expression(node->increment->right);
-            } else if (node->increment->type == AST_EXPR_STMT) {
+            } else if (node->increment && node->increment->type == AST_EXPR_STMT) {
                 generate_expression(node->increment->left);
-            } else {
+            } else if (node->increment) {
                 generate_expression(node->increment);
             }
             fprintf(out, ") ");
@@ -478,7 +496,7 @@ void generate_node(ASTNode* node) {
                 ASTNode* fdecl = find_func_decl(program_node, call_name);
                 if (fdecl && fdecl->is_generator) {
                     is_generator_call = true;
-                    strncpy(gen_func_name, call_name, sizeof(gen_func_name) - 1);
+                    snprintf(gen_func_name, sizeof(gen_func_name), "%s", call_name);
                 }
             }
             
@@ -545,9 +563,11 @@ void generate_node(ASTNode* node) {
             generate_expression(node->condition);
             fprintf(out, ":\n");
             indent_level++;
-            for (int i = 0; i < node->left->child_count; i++) {
-                write_indent();
-                generate_node(node->left->children[i]);
+            if (node->left) {
+                for (int i = 0; i < node->left->child_count; i++) {
+                    write_indent();
+                    generate_node(node->left->children[i]);
+                }
             }
             write_indent();
             fprintf(out, "break;\n");
@@ -557,9 +577,11 @@ void generate_node(ASTNode* node) {
             write_indent();
             fprintf(out, "default:\n");
             indent_level++;
-            for (int i = 0; i < node->left->child_count; i++) {
-                write_indent();
-                generate_node(node->left->children[i]);
+            if (node->left) {
+                for (int i = 0; i < node->left->child_count; i++) {
+                    write_indent();
+                    generate_node(node->left->children[i]);
+                }
             }
             write_indent();
             fprintf(out, "break;\n");
@@ -660,17 +682,24 @@ void generate_node(ASTNode* node) {
                     }
                     fprintf(out, ") ");
                 }
-                // Add return statement for the arm body if it's an expression
                 if (arm->left && arm->left->child_count > 0) {
                     ASTNode* last_stmt = arm->left->children[arm->left->child_count - 1];
                     if (last_stmt && last_stmt->type == AST_EXPR_STMT) {
-                        // Convert expression statement to return
                         fprintf(out, "{\n");
                         indent_level++;
+                        for (int k = 0; k < arm->left->child_count - 1; k++) {
+                            write_indent();
+                            generate_node(arm->left->children[k]);
+                        }
                         write_indent();
-                        fprintf(out, "return ");
-                        generate_expression(last_stmt->left);
-                        fprintf(out, ";\n");
+                        if (current_func_returns_void) {
+                            generate_expression(last_stmt->left);
+                            fprintf(out, ";\n");
+                        } else {
+                            fprintf(out, "return ");
+                            generate_expression(last_stmt->left);
+                            fprintf(out, ";\n");
+                        }
                         indent_level--;
                         write_indent();
                         fprintf(out, "}\n");
@@ -678,7 +707,7 @@ void generate_node(ASTNode* node) {
                         generate_block(arm->left);
                     }
                 } else {
-                    generate_block(arm->left);
+                    if (arm->left) generate_block(arm->left);
                 }
                 first = false;
             }

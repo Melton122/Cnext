@@ -181,6 +181,24 @@ void generate_expression(ASTNode* node) {
                             }
                         }
                     }
+                    if (!is_prefixed && node->left->left && node->left->left->type == AST_IDENTIFIER) {
+                        const char* class_name = lookup_class_var(
+                            node->left->left->token.start, node->left->left->token.length);
+                        if (class_name) {
+                            fprintf(out, "%.*s_%.*s(", (int)strlen(class_name), class_name,
+                                node->left->token.length, node->left->token.start);
+                            generate_expression(node->left->left);
+                            if (node->child_count > 0) {
+                                fprintf(out, ", ");
+                                for (int i = 0; i < node->child_count; i++) {
+                                    generate_expression(node->children[i]);
+                                    if (i < node->child_count - 1) fprintf(out, ", ");
+                                }
+                            }
+                            fprintf(out, ")");
+                            break;
+                        }
+                    }
                     if (!is_prefixed) {
                         fprintf(out, "%.*s(", node->left->token.length, node->left->token.start);
                     }
@@ -287,6 +305,15 @@ void generate_expression(ASTNode* node) {
                             }
                             fprintf(out, "))");
                             fprintf(out, "%s.fn)(%s.env", fname, fname);
+                            for (int ai = 0; ai < node->child_count; ai++) {
+                                fprintf(out, ", ");
+                                generate_expression(node->children[ai]);
+                            }
+                            fprintf(out, ")");
+                            goto call_done;
+                        }
+                        if (is_func_param(fname, flen) || is_func_typed_var(fname, flen)) {
+                            fprintf(out, "((int(*)(void*, int))((CnextClosure)%s).fn)(((CnextClosure)%s).env", fname, fname);
                             for (int ai = 0; ai < node->child_count; ai++) {
                                 fprintf(out, ", ");
                                 generate_expression(node->children[ai]);
@@ -619,7 +646,7 @@ void generate_expression(ASTNode* node) {
                     const char* ct = type_token_to_c(cv->type);
                     fprintf(out, "%s", ct ? ct : "void*");
                     if (cv->is_pointer || cv->is_class) fprintf(out, "*");
-                    fprintf(out, "* %s;\n", cv->name);
+                    fprintf(out, " %s;\n", cv->name);
                 }
                 fprintf(out, "};\n");
                 
@@ -633,7 +660,7 @@ void generate_expression(ASTNode* node) {
                 fprintf(out, ") {\n");
                 fprintf(out, "    struct _cl_env_%d* _env = (struct _cl_env_%d*)_env_raw;\n", cl_id, cl_id);
                 for (CapturedVar* cv = captures; cv; cv = cv->next) {
-                    fprintf(out, "    #define %s (*_env->%s)\n", cv->name, cv->name);
+                    fprintf(out, "    #define %s (_env->%s)\n", cv->name, cv->name);
                 }
                 if (node->left->type == AST_BLOCK) {
                     generate_block(node->left);
@@ -650,17 +677,19 @@ void generate_expression(ASTNode* node) {
                 
                 fprintf(out, "({ struct _cl_env_%d* _ce = (struct _cl_env_%d*)malloc(sizeof(struct _cl_env_%d));", cl_id, cl_id, cl_id);
                 for (CapturedVar* cv = captures; cv; cv = cv->next) {
-                    fprintf(out, "_ce->%s = &%s;", cv->name, cv->name);
+                    fprintf(out, "_ce->%s = %s;", cv->name, cv->name);
                 }
                 fprintf(out, "(CnextClosure){ (void*)_cl_fn_%d, _ce, 1 }; })", cl_id);
             } else {
-                fprintf(out, "({ ");
+                int lambda_id = current_lambda++;
+                FILE* saved_out = out;
+                out = closure_defs_out;
                 generate_lambda_return_type(node->left);
-                fprintf(out, " _lambda_%d(", current_lambda);
+                fprintf(out, " _lambda_%d(void* _env_raw", lambda_id);
                 for (int i = 0; i < node->child_count; i++) {
+                    fprintf(out, ", ");
                     generate_type(node->children[i]->var_type, false);
                     fprintf(out, " %.*s", node->children[i]->token.length, node->children[i]->token.start);
-                    if (i < node->child_count - 1) fprintf(out, ", ");
                 }
                 fprintf(out, ") ");
                 if (node->left->type == AST_BLOCK) {
@@ -670,7 +699,9 @@ void generate_expression(ASTNode* node) {
                     generate_expression(node->left);
                     fprintf(out, "; }");
                 }
-                fprintf(out, " _lambda_%d; })", current_lambda);
+                fprintf(out, "\n");
+                out = saved_out;
+                fprintf(out, "(void*)_lambda_%d", lambda_id);
                 free_captures(captures);
             }
             break;

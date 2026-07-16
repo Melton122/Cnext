@@ -13,7 +13,7 @@ static int rx_class(const char* pat, size_t* pp, char ch) {
     while (pat[*pp] && pat[*pp] != ']') {
         int a = (unsigned char)pat[*pp];
         if (pat[*pp] == '\\' && pat[*pp + 1]) { (*pp)++; a = (unsigned char)pat[*pp]; }
-        if (pat[*pp + 1] == '-' && pat[*pp + 2] && pat[*pp + 2] != ']') {
+        if (pat[*pp + 1] && pat[*pp + 1] == '-' && pat[*pp + 2] && pat[*pp + 2] != ']') {
             int b = (unsigned char)pat[*pp + 2];
             if ((ch >= a && ch <= b) || (ch >= b && ch <= a)) hit = 1;
             (*pp) += 2;
@@ -187,11 +187,11 @@ static CnextString regex_replace(CnextString pat, CnextString repl, CnextString 
         }
         if (found && mlen > 0) {
             size_t rlen = r ? strlen(r) : 0;
-            if (bpos + rlen + 1 > cap) { cap = (bpos + rlen + 1) * 2; buf = (char*)realloc(buf, cap); }
+            if (bpos + rlen + 1 > cap) { cap = (bpos + rlen + 1) * 2; char* nb = (char*)realloc(buf, cap); if (!nb) { free(buf); free(anchored); free(p); free(t); free(r); return (CnextString){NULL, 0}; } buf = nb; }
             if (r) { memcpy(buf + bpos, r, rlen); bpos += rlen; }
             pos += mlen;
         } else {
-            if (bpos + 2 > cap) { cap = (bpos + 2) * 2; buf = (char*)realloc(buf, cap); }
+            if (bpos + 2 > cap) { cap = (bpos + 2) * 2; char* nb = (char*)realloc(buf, cap); if (!nb) { free(buf); free(anchored); free(p); free(t); free(r); return (CnextString){NULL, 0}; } buf = nb; }
             buf[bpos++] = t[pos++];
         }
     }

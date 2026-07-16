@@ -13,6 +13,7 @@ typedef struct {
 static void db_init(DocBuilder* db) {
     db->capacity = 4096;
     db->data = (char*)malloc(db->capacity);
+    if (!db->data) { db->capacity = 0; return; }
     db->data[0] = '\0';
     db->length = 0;
 }
@@ -20,8 +21,11 @@ static void db_init(DocBuilder* db) {
 static void db_append(DocBuilder* db, const char* text) {
     int len = (int)strlen(text);
     if (db->length + len + 1 > db->capacity) {
-        db->capacity = (db->capacity + len) * 2;
-        db->data = (char*)realloc(db->data, db->capacity);
+        int new_cap = (db->capacity + len) * 2;
+        char* newdata = (char*)realloc(db->data, new_cap);
+        if (!newdata) return;
+        db->data = newdata;
+        db->capacity = new_cap;
     }
     memcpy(db->data + db->length, text, len);
     db->length += len;
@@ -50,7 +54,9 @@ static void entries_init(DocEntries* e) {
 static void entries_add(DocEntries* e, const char* name, const char* doc, int line, char kind) {
     if (e->count >= e->capacity) {
         e->capacity = e->capacity ? e->capacity * 2 : 16;
-        e->entries = realloc(e->entries, sizeof(DocEntry) * e->capacity);
+        DocEntry* ne = realloc(e->entries, sizeof(DocEntry) * e->capacity);
+        if (!ne) return;
+        e->entries = ne;
     }
     DocEntry* entry = &e->entries[e->count++];
     strncpy(entry->name, name, sizeof(entry->name) - 1);
@@ -202,10 +208,12 @@ bool generate_docs(const char* file_path, const char* output_dir) {
     }
     fseek(f, 0, SEEK_END);
     long size = ftell(f);
+    if (size < 0) { fclose(f); return false; }
     rewind(f);
     char* source = (char*)malloc(size + 1);
-    fread(source, 1, size, f);
-    source[size] = '\0';
+    if (!source) { fclose(f); return false; }
+    size_t bytes_read = fread(source, 1, size, f);
+    source[bytes_read] = '\0';
     fclose(f);
 
     // Derive module name from filename

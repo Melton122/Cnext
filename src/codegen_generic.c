@@ -194,6 +194,7 @@ void free_spec_work_queue(void) {
         spec_work_queue = sw->next;
         if (sw->resolved_args) free(sw->resolved_args);
         if (sw->resolved_is_array) free(sw->resolved_is_array);
+        if (sw->mangled_name) free(sw->mangled_name);
         free(sw);
     }
     spec_work_last = NULL;

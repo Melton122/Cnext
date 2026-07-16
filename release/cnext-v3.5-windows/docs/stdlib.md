@@ -233,3 +233,113 @@ channel_send(ch, "message")
 var msg = channel_recv(ch)
 channel_free(ch)
 ```
+
+## HashMap (String-Keyed)
+
+```cnext
+// Create a HashMap with initial capacity
+var map = hashmap_new(16)
+
+// Put key-value pairs
+hashmap_put(map, "name", "Alice")
+hashmap_put(map, "age", "30")
+
+// Get values
+str name = hashmap_get(map, "name")    // "Alice"
+
+// Check existence
+bool exists = hashmap_contains(map, "name")  // true
+
+// Remove entries
+hashmap_remove(map, "age")
+
+// Free when done
+hashmap_free(map)
+```
+
+## Memory Allocators
+
+### Pool Allocator (Fast Bulk Allocation)
+
+```cnext
+// Allocate from the global pool
+void* mem = POOL_ALLOC(1024)
+
+// Free all pool allocations at once
+POOL_FREE_ALL()
+```
+
+### Arena Allocator (Bump Allocation)
+
+```cnext
+// Allocate from the global arena
+void* mem = ARENA_ALLOC(1024)
+
+// Free all arena allocations at once
+ARENA_FREE_ALL()
+```
+
+## Additional String Functions
+
+```cnext
+import string_utils
+
+int count = str_count("hello", "l")     // 2
+str repeated = str_repeat("ab", 3)      // "ababab"
+str reversed = str_reverse("hello")     // "olleh"
+bool empty = str_is_empty("")           // true
+```
+
+## Additional Math Functions
+
+```cnext
+import math
+
+var s = math.sin(3.14)         // ~0
+var c = math.cos(0)            // 1.0
+var t = math.tan(0)            // 0.0
+var l = math.log(2.718)        // ~1.0
+var r = math.round(3.7)        // 4.0
+var f = math.fabs(-5.0)        // 5.0
+var ri = math.random_int(1, 10) // random int 1-10
+var rf = math.random_float(0.0, 1.0) // random float
+// Constants: math.PI, math.E
+```
+
+## Additional OS Functions
+
+```cnext
+import os
+
+str home = os.home_dir()        // home directory
+str temp = os.temp_dir()        // temp directory
+os.set_cwd("/tmp")              // change working directory
+str dir = os.get_cwd()          // current working directory
+int pid = os.pid()              // process ID
+int ppid = os.ppid()            // parent process ID
+str name = os.hostname()        // machine hostname
+```
+
+## Additional Time Functions
+
+```cnext
+import time
+
+str formatted = time.format(time.now(), "%Y-%m-%d %H:%M:%S")
+var parsed = time.parse("2024-01-15", "%Y-%m-%d")
+int year = time.year(time.now())
+int month = time.month(time.now())
+```
+
+## Additional List Functions
+
+```cnext
+import collections
+
+var list = list_new()
+list_add(list, 3)
+list_add(list, 1)
+list_add(list, 2)
+list_sort(list)                  // sort ascending
+bool has = list_contains(list, 2) // true
+```
