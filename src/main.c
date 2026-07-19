@@ -418,27 +418,81 @@ int main(int argc, char** argv) {
         int passed = 0;
         int failed = 0;
 
-        // Find test files
-        system("dir /b tests\\*.cn > tests\\_test_list.txt 2>nul");
+        // Resolve the path to the cnext executable from argv[0]
+        char exe_path[CNEXT_PATH_MAX];
+        if (!build_include_path(argv[0], exe_path, sizeof(exe_path))) {
+            fprintf(stderr, "Cannot locate cnext executable.\n");
+            return 1;
+        }
+        // build_include_path returns the include dir; strip it to get the executable
+        // Instead, use argv[0] directly — it already points to the running binary
+        snprintf(exe_path, sizeof(exe_path), "%s", argv[0]);
 
+        // Collect .cn files from tests/ directory
+        typedef struct { char name[256]; } TestEntry;
+        TestEntry entries[512];
+        int entry_count = 0;
+
+#ifdef _WIN32
+        system("dir /b tests\\*.cn > tests\\_test_list.txt 2>nul");
         FILE* list = fopen("tests/_test_list.txt", "r");
-        if (!list) {
+        if (list) {
+            char buf[256];
+            while (entry_count < 512 && fgets(buf, sizeof(buf), list)) {
+                buf[strcspn(buf, "\r\n")] = '\0';
+                if (buf[0] != '\0') {
+                    strncpy(entries[entry_count].name, buf, 255);
+                    entries[entry_count].name[255] = '\0';
+                    entry_count++;
+                }
+            }
+            fclose(list);
+        }
+#else
+        DIR* dir = opendir("tests");
+        if (dir) {
+            struct dirent* ent;
+            while (entry_count < 512 && (ent = readdir(dir)) != NULL) {
+                size_t len = strlen(ent->d_name);
+                if (len > 3 && strcmp(ent->d_name + len - 3, ".cn") == 0) {
+                    strncpy(entries[entry_count].name, ent->d_name, 255);
+                    entries[entry_count].name[255] = '\0';
+                    entry_count++;
+                }
+            }
+            closedir(dir);
+        }
+#endif
+
+        if (entry_count == 0) {
             printf("No test files found.\n");
             return 1;
         }
 
-        char test_file[256];
-        while (fgets(test_file, sizeof(test_file), list)) {
-            test_file[strcspn(test_file, "\r\n")] = '\0';
-            if (test_file[0] == '\0') continue;
+        for (int i = 0; i < entry_count; i++) {
+            const char* test_file = entries[i].name;
+            char input_path[512];
+            char output_path[512];
+            char run_cmd[512];
+            char run_err[512];
 
-            char cmd[512];
-            snprintf(cmd, sizeof(cmd), "cnext build tests/%s -o tests/_test_out.exe 2>nul", test_file);
+            snprintf(input_path, sizeof(input_path), "tests/%s", test_file);
+#ifdef _WIN32
+            snprintf(output_path, sizeof(output_path), "tests/_test_out.exe");
+            snprintf(run_cmd, sizeof(run_cmd), "tests/_test_out.exe");
+            snprintf(run_err, sizeof(run_err), "tests/_test_out.exe 2>nul");
+#else
+            snprintf(output_path, sizeof(output_path), "tests/_test_out");
+            snprintf(run_cmd, sizeof(run_cmd), "tests/_test_out");
+            snprintf(run_err, sizeof(run_err), "tests/_test_out 2>/dev/null");
+#endif
+
+            char cmd[CNEXT_PATH_MAX * 3 + 256];
+            snprintf(cmd, sizeof(cmd), "\"%s\" build \"%s\" -o \"%s\" 2>/dev/null", exe_path, input_path, output_path);
             int build_ok = system(cmd) == 0;
 
             if (build_ok) {
-                snprintf(cmd, sizeof(cmd), "tests/_test_out.exe 2>nul");
-                int run_ok = system(cmd) == 0;
+                int run_ok = system(run_err) == 0;
                 if (run_ok) {
                     printf("  PASS: %s\n", test_file);
                     passed++;
@@ -450,7 +504,6 @@ int main(int argc, char** argv) {
                 printf("  SKIP: %s (compile error)\n", test_file);
             }
         }
-        fclose(list);
 
         printf("\nResults: %d passed, %d failed\n", passed, failed);
         return failed > 0 ? 1 : 0;
@@ -588,12 +641,12 @@ int main(int argc, char** argv) {
     if (strcmp(command, "cache") == 0) {
         const char* action = argc >= 3 ? argv[2] : "status";
         if (strcmp(action, "clear") == 0) {
-            system("rm -rf .cnext/cache 2>/dev/null || true");
+            int unused = system("rm -rf .cnext/cache 2>/dev/null || true"); (void)unused;
             printf("Cache cleared.\n");
         } else {
             printf("Build cache status:\n");
             printf("  Location: .cnext/cache/\n");
-            system("ls -la .cnext/cache/ 2>/dev/null || echo '  No cache found.'");
+            int unused = system("ls -la .cnext/cache/ 2>/dev/null || echo '  No cache found.'"); (void)unused;
         }
         return 0;
     }

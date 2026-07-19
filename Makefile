@@ -60,7 +60,7 @@ SRCS = src/main.c src/main_utils.c src/main_packages.c src/main_compiler.c \
 OBJS = $(SRCS:.c=.o)
 DEPS = $(OBJS:.o=.d)
 
-.PHONY: all clean test install uninstall help format bench check
+.PHONY: all clean test install uninstall help format bench check release
 
 all: $(EXEC)
 
@@ -122,6 +122,22 @@ bench: $(EXEC)
 	@echo "Rebuilding after touching main.c..."
 	@time $(MAKE) 2>/dev/null
 
+release: $(EXEC)
+	@echo "Packaging Cnext release..."
+	@mkdir -p release/build
+	@cp $(EXEC) release/build/
+	@cp -r include release/build/ 2>/dev/null || true
+	@cp -r examples release/build/ 2>/dev/null || true
+	@cp install.sh release/build/ 2>/dev/null || true
+	@cd release/build && tar -czf ../cnext-$(shell uname -s | tr A-Z a-z)-$(shell uname -m).tar.gz *
+	@echo "Release archive: release/cnext-$(shell uname -s | tr A-Z a-z)-$(shell uname -m).tar.gz"
+	@echo ""
+	@echo "To create a full release, push a tag:"
+	@echo "  git tag v9.0.0"
+	@echo "  git push origin v9.0.0"
+	@echo ""
+	@echo "GitHub Actions will build for all platforms automatically."
+
 help:
 	@echo "Cnext Compiler Build System v9.0"
 	@echo ""
@@ -132,6 +148,7 @@ help:
 	@echo "  check      Run full test suite (compiler + Python)"
 	@echo "  install    Install compiler to $(INSTALL_DIR)"
 	@echo "  uninstall  Remove compiler from $(INSTALL_DIR)"
+	@echo "  release    Package for release"
 	@echo "  format     Format source code with clang-format"
 	@echo "  bench      Run build benchmarks"
 	@echo "  help       Show this help"
@@ -145,6 +162,7 @@ help:
 	@echo "  make DEBUG=1            # Debug build"
 	@echo "  make -j8                # Parallel build"
 	@echo "  make install            # Install to $(INSTALL_DIR)"
+	@echo "  make release            # Package for release"
 	@echo "  make check              # Run all tests"
 	@echo "  make clean              # Clean build artifacts"
 

@@ -1,32 +1,56 @@
 # Installation
 
-## Quick Install
+## Quick Install (One Command)
+
+### Linux / macOS
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Melton122/cnext/main/install.sh | bash
+```
+
+### Windows (PowerShell)
+
+```powershell
+iwr -useb https://raw.githubusercontent.com/Melton122/cnext/main/release/install.bat | iex
+```
+
+Or download the installer from the [Releases page](https://github.com/Melton122/cnext/releases).
+
+## Manual Install
 
 ### Pre-built Release (Recommended)
 
+Download the latest release for your platform from the [Releases page](https://github.com/Melton122/cnext/releases):
+
+| Platform | Architecture | File |
+|----------|-------------|------|
+| Linux | x86_64 | `cnext-linux-x64-v9.0.0.tar.gz` |
+| Linux | ARM64 | `cnext-linux-arm64-v9.0.0.tar.gz` |
+| macOS | x86_64 | `cnext-macos-x64-v9.0.0.tar.gz` |
+| macOS | ARM64 (Apple Silicon) | `cnext-macos-arm64-v9.0.0.tar.gz` |
+| Windows | x86_64 | `cnext-windows-x64-v9.0.0.zip` |
+
+Then extract and install:
+
+**Linux/macOS:**
+```bash
+tar -xzf cnext-linux-x64-v9.0.0.tar.gz
+sudo cp cnext /usr/local/bin/
+sudo cp -r include/* /usr/local/include/
+```
+
 **Windows:**
-1. Download `cnext-v3.5-windows.zip` from the [Releases page](https://github.com/Melton122/cnext/releases)
-2. Extract to `C:\Cnext`
-3. Run `install.bat` (as Administrator) or add `C:\Cnext\bin` to your PATH
-4. Open a new terminal and run `cnext version`
-
-**Linux:**
-```bash
-git clone https://github.com/Melton122/cnext.git
-cd cnext
-make
-sudo make install
-```
-
-**macOS:**
-```bash
-git clone https://github.com/Melton122/cnext.git
-cd cnext
-make
-make install
-```
+1. Extract the `.zip` file
+2. Run `install.bat` as Administrator
+3. Open a new terminal
 
 ## Building from Source
+
+### Prerequisites
+
+- GCC or Clang (C11 support)
+- Make
+- libcurl (Linux/macOS, for networking)
 
 ### Linux
 
@@ -48,14 +72,6 @@ make
 make install
 ```
 
-### Windows (MinGW)
-
-```bash
-git clone https://github.com/Melton122/cnext.git
-cd cnext
-mingw32-make
-```
-
 ### Windows (MSYS2)
 
 ```bash
@@ -71,39 +87,39 @@ make              # Release build (optimized)
 make DEBUG=1      # Debug build (with symbols)
 make clean        # Clean build artifacts
 make install      # Install to /usr/local/bin
+make release      # Package for release
 make uninstall    # Remove from /usr/local/bin
-make format       # Format source code
 make help         # Show all available targets
 ```
 
 ## Verifying Installation
 
-After building, verify the installation:
+After installing, verify it works:
 
 ```bash
-./cnext version
+cnext version
 ```
 
 Output should show:
 ```
-Cnext version 9.0
+Cnext version 9.0.0
 ```
 
 ## Adding to PATH
 
 ### Linux/macOS
 
-The `make install` command installs to `/usr/local/bin` by default.
+The installer and `make install` put Cnext in `/usr/local/bin` by default.
 
 To install to a custom location:
 ```bash
-make install DESTDIR=/opt/cnext
+make install INSTALL_DIR=/opt/cnext
 export PATH=$PATH:/opt/cnext/bin
 ```
 
 Or add to your `~/.bashrc` or `~/.zshrc`:
 ```bash
-export PATH=$PATH:/path/to/cnext
+export PATH=$PATH:/usr/local/bin
 ```
 
 Then reload:
@@ -113,10 +129,12 @@ source ~/.bashrc
 
 ### Windows
 
+The installer adds Cnext to your PATH automatically. If it doesn't work:
+
 1. Right-click "This PC" -> Properties -> Advanced system settings
 2. Click "Environment Variables"
 3. Under "System variables", find "Path" and click "Edit"
-4. Add the Cnext directory
+4. Add `C:\Cnext\bin`
 5. Click OK
 
 ## Running Your First Program
@@ -137,19 +155,30 @@ cnext run hello.cn
 
 ## Troubleshooting
 
+### "runtime.h: No such file or directory"
+
+The `include/` directory wasn't installed. Reinstall:
+```bash
+# From release
+sudo cp -r include/* /usr/local/include/
+
+# From source
+sudo make install
+```
+
 ### "gcc: command not found"
 
 Install GCC:
-- **Linux**: `sudo apt install gcc` or `sudo yum install gcc`
+- **Linux**: `sudo apt install gcc` or `sudo dnf install gcc`
 - **macOS**: `xcode-select --install`
-- **Windows**: Install [MinGW](https://mingw-w64.org/) or [MSYS2](https://www.msys2.org/)
+- **Windows**: Install [MSYS2](https://www.msys2.org/) or [MinGW](https://mingw-w64.org/)
 
 ### "make: command not found"
 
 Install Make:
-- **Linux**: `sudo apt install make` or `sudo yum install make`
+- **Linux**: `sudo apt install make`
 - **macOS**: `xcode-select --install`
-- **Windows**: Install [MinGW](https://mingw-w64.org/) or [MSYS2](https://www.msys2.org/)
+- **Windows**: Install [MSYS2](https://www.msys2.org/)
 
 ### Permission Denied
 

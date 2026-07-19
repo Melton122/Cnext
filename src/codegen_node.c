@@ -185,7 +185,7 @@ void generate_node(ASTNode* node) {
             fprintf(out, "} %.*s;\n", node->token.length, node->token.start);
             break;
         case AST_IMPORT: {
-            static const char* std_modules[] = {"io", "file", "net", "json", "math", "os", "string_utils", "time", "regex", "collections", "crypto", "path", "encoding", "process", "random", "thread", NULL};
+            static const char* std_modules[] = {"io", "file", "net", "json", "math", "os", "string_utils", "time", "regex", "collections", "crypto", "path", "encoding", "process", "random", "thread", "http", "log", "args", "fmt", NULL};
             bool is_std = false;
             for (int i = 0; std_modules[i]; i++) {
                 int len = (int)strlen(std_modules[i]);
@@ -200,6 +200,7 @@ void generate_node(ASTNode* node) {
                     "io", "cnext_io.h",
                     "time", "cnext_time.h",
                     "process", "cnext_process.h",
+                    "http", "http.h",
                     NULL
                 };
                 char header_name[64];

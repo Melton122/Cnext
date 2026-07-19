@@ -51,19 +51,25 @@ Cnext is a high-level, statically-typed language with a familiar syntax that tra
 
 ### Installation
 
-**From Source (Windows/Linux/macOS):**
+**One-liner (Linux/macOS):**
+```bash
+curl -fsSL https://raw.githubusercontent.com/Melton122/cnext/main/install.sh | bash
+```
 
+**Windows (PowerShell):**
+```powershell
+iwr -useb https://raw.githubusercontent.com/Melton122/cnext/main/release/install.bat | iex
+```
+
+**From Source:**
 ```bash
 git clone https://github.com/Melton122/cnext.git
 cd cnext
 make
-make install
+sudo make install
 ```
 
-**Prerequisites:**
-- GCC or Clang compiler (C11 support)
-- Make (Linux/macOS) or MinGW (Windows)
-- libcurl (Linux/macOS, for networking)
+See [docs/installation.md](docs/installation.md) for all platforms and options.
 
 ### Create a New Project
 

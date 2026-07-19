@@ -4,6 +4,9 @@
 *.exe
 *.out
 *.d
+cnext
+out
+nul
 
 # Temp files
 *.tmp
@@ -20,6 +23,9 @@ build_err.txt
 build_errors.txt
 debug_stderr.txt
 debug_interp.c
+tests/_test_out
+tests/_test_out.exe
+tests/_test_list.txt
 
 # IDE
 .vscode/

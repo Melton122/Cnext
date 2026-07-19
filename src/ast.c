@@ -1,5 +1,6 @@
 #include "ast.h"
 #include "checked_alloc.h"
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 

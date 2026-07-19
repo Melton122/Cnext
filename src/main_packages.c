@@ -1,7 +1,8 @@
 #include "main_internal.h"
+#include <stdint.h>
 
 bool is_standard_module(const char* name) {
-    static const char* std_modules[] = {"io", "file", "net", "json", "math", "os", "string_utils", "time", "regex", "collections", "crypto", "path", "encoding", "process", "random", NULL};
+    static const char* std_modules[] = {"io", "file", "net", "json", "math", "os", "string_utils", "time", "regex", "collections", "crypto", "path", "encoding", "process", "random", "thread", "http", "log", "args", "fmt", NULL};
     for (int i = 0; std_modules[i]; i++) {
         if (strcmp(name, std_modules[i]) == 0) return true;
     }

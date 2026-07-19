@@ -84,7 +84,7 @@ static bool http_get(const char* url, char** out_body, long* out_status) {
     if (!pipe) return false;
 
     char status_buf[16] = "";
-    fgets(status_buf, sizeof(status_buf), pipe);
+    if (fgets(status_buf, sizeof(status_buf), pipe)) { /* read ok */ }
     pclose(pipe);
 
     *out_status = atol(status_buf);
@@ -97,7 +97,7 @@ static bool http_get(const char* url, char** out_body, long* out_status) {
     rewind(f);
     *out_body = (char*)malloc(size + 1);
     if (!*out_body) { fclose(f); return false; }
-    fread(*out_body, 1, size, f);
+    if (fread(*out_body, 1, size, f)) { /* read ok */ }
     (*out_body)[size] = '\0';
     fclose(f);
     remove(tmpfile_path);
@@ -149,7 +149,7 @@ static bool http_post(const char* url, const char* body, const char* token, long
     rewind(f);
     char* resp = (char*)malloc(size + 1);
     if (resp) {
-        fread(resp, 1, size, f);
+        if (fread(resp, 1, size, f)) { /* read ok */ }
         resp[size] = '\0';
         // Status is typically in the last line
         *out_status = 200; // default
@@ -458,7 +458,7 @@ bool registry_publish(const char* package_dir, const char* token) {
     if (tsize < 0) { fclose(tf); remove(tarball); return false; }
     rewind(tf);
     char* tdata = (char*)malloc(tsize);
-    if (tdata) fread(tdata, 1, tsize, tf);
+    if (tdata && fread(tdata, 1, tsize, tf)) { /* read ok */ }
     fclose(tf);
 
     long http_status = 0;
@@ -639,7 +639,7 @@ bool registry_remove(const char* package_name, const char* project_dir) {
     rewind(f);
     char* content = (char*)malloc(size + 1);
     if (!content) { fclose(f); return false; }
-    fread(content, 1, size, f);
+    if (fread(content, 1, size, f)) { /* read ok */ }
     content[size] = '\0';
     fclose(f);
 

@@ -15,6 +15,7 @@
 #define CNEXT_DEFAULT_EXE "out.exe"
 int _mkdir(const char* path);
 #else
+#include <dirent.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
