@@ -82,16 +82,17 @@ jobs:
 
     - name: Package (Windows)
       if: runner.os == 'Windows'
+      shell: pwsh
       run: |
-        mkdir dist
-        copy cnext.exe dist\
-        xcopy /E /Y /Q include dist\include 2>$null
-        xcopy /E /Y /Q examples dist\examples 2>$null
-        xcopy /E /Y /Q docs dist\docs 2>$null
-        copy README.md dist\ 2>$null
-        copy LICENSE dist\ 2>$null
-        copy install.bat dist\ 2>$null
-        copy install.ps1 dist\ 2>$null
+        New-Item -ItemType Directory -Force -Path dist | Out-Null
+        Copy-Item cnext.exe dist\
+        if (Test-Path include) { Copy-Item -Recurse include dist\ }
+        if (Test-Path examples) { Copy-Item -Recurse examples dist\ }
+        if (Test-Path docs) { Copy-Item -Recurse docs dist\ }
+        Copy-Item README.md dist\ -ErrorAction SilentlyContinue
+        Copy-Item LICENSE dist\ -ErrorAction SilentlyContinue
+        Copy-Item install.bat dist\ -ErrorAction SilentlyContinue
+        Copy-Item install.ps1 dist\ -ErrorAction SilentlyContinue
 
     - name: Create Archive (Unix)
       if: runner.os != 'Windows'
@@ -101,9 +102,9 @@ jobs:
 
     - name: Create Archive (Windows)
       if: runner.os == 'Windows'
+      shell: pwsh
       run: |
-        cd dist
-        7z a ../${{ matrix.artifact }}-${{ github.ref_name }}.zip *
+        Compress-Archive -Path dist\* -DestinationPath "${{ matrix.artifact }}-${{ github.ref_name }}.zip"
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
