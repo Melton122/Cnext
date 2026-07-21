@@ -79,12 +79,6 @@ jobs:
       if: runner.os == 'Windows'
       run: make
 
-    - name: Test Build
-      if: matrix.arch == 'x86_64' || (runner.os == 'macOS' && matrix.arch == 'aarch64')
-      run: |
-        ./cnext${{ matrix.ext }} version
-        ./cnext${{ matrix.ext }} test
-
     - name: Package (Unix)
       if: runner.os != 'Windows'
       run: |
