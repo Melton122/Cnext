@@ -83,14 +83,15 @@ jobs:
     - name: Package (Windows)
       if: runner.os == 'Windows'
       run: |
-        mkdir -p dist
-        cp cnext.exe dist/
-        cp -r include dist/ 2>$null
-        cp -r examples dist/ 2>$null
-        cp -r docs dist/ 2>$null
-        cp README.md dist/ 2>$null
-        cp LICENSE dist/ 2>$null
-        cp release/install.bat dist/ 2>$null
+        mkdir dist
+        copy cnext.exe dist\
+        xcopy /E /Y /Q include dist\include 2>$null
+        xcopy /E /Y /Q examples dist\examples 2>$null
+        xcopy /E /Y /Q docs dist\docs 2>$null
+        copy README.md dist\ 2>$null
+        copy LICENSE dist\ 2>$null
+        copy install.bat dist\ 2>$null
+        copy install.ps1 dist\ 2>$null
 
     - name: Create Archive (Unix)
       if: runner.os != 'Windows'
