@@ -62,8 +62,9 @@ jobs:
 
     - name: Build (Windows)
       if: runner.os == 'Windows'
+      shell: cmd
       run: |
-        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+        C:\ProgramData\chocolatey\bin\refreshenv.cmd
         make
 
     - name: Package (Unix)
