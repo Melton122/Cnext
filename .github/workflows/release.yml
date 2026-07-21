@@ -16,27 +16,17 @@ jobs:
         include:
           - os: ubuntu-latest
             artifact: cnext-linux-x64
-            ext: ''
-            arch: x86_64
           - os: macos-latest
             artifact: cnext-macos-x64
-            ext: ''
-            arch: x86_64
           - os: macos-latest
             artifact: cnext-macos-arm64
-            ext: ''
-            arch: aarch64
-          - os: windows-latest
-            artifact: cnext-windows-x64
-            ext: '.exe'
-            arch: x86_64
 
     runs-on: ${{ matrix.os }}
 
     steps:
     - uses: actions/checkout@v4
 
-    - name: Install Dependencies (Linux x64)
+    - name: Install Dependencies (Linux)
       if: runner.os == 'Linux'
       run: sudo apt-get update && sudo apt-get install -y gcc make libcurl4-openssl-dev
 
@@ -44,33 +34,13 @@ jobs:
       if: runner.os == 'macOS'
       run: brew install make curl
 
-    - name: Install Make (Windows)
-      if: runner.os == 'Windows'
-      run: choco install make -y
-
-    - name: Build (Linux x64)
-      if: runner.os == 'Linux'
+    - name: Build
       run: make
 
-    - name: Build (macOS arm64)
-      if: runner.os == 'macOS' && matrix.arch == 'aarch64'
-      run: make
-
-    - name: Build (macOS x64)
-      if: runner.os == 'macOS' && matrix.arch == 'x86_64'
-      run: make
-
-    - name: Build (Windows)
-      if: runner.os == 'Windows'
-      shell: cmd
-      run: |
-        C:\ProgramData\chocolatey\lib\make\tools\install\bin\make.exe
-
-    - name: Package (Unix)
-      if: runner.os != 'Windows'
+    - name: Package
       run: |
         mkdir -p dist
-        cp cnext${{ matrix.ext }} dist/
+        cp cnext dist/
         cp -r include dist/ 2>/dev/null || true
         cp -r examples dist/ 2>/dev/null || true
         cp -r docs dist/ 2>/dev/null || true
@@ -79,31 +49,10 @@ jobs:
         cp install.sh dist/ 2>/dev/null || true
         chmod +x dist/install.sh 2>/dev/null || true
 
-    - name: Package (Windows)
-      if: runner.os == 'Windows'
-      shell: pwsh
-      run: |
-        New-Item -ItemType Directory -Force -Path dist | Out-Null
-        Copy-Item cnext.exe dist\
-        if (Test-Path include) { Copy-Item -Recurse include dist\ }
-        if (Test-Path examples) { Copy-Item -Recurse examples dist\ }
-        if (Test-Path docs) { Copy-Item -Recurse docs dist\ }
-        Copy-Item README.md dist\ -ErrorAction SilentlyContinue
-        Copy-Item LICENSE dist\ -ErrorAction SilentlyContinue
-        Copy-Item install.bat dist\ -ErrorAction SilentlyContinue
-        Copy-Item install.ps1 dist\ -ErrorAction SilentlyContinue
-
-    - name: Create Archive (Unix)
-      if: runner.os != 'Windows'
+    - name: Create Archive
       run: |
         cd dist
         tar -czf ../${{ matrix.artifact }}-${{ github.ref_name }}.tar.gz *
-
-    - name: Create Archive (Windows)
-      if: runner.os == 'Windows'
-      shell: pwsh
-      run: |
-        Compress-Archive -Path dist\* -DestinationPath "${{ matrix.artifact }}-${{ github.ref_name }}.zip"
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
@@ -123,8 +72,7 @@ jobs:
 
     - name: Generate Checksums
       run: |
-        find cnext-* -type f \( -name "*.zip" -o -name "*.tar.gz" \) -exec sha256sum {} \; > checksums.txt
-        echo "Checksums generated:"
+        find cnext-* -type f -name "*.tar.gz" -exec sha256sum {} \; > checksums.txt
         cat checksums.txt
 
     - name: Create Release
@@ -135,5 +83,4 @@ jobs:
           cnext-linux-x64/*.tar.gz
           cnext-macos-x64/*.tar.gz
           cnext-macos-arm64/*.tar.gz
-          cnext-windows-x64/*.zip
           checksums.txt
