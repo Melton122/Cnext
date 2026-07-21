@@ -77,10 +77,9 @@ jobs:
 
     - name: Build (Windows)
       if: runner.os == 'Windows'
-      shell: cmd
       run: |
-        call "C:\ProgramData\chocolatey\bin\make.bat"
-        if errorlevel 1 exit /b 1
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+        make
 
     - name: Package (Unix)
       if: runner.os != 'Windows'
