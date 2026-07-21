@@ -62,12 +62,9 @@ jobs:
 
     - name: Build (Windows)
       if: runner.os == 'Windows'
-      shell: pwsh
+      shell: cmd
       run: |
-        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-        Get-Command make -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source
-        Get-Command mingw32-make -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source
-        & "C:\ProgramData\chocolatey\bin\make.exe" 2>&1 || & "C:\ProgramData\chocolatey\bin\mingw32-make.exe" 2>&1
+        C:\ProgramData\chocolatey\lib\make\tools\install\bin\make.exe
 
     - name: Package (Unix)
       if: runner.os != 'Windows'
