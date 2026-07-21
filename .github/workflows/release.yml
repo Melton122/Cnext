@@ -40,11 +40,13 @@ jobs:
       if: runner.os == 'macOS'
       run: brew install make curl
 
-    - name: Install Dependencies (Windows)
-      if: runner.os == 'Windows'
-      run: choco install make -y
-
     - name: Build
+      if: runner.os != 'Windows'
+      run: make
+
+    - name: Build (Windows)
+      if: runner.os == 'Windows'
+      shell: bash
       run: make
 
     - name: Package (Unix)
@@ -68,19 +70,22 @@ jobs:
 
     - name: Package (Windows)
       if: runner.os == 'Windows'
+      shell: bash
       run: |
-        mkdir dist
-        Copy-Item cnext.exe dist/
-        if (Test-Path include) { Copy-Item -Recurse include dist/ }
-        if (Test-Path examples) { Copy-Item -Recurse examples dist/ }
-        if (Test-Path docs) { Copy-Item -Recurse docs dist/ }
-        if (Test-Path README.md) { Copy-Item README.md dist/ }
-        if (Test-Path LICENSE) { Copy-Item LICENSE dist/ }
+        mkdir -p dist
+        cp cnext.exe dist/
+        cp -r include dist/ 2>/dev/null || true
+        cp -r examples dist/ 2>/dev/null || true
+        cp -r docs dist/ 2>/dev/null || true
+        cp README.md dist/ 2>/dev/null || true
+        cp LICENSE dist/ 2>/dev/null || true
 
     - name: Create Archive (Windows)
       if: runner.os == 'Windows'
+      shell: bash
       run: |
-        Compress-Archive -Path dist/* -DestinationPath "${{ matrix.artifact }}-${{ github.ref_name }}.${{ matrix.ext }}"
+        cd dist
+        zip -r ../${{ matrix.artifact }}-${{ github.ref_name }}.${{ matrix.ext }} *
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
