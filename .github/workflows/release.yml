@@ -16,10 +16,16 @@ jobs:
         include:
           - os: ubuntu-latest
             artifact: cnext-linux-x64
+            ext: tar.gz
           - os: macos-latest
             artifact: cnext-macos-x64
+            ext: tar.gz
           - os: macos-latest
             artifact: cnext-macos-arm64
+            ext: tar.gz
+          - os: windows-latest
+            artifact: cnext-windows-x64
+            ext: zip
 
     runs-on: ${{ matrix.os }}
 
@@ -34,10 +40,15 @@ jobs:
       if: runner.os == 'macOS'
       run: brew install make curl
 
+    - name: Install Dependencies (Windows)
+      if: runner.os == 'Windows'
+      run: choco install make -y
+
     - name: Build
       run: make
 
-    - name: Package
+    - name: Package (Unix)
+      if: runner.os != 'Windows'
       run: |
         mkdir -p dist
         cp cnext dist/
@@ -49,10 +60,27 @@ jobs:
         cp install.sh dist/ 2>/dev/null || true
         chmod +x dist/install.sh 2>/dev/null || true
 
-    - name: Create Archive
+    - name: Create Archive (Unix)
+      if: runner.os != 'Windows'
       run: |
         cd dist
-        tar -czf ../${{ matrix.artifact }}-${{ github.ref_name }}.tar.gz *
+        tar -czf ../${{ matrix.artifact }}-${{ github.ref_name }}.${{ matrix.ext }} *
+
+    - name: Package (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        mkdir dist
+        Copy-Item cnext.exe dist/
+        if (Test-Path include) { Copy-Item -Recurse include dist/ }
+        if (Test-Path examples) { Copy-Item -Recurse examples dist/ }
+        if (Test-Path docs) { Copy-Item -Recurse docs dist/ }
+        if (Test-Path README.md) { Copy-Item README.md dist/ }
+        if (Test-Path LICENSE) { Copy-Item LICENSE dist/ }
+
+    - name: Create Archive (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        Compress-Archive -Path dist/* -DestinationPath "${{ matrix.artifact }}-${{ github.ref_name }}.${{ matrix.ext }}"
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
@@ -72,7 +100,7 @@ jobs:
 
     - name: Generate Checksums
       run: |
-        find cnext-* -type f -name "*.tar.gz" -exec sha256sum {} \; > checksums.txt
+        find cnext-* -type f -name "*.tar.gz" -o -name "*.zip" | while read f; do sha256sum "$f"; done > checksums.txt
         cat checksums.txt
 
     - name: Create Release
@@ -83,4 +111,5 @@ jobs:
           cnext-linux-x64/*.tar.gz
           cnext-macos-x64/*.tar.gz
           cnext-macos-arm64/*.tar.gz
+          cnext-windows-x64/*.zip
           checksums.txt
