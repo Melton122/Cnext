@@ -53,9 +53,20 @@ Expand-Archive -Path "$TMPDIR\$FILENAME" -DestinationPath "$TMPDIR\extract" -For
 
 # Install
 Write-Host "Installing..." -ForegroundColor Yellow
-Copy-Item -Force "$TMPDIR\extract\cnext.exe" "$INSTALL_DIR\bin\"
-if (Test-Path "$TMPDIR\extract\include") {
-    Copy-Item -Recurse -Force "$TMPDIR\extract\include\*" "$INSTALL_DIR\include\"
+
+$cnextExe = Get-ChildItem -Path "$TMPDIR\extract" -Filter "cnext.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $cnextExe) {
+    Write-Host "ERROR: cnext.exe not found in downloaded archive." -ForegroundColor Red
+    Write-Host "Contents of archive:" -ForegroundColor Red
+    Get-ChildItem -Path "$TMPDIR\extract" -Recurse | ForEach-Object { Write-Host "  $($_.FullName.Replace("$TMPDIR\extract\", ''))" -ForegroundColor Red }
+    exit 1
+}
+Write-Host "Found: $($cnextExe.FullName)" -ForegroundColor Green
+Copy-Item -Force $cnextExe.FullName "$INSTALL_DIR\bin\"
+
+$includeDir = Get-ChildItem -Path "$TMPDIR\extract" -Filter "include" -Directory -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($includeDir) {
+    Copy-Item -Recurse -Force "$($includeDir.FullName)\*" "$INSTALL_DIR\include\"
 }
 
 # Add to PATH

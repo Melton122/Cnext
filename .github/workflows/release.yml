@@ -44,23 +44,22 @@ jobs:
       if: runner.os == 'Windows'
       uses: msys2/setup-msys2@v2
       with:
-        msystem: MINGW64
-        update: true
+        msystem: MSYS
         install: >-
-          mingw-w64-x86_64-gcc
-          mingw-w64-x86_64-make
+          gcc
+          make
           zip
 
-    - name: Build
+    - name: Build (Unix)
       if: runner.os != 'Windows'
       run: make
 
     - name: Build (Windows)
       if: runner.os == 'Windows'
       shell: msys2 {0}
-      run: make
+      run: make -j4
 
-    - name: Package (Unix)
+    - name: Package & Archive (Unix)
       if: runner.os != 'Windows'
       run: |
         mkdir -p dist
@@ -72,14 +71,10 @@ jobs:
         cp LICENSE dist/ 2>/dev/null || true
         cp install.sh dist/ 2>/dev/null || true
         chmod +x dist/install.sh 2>/dev/null || true
-
-    - name: Create Archive (Unix)
-      if: runner.os != 'Windows'
-      run: |
         cd dist
         tar -czf ../${{ matrix.artifact }}-${{ github.ref_name }}.${{ matrix.ext }} *
 
-    - name: Package (Windows)
+    - name: Package & Archive (Windows)
       if: runner.os == 'Windows'
       shell: msys2 {0}
       run: |
@@ -90,11 +85,6 @@ jobs:
         cp -r docs dist/ 2>/dev/null || true
         cp README.md dist/ 2>/dev/null || true
         cp LICENSE dist/ 2>/dev/null || true
-
-    - name: Create Archive (Windows)
-      if: runner.os == 'Windows'
-      shell: msys2 {0}
-      run: |
         cd dist
         zip -r ../${{ matrix.artifact }}-${{ github.ref_name }}.${{ matrix.ext }} *
 
@@ -116,7 +106,7 @@ jobs:
 
     - name: Generate Checksums
       run: |
-        find cnext-* -type f -name "*.tar.gz" -o -name "*.zip" | while read f; do sha256sum "$f"; done > checksums.txt
+        find cnext-* -type f \( -name "*.tar.gz" -o -name "*.zip" \) -exec sha256sum {} \; > checksums.txt
         cat checksums.txt
 
     - name: Create Release
