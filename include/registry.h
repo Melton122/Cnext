@@ -2,6 +2,7 @@
 #define REGISTRY_H
 
 #include "semver.h"
+#include "checked_alloc.h"
 #include <stdbool.h>
 
 /* Registry configuration:

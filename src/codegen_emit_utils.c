@@ -20,11 +20,7 @@ const char* type_token_to_c(CnextTokenType type) {
 
 char* copy_token_text(Token token) {
     size_t length = token.length > 0 ? (size_t)token.length : 0;
-    char* copy = (char*)malloc(length + 1);
-    if (!copy) {
-        fprintf(stderr, "Out of memory.\n");
-        exit(70);
-    }
+    char* copy = (char*)checked_malloc(length + 1);
     if (length > 0 && token.start) {
         memcpy(copy, token.start, length);
     }

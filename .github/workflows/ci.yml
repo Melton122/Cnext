@@ -45,7 +45,10 @@ jobs:
     - name: Run Python Tests
       if: runner.os != 'Windows'
       run: python3 tests/run_tests.py || python tests/run_tests.py
-      
+
+    - name: Performance Benchmark
+      run: make bench
+
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
       with:

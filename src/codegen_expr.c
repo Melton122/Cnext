@@ -1,5 +1,40 @@
 #include "codegen_internal.h"
 
+static int binop_precedence(CnextTokenType op) {
+    switch (op) {
+        case TOKEN_STAR:
+        case TOKEN_SLASH:    return 2;
+        case TOKEN_PLUS:
+        case TOKEN_MINUS:    return 1;
+        case TOKEN_LESS:
+        case TOKEN_LESS_EQ:
+        case TOKEN_GREATER:
+        case TOKEN_GREATER_EQ: return 0;
+        case TOKEN_EQ_EQ:
+        case TOKEN_BANG_EQ:  return 0;
+        default:             return -1;
+    }
+}
+
+static bool needs_parens(CnextTokenType parent_op, CnextTokenType child_op, bool is_right) {
+    int pp = binop_precedence(parent_op);
+    int cp = binop_precedence(child_op);
+    if (cp < 0) return false;
+    if (cp < pp) return true;
+    if (cp == pp && is_right) return true;
+    return false;
+}
+
+static void gen_with_parens(ASTNode* child, CnextTokenType parent_op, bool is_right) {
+    if (child && child->type == AST_BINARY && needs_parens(parent_op, child->token.type, is_right)) {
+        fprintf(out, "(");
+        generate_expression(child);
+        fprintf(out, ")");
+    } else {
+        generate_expression(child);
+    }
+}
+
 void generate_expression(ASTNode* node) {
     if (!node) return;
     switch (node->type) {
@@ -249,7 +284,8 @@ void generate_expression(ASTNode* node) {
                 bool is_printin = (node->left->token.length == 7 && strncmp(node->left->token.start, "printin", 7) == 0);
                 bool is_input = (node->left->token.length == 5 && strncmp(node->left->token.start, "input", 5) == 0);
                 bool is_free = (node->left->token.length == 4 && strncmp(node->left->token.start, "free", 4) == 0);
-                
+                bool is_len = (node->left->token.length == 3 && strncmp(node->left->token.start, "len", 3) == 0);
+
                 if (is_printin) {
                     fprintf(out, "printin(");
                     if (node->child_count > 0) generate_expression(node->children[0]);
@@ -262,6 +298,10 @@ void generate_expression(ASTNode* node) {
                     fprintf(out, "cnext_free(");
                     if (node->child_count > 0) generate_expression(node->children[0]);
                     fprintf(out, ")");
+                } else if (is_len) {
+                    fprintf(out, "(int)(");
+                    if (node->child_count > 0) generate_expression(node->children[0]);
+                    fprintf(out, ".length)");
                 } else {
                     if (node->left && node->left->type == AST_IDENTIFIER && node->left->type_arg_count > 0) {
                         char fname[256];
@@ -348,8 +388,8 @@ void generate_expression(ASTNode* node) {
                     
                     bool first_arg = true;
                     if (func_decl && func_decl->type == AST_FUNC_DECL) {
-                        bool* provided = (bool*)calloc(func_decl->child_count, sizeof(bool));
-                        ASTNode** named_args = (ASTNode**)calloc(node->child_count, sizeof(ASTNode*));
+                        bool* provided = (bool*)checked_calloc(func_decl->child_count, sizeof(bool));
+                        ASTNode** named_args = (ASTNode**)checked_calloc(node->child_count, sizeof(ASTNode*));
                         int named_count = 0;
                         
                         for (int i = 0; i < node->child_count; i++) {
@@ -445,9 +485,16 @@ void generate_expression(ASTNode* node) {
                 }
                 if (strncmp(resolved_name, "str", 3) != 0 &&
                     strncmp(resolved_name, "int", 3) != 0 &&
+                    strncmp(resolved_name, "long", 4) != 0 &&
                     strncmp(resolved_name, "float", 5) != 0 &&
+                    strncmp(resolved_name, "double", 6) != 0 &&
                     strncmp(resolved_name, "bool", 4) != 0 &&
-                    strncmp(resolved_name, "char", 4) != 0) {
+                    strncmp(resolved_name, "char", 4) != 0 &&
+                    strncmp(resolved_name, "byte", 4) != 0 &&
+                    strncmp(resolved_name, "uint", 4) != 0 &&
+                    strncmp(resolved_name, "ulong", 5) != 0 &&
+                    strncmp(resolved_name, "ushort", 6) != 0 &&
+                    strncmp(resolved_name, "ubyte", 5) != 0) {
                 const char* op_name = "op";
                 if (node->token.type == TOKEN_PLUS) op_name = "plus";
                 else if (node->token.type == TOKEN_MINUS) op_name = "minus";
@@ -470,9 +517,9 @@ void generate_expression(ASTNode* node) {
                     generate_expression(node->right);
                 }
             } else {
-                generate_expression(node->left);
+                gen_with_parens(node->left, node->token.type, false);
                 fprintf(out, " %.*s ", node->token.length, node->token.start);
-                generate_expression(node->right);
+                gen_with_parens(node->right, node->token.type, true);
             }
             break;
         case AST_ASSIGN:
@@ -631,7 +678,7 @@ void generate_expression(ASTNode* node) {
             
             if (capture_count > 0) {
                 int cl_id = closure_counter++;
-                ClosureInfo* ci = (ClosureInfo*)malloc(sizeof(ClosureInfo));
+                ClosureInfo* ci = (ClosureInfo*)checked_malloc(sizeof(ClosureInfo));
                 ci->id = cl_id;
                 ci->captures = captures;
                 ci->capture_count = capture_count;

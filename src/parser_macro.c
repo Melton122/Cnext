@@ -17,8 +17,8 @@ void macro_depth_pop(void) {
 }
 
 void register_macro(ASTNode* decl) {
-    MacroEntry* entry = (MacroEntry*)malloc(sizeof(MacroEntry));
-    entry->name = strndup(decl->token.start, decl->token.length);
+    MacroEntry* entry = (MacroEntry*)checked_malloc(sizeof(MacroEntry));
+    entry->name = checked_strndup(decl->token.start, decl->token.length);
     entry->decl = decl;
     entry->next = macro_table;
     macro_table = entry;
@@ -47,10 +47,10 @@ ASTNode* deep_copy_ast(ASTNode* node) {
     copy->is_variadic = node->is_variadic;
     copy->operator_token = node->operator_token;
     copy->is_generator = node->is_generator;
-    copy->type_name = node->type_name ? strdup(node->type_name) : NULL;
-    copy->parent_name = node->parent_name ? strdup(node->parent_name) : NULL;
-    copy->implements_names = node->implements_names ? strdup(node->implements_names) : NULL;
-    copy->attribute_name = node->attribute_name ? strdup(node->attribute_name) : NULL;
+    copy->type_name = node->type_name ? checked_strdup(node->type_name) : NULL;
+    copy->parent_name = node->parent_name ? checked_strdup(node->parent_name) : NULL;
+    copy->implements_names = node->implements_names ? checked_strdup(node->implements_names) : NULL;
+    copy->attribute_name = node->attribute_name ? checked_strdup(node->attribute_name) : NULL;
     copy->named_arg_name = node->named_arg_name;
     for (int i = 0; i < node->child_count; i++) {
         add_child(copy, deep_copy_ast(node->children[i]));

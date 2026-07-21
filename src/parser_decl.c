@@ -33,7 +33,7 @@ static ASTNode* class_declaration() {
     if (match_token(TOKEN_EXTENDS)) {
         consume(TOKEN_IDENTIFIER, "Expect parent class name after 'extends'.");
         int len = parser.previous.length;
-        node->parent_name = (char*)malloc(len + 1);
+        node->parent_name = (char*)checked_malloc(len + 1);
         if (node->parent_name) {
             memcpy(node->parent_name, parser.previous.start, len);
             node->parent_name[len] = '\0';
@@ -55,7 +55,7 @@ static ASTNode* class_declaration() {
         } while (match_token(TOKEN_COMMA));
         if (buf_pos > 0) {
             buffer[buf_pos] = '\0';
-            node->implements_names = (char*)malloc(buf_pos + 1);
+            node->implements_names = (char*)checked_malloc(buf_pos + 1);
             if (node->implements_names) {
                 memcpy(node->implements_names, buffer, buf_pos + 1);
             }

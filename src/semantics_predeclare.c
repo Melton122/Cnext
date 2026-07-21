@@ -19,10 +19,10 @@ void predeclare_global(ASTNode* node) {
             for (int i = 0; i < node->type_param_count; i++) {
                 ASTNode* tp = node->type_params[i];
                 Symbol* sym = (Symbol*)checked_malloc(sizeof(Symbol));
-                sym->name = strndup(tp->token.start, tp->token.length);
+                sym->name = checked_strndup(tp->token.start, tp->token.length);
                 sym->type = TOKEN_IDENTIFIER;
                 sym->is_const = true;
-                sym->type_name = strndup(tp->token.start, tp->token.length);
+                sym->type_name = checked_strndup(tp->token.start, tp->token.length);
                 if (!sym->name || !sym->type_name) { free(sym->name); free(sym->type_name); free(sym); continue; }
                 sym->decl_node = tp;
                 sym->next = sem_current_scope->symbols;
@@ -55,7 +55,7 @@ void predeclare_global(ASTNode* node) {
                     if (to_add_count > 0) {
                         int old_count = node->child_count;
                         int new_count = old_count + to_add_count;
-                        ASTNode** new_children = (ASTNode**)malloc(sizeof(ASTNode*) * new_count);
+                        ASTNode** new_children = (ASTNode**)checked_malloc(sizeof(ASTNode*) * new_count);
                         int idx = 0;
                         for (int i = 0; i < parent_node->child_count; i++) {
                             if (parent_node->children[i]->type == AST_VAR_DECL) new_children[idx++] = parent_node->children[i];
@@ -121,7 +121,7 @@ void predeclare_global(ASTNode* node) {
                             if (to_add > 0) {
                                 int old_count = node->child_count;
                                 int new_count = old_count + to_add;
-                                ASTNode** new_children = (ASTNode**)malloc(sizeof(ASTNode*) * new_count);
+                                ASTNode** new_children = (ASTNode**)checked_malloc(sizeof(ASTNode*) * new_count);
                                 int idx = 0;
                                 for (int i = 0; i < old_count; i++) {
                                     new_children[idx++] = node->children[i];

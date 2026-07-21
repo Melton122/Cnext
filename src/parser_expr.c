@@ -236,7 +236,7 @@ static ASTNode* primary() {
                     do {
                         if (arg_count >= arg_cap) {
                             arg_cap = arg_cap ? arg_cap * 2 : 8;
-                            ASTNode** na = realloc(args, sizeof(ASTNode*) * arg_cap);
+                            ASTNode** na = checked_realloc(args, sizeof(ASTNode*) * arg_cap);
                             if (na) args = na;
                         }
                         args[arg_count++] = expression();

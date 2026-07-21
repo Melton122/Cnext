@@ -214,7 +214,7 @@ char* build_source_with_packages(const char* source, const char* project_dir) {
     char visited[32][64] = {{0}};
     int visited_count = 0;
 
-    char* combined = strdup("");
+    char* combined = checked_strdup("");
     if (!combined) return NULL;
 
     const char* p = source;
@@ -266,7 +266,7 @@ char* build_source_with_packages(const char* source, const char* project_dir) {
                                         return NULL;
                                     }
                                     size_t new_len = len1 + len2 + 1;
-                                    char* new_combined = (char*)malloc(new_len);
+                                    char* new_combined = (char*)checked_malloc(new_len);
                                     if (new_combined) {
                                         memcpy(new_combined, pkg_combined, len1);
                                         memcpy(new_combined + len1, combined, len2 + 1);
@@ -294,7 +294,7 @@ char* build_source_with_packages(const char* source, const char* project_dir) {
         return NULL;
     }
     size_t total_len = len_combined + len_source + 1;
-    char* result = (char*)malloc(total_len);
+    char* result = (char*)checked_malloc(total_len);
     if (!result) {
         free(combined);
         return NULL;

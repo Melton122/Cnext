@@ -3,8 +3,8 @@
 // Generic type parameter substitution map
 
 void push_type_subst(const char* name, Token type, bool is_array) {
-    TypeSubst* ts = (TypeSubst*)malloc(sizeof(TypeSubst));
-    ts->param_name = strdup(name);
+    TypeSubst* ts = (TypeSubst*)checked_malloc(sizeof(TypeSubst));
+    ts->param_name = checked_strdup(name);
     ts->concrete_type = type;
     ts->is_array = is_array;
     ts->next = type_subst_map;
@@ -40,9 +40,9 @@ bool find_type_subst(const char* name, Token* out_type, bool* out_is_array) {
 // Track class variables for pointer access in string interpolation
 
 void track_class_var(const char* var_name, int var_len, const char* class_name, int class_len) {
-    ClassVar* cv = (ClassVar*)malloc(sizeof(ClassVar));
-    cv->var_name = strndup(var_name, var_len);
-    cv->class_name = strndup(class_name, class_len);
+    ClassVar* cv = (ClassVar*)checked_malloc(sizeof(ClassVar));
+    cv->var_name = checked_strndup(var_name, var_len);
+    cv->class_name = checked_strndup(class_name, class_len);
     cv->next = class_vars;
     class_vars = cv;
 }
@@ -66,8 +66,8 @@ bool has_gen_spec(const char* name) {
 }
 
 void add_gen_spec(const char* name, Token ret_type, bool ret_is_array) {
-    GenSpec* gs = (GenSpec*)malloc(sizeof(GenSpec));
-    gs->mangled_name = strdup(name);
+    GenSpec* gs = (GenSpec*)checked_malloc(sizeof(GenSpec));
+    gs->mangled_name = checked_strdup(name);
     gs->return_type = ret_type;
     gs->return_is_array = ret_is_array;
     gs->next = gen_specs;

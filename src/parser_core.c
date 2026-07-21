@@ -116,7 +116,7 @@ bool match_identifier_text(const char* text, int len) {
 char* parse_attribute_name(void) {
     if (!match_token(TOKEN_AT)) return NULL;
     consume(TOKEN_IDENTIFIER, "Expect attribute name after '@'.");
-    char* attr = (char*)malloc(parser.previous.length + 1);
+    char* attr = (char*)checked_malloc(parser.previous.length + 1);
     if (!attr) return NULL;
     memcpy(attr, parser.previous.start, parser.previous.length);
     attr[parser.previous.length] = '\0';

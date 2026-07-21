@@ -13,7 +13,7 @@ void enqueue_class_spec_work(ASTNode* class_decl, ASTNode* new_node) {
         snprintf(arg_str, sizeof(arg_str), "_%.*s", arg->token.length, arg->token.start);
         strncat(base, arg_str, sizeof(base) - strlen(base) - 1);
     }
-    char* mangled = strdup(base);
+    char* mangled = checked_strdup(base);
 
     for (ClassSpecWork* cs = class_spec_queue; cs; cs = cs->next) {
         if (strcmp(cs->mangled_name, mangled) == 0) { free(mangled); return; }
@@ -23,8 +23,8 @@ void enqueue_class_spec_work(ASTNode* class_decl, ASTNode* new_node) {
     Token* res_args = NULL;
     bool* res_is_array = NULL;
     if (acount > 0) {
-        res_args = (Token*)malloc(sizeof(Token) * acount);
-        res_is_array = (bool*)malloc(sizeof(bool) * acount);
+        res_args = (Token*)checked_malloc(sizeof(Token) * acount);
+        res_is_array = (bool*)checked_malloc(sizeof(bool) * acount);
         for (int i = 0; i < acount; i++) {
             ASTNode* ta = new_node->type_args[i];
             res_args[i] = ta->token;
@@ -32,7 +32,7 @@ void enqueue_class_spec_work(ASTNode* class_decl, ASTNode* new_node) {
         }
     }
 
-    ClassSpecWork* cs = (ClassSpecWork*)malloc(sizeof(ClassSpecWork));
+    ClassSpecWork* cs = (ClassSpecWork*)checked_malloc(sizeof(ClassSpecWork));
     cs->class_decl = class_decl;
     cs->mangled_name = mangled;
     cs->resolved_args = res_args;

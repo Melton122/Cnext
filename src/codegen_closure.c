@@ -3,7 +3,7 @@
 // Closure support: track captured variables per closure
 
 void push_scope(void) {
-    Scope* s = (Scope*)malloc(sizeof(Scope));
+    Scope* s = (Scope*)checked_malloc(sizeof(Scope));
     s->closures = NULL;
     s->parent = current_scope;
     current_scope = s;
@@ -31,8 +31,8 @@ void pop_scope(void) {
 
 void register_scope_closure(const char* name, int len) {
     if (!current_scope) return;
-    ScopeClosureVar* cv = (ScopeClosureVar*)malloc(sizeof(ScopeClosureVar));
-    cv->name = strndup(name, len);
+    ScopeClosureVar* cv = (ScopeClosureVar*)checked_malloc(sizeof(ScopeClosureVar));
+    cv->name = checked_strndup(name, len);
     cv->next = current_scope->closures;
     current_scope->closures = cv;
 }
@@ -73,8 +73,8 @@ void detect_captures_walk(ASTNode* node, CapturedVar** list, ASTNode* lambda, AS
                     if (!block) continue;
                     found = find_var_type_in_block(block, name, nlen, &cap_type, &cap_is_pointer, &cap_is_class);
                 }
-                CapturedVar* cv = (CapturedVar*)malloc(sizeof(CapturedVar));
-                cv->name = strdup(name);
+                CapturedVar* cv = (CapturedVar*)checked_malloc(sizeof(CapturedVar));
+                cv->name = checked_strdup(name);
                 cv->type = cap_type;
                 cv->is_pointer = cap_is_pointer;
                 cv->is_class = cap_is_class;

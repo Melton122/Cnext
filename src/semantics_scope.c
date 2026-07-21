@@ -118,7 +118,7 @@ void define_symbol(Token token, CnextTokenType type, bool is_const, const char* 
         return;
     }
     Symbol* sym = (Symbol*)checked_malloc(sizeof(Symbol));
-    sym->name = strndup(token.start, token.length);
+    sym->name = checked_strndup(token.start, token.length);
     sym->type = type;
     sym->is_const = is_const;
     sym->type_name = copy_cstring(type_name);
@@ -131,10 +131,10 @@ void define_symbol(Token token, CnextTokenType type, bool is_const, const char* 
 void define_type_symbol(ASTNode* node, CnextTokenType type) {
     if (!sem_current_scope) return;
     Symbol* sym = (Symbol*)checked_malloc(sizeof(Symbol));
-    sym->name = strndup(node->token.start, node->token.length);
+    sym->name = checked_strndup(node->token.start, node->token.length);
     sym->type = type;
     sym->is_const = true;
-    sym->type_name = strndup(node->token.start, node->token.length);
+    sym->type_name = checked_strndup(node->token.start, node->token.length);
     if (!sym->name || !sym->type_name) { free(sym->name); free(sym->type_name); free(sym); return; }
     sym->decl_node = node;
     sym->next = sem_current_scope->symbols;

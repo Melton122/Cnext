@@ -18,10 +18,10 @@ void analyze_function(ASTNode* node, bool define_name) {
     for (int i = 0; i < node->type_param_count; i++) {
         ASTNode* tp = node->type_params[i];
         Symbol* sym = (Symbol*)checked_malloc(sizeof(Symbol));
-        sym->name = strndup(tp->token.start, tp->token.length);
+        sym->name = checked_strndup(tp->token.start, tp->token.length);
         sym->type = TOKEN_IDENTIFIER; // Opaque type
         sym->is_const = true;
-        sym->type_name = strndup(tp->token.start, tp->token.length);
+        sym->type_name = checked_strndup(tp->token.start, tp->token.length);
         if (!sym->name || !sym->type_name) { free(sym->name); free(sym->type_name); free(sym); continue; }
         sym->decl_node = tp;
         sym->next = sem_current_scope->symbols;
@@ -143,6 +143,7 @@ void analyze_node(ASTNode* node) {
             }
             break;
         case AST_CLASS_DECL:
+            define_type_symbol(node, TOKEN_CLASS);
             for (int i = 0; i < node->child_count; i++) {
                 if (node->children[i]->type == AST_FUNC_DECL) {
                     analyze_function(node->children[i], false);

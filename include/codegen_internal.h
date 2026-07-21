@@ -4,6 +4,7 @@
 #include "codegen.h"
 #include "ast.h"
 #include "sourcemap.h"
+#include "checked_alloc.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

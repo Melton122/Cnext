@@ -2,6 +2,7 @@
 #define DOCGEN_H
 
 #include <stdbool.h>
+#include "checked_alloc.h"
 
 bool generate_docs(const char* file_path, const char* output_dir);
 bool generate_docs_from_source(const char* source, const char* name, char** output);

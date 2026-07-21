@@ -18,8 +18,8 @@ void collect_locals_from_block(ASTNode* block, GenLocal** list) {
                 existing = existing->next;
             }
             if (!found) {
-                GenLocal* gl = (GenLocal*)malloc(sizeof(GenLocal));
-                gl->name = strndup(stmt->token.start, stmt->token.length);
+                GenLocal* gl = (GenLocal*)checked_malloc(sizeof(GenLocal));
+                gl->name = checked_strndup(stmt->token.start, stmt->token.length);
                 gl->name_len = stmt->token.length;
                 gl->type = stmt->var_type.type;
                 gl->is_pointer = stmt->is_pointer;
@@ -172,8 +172,8 @@ void generate_generator_code(ASTNode* node, const char* func_name) {
     GenLocal* params = NULL;
     for (int i = node->child_count - 1; i >= 0; i--) {
         ASTNode* param = node->children[i];
-        GenLocal* gl = (GenLocal*)malloc(sizeof(GenLocal));
-        gl->name = strndup(param->token.start, param->token.length);
+        GenLocal* gl = (GenLocal*)checked_malloc(sizeof(GenLocal));
+        gl->name = checked_strndup(param->token.start, param->token.length);
         gl->name_len = param->token.length;
         gl->type = param->var_type.type;
         gl->is_pointer = param->is_pointer;
@@ -187,8 +187,8 @@ void generate_generator_code(ASTNode* node, const char* func_name) {
     
     GenLocal* all_vars = NULL;
     for (GenLocal* gl = params; gl; gl = gl->next) {
-        GenLocal* copy = (GenLocal*)malloc(sizeof(GenLocal));
-        copy->name = strndup(gl->name, gl->name_len);
+        GenLocal* copy = (GenLocal*)checked_malloc(sizeof(GenLocal));
+        copy->name = checked_strndup(gl->name, gl->name_len);
         copy->name_len = gl->name_len;
         copy->type = gl->type;
         copy->is_pointer = gl->is_pointer;
@@ -197,8 +197,8 @@ void generate_generator_code(ASTNode* node, const char* func_name) {
         all_vars = copy;
     }
     for (GenLocal* gl = locals; gl; gl = gl->next) {
-        GenLocal* copy = (GenLocal*)malloc(sizeof(GenLocal));
-        copy->name = strndup(gl->name, gl->name_len);
+        GenLocal* copy = (GenLocal*)checked_malloc(sizeof(GenLocal));
+        copy->name = checked_strndup(gl->name, gl->name_len);
         copy->name_len = gl->name_len;
         copy->type = gl->type;
         copy->is_pointer = gl->is_pointer;

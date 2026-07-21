@@ -7,12 +7,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include "checked_alloc.h"
 
 #ifdef _WIN32
 #include <io.h>
 #include <process.h>
+#include <dirent.h>
+#include <sys/stat.h>
 #define CNEXT_PATH_SEP '\\'
 #define CNEXT_DEFAULT_EXE "out.exe"
+#define CNEXT_DEFAULT_EXE_EXT ".exe"
 int _mkdir(const char* path);
 #else
 #include <dirent.h>
@@ -21,6 +25,7 @@ int _mkdir(const char* path);
 #include <unistd.h>
 #define CNEXT_PATH_SEP '/'
 #define CNEXT_DEFAULT_EXE "out"
+#define CNEXT_DEFAULT_EXE_EXT ""
 #define cnext_mkdir(path) mkdir(path, 0755)
 #endif
 
@@ -45,9 +50,19 @@ bool has_path_separator(const char* path);
 bool dirname_from_path(const char* path, char* buffer, size_t buffer_size);
 bool build_include_path(const char* argv0, char* include_path, size_t include_path_size);
 int run_process(const char* program, char* const args[]);
+int run_process_captured(const char* program, char* const args[], char* output_buf, size_t output_buf_size);
 const char* executable_command(const char* output_exe, char* buffer, size_t buffer_size);
 int make_dir(const char* path);
 int join_path(char* out, size_t out_size, const char* base, const char* name);
+
+#define MAX_EXPECT_LINES 64
+#define EXPECT_LINE_MAX 1024
+
+typedef struct {
+    char text[EXPECT_LINE_MAX];
+} ExpectedLine;
+
+int parse_expect_lines(const char* source_path, ExpectedLine* out, int max);
 
 /* --- Package Manager (main_packages.c) --- */
 bool is_standard_module(const char* name);

@@ -1,4 +1,7 @@
 #include "main_internal.h"
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 char* read_file(const char* path) {
     FILE* file = fopen(path, "rb");
@@ -21,7 +24,7 @@ char* read_file(const char* path) {
     }
     rewind(file);
 
-    char* buffer = (char*)malloc((size_t)file_size + 1);
+    char* buffer = (char*)checked_malloc((size_t)file_size + 1);
     if (!buffer) {
         fprintf(stderr, "Not enough memory to read \"%s\".\n", path);
         fclose(file);
@@ -214,4 +217,130 @@ int join_path(char* out, size_t out_size, const char* base, const char* name) {
         return 1;
     }
     return 0;
+}
+
+int parse_expect_lines(const char* source_path, ExpectedLine* out, int max) {
+    FILE* f = fopen(source_path, "r");
+    if (!f) return 0;
+
+    int count = 0;
+    char line[4096];
+    while (count < max && fgets(line, sizeof(line), f)) {
+        const char* prefix = "// EXPECT: ";
+        size_t prefix_len = strlen(prefix);
+        if (strncmp(line, prefix, prefix_len) == 0) {
+            const char* text = line + prefix_len;
+            size_t len = strlen(text);
+            while (len > 0 && (text[len - 1] == '\n' || text[len - 1] == '\r')) len--;
+            if (len < EXPECT_LINE_MAX) {
+                memcpy(out[count].text, text, len);
+                out[count].text[len] = '\0';
+                count++;
+            }
+        }
+    }
+    fclose(f);
+    return count;
+}
+
+int run_process_captured(const char* program, char* const args[], char* output_buf, size_t output_buf_size) {
+    output_buf[0] = '\0';
+
+#ifdef _WIN32
+    SECURITY_ATTRIBUTES sa;
+    sa.nLength = sizeof(SECURITY_ATTRIBUTES);
+    sa.bInheritHandle = TRUE;
+    sa.lpSecurityDescriptor = NULL;
+
+    HANDLE hReadPipe, hWritePipe;
+    if (!CreatePipe(&hReadPipe, &hWritePipe, &sa, 0)) {
+        return run_process(program, args);
+    }
+    SetHandleInformation(hReadPipe, HANDLE_FLAG_INHERIT, 0);
+
+    /* Build command line: "program" "arg1" "arg2" ... */
+    char cmdline[4096];
+    int pos = 0;
+    pos += snprintf(cmdline + pos, sizeof(cmdline) - pos, "\"%s\"", program);
+    for (int i = 1; args[i]; i++) {
+        pos += snprintf(cmdline + pos, sizeof(cmdline) - pos, " \"%s\"", args[i]);
+        if (pos >= (int)sizeof(cmdline) - 128) break;
+    }
+
+    PROCESS_INFORMATION pi = {0};
+    STARTUPINFOA si = {0};
+    si.cb = sizeof(si);
+    si.hStdOutput = hWritePipe;
+    si.hStdError = hWritePipe;
+    si.dwFlags = STARTF_USESTDHANDLES;
+
+    char prog_copy[4096];
+    strncpy(prog_copy, cmdline, sizeof(prog_copy) - 1);
+    prog_copy[sizeof(prog_copy) - 1] = '\0';
+
+    BOOL ok = CreateProcessA(NULL, prog_copy, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi);
+    CloseHandle(hWritePipe);
+
+    if (!ok) {
+        CloseHandle(hReadPipe);
+        return run_process(program, args);
+    }
+
+    size_t total = 0;
+    DWORD n;
+    char tmpbuf[4096];
+    while (ReadFile(hReadPipe, tmpbuf, sizeof(tmpbuf), &n, NULL) && n > 0) {
+        if (total + n < output_buf_size - 1) {
+            memcpy(output_buf + total, tmpbuf, n);
+            total += n;
+        }
+    }
+    output_buf[total] = '\0';
+    CloseHandle(hReadPipe);
+
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    DWORD exit_code = 0;
+    GetExitCodeProcess(pi.hProcess, &exit_code);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    return (int)exit_code;
+#else
+    int pipefd[2];
+    if (pipe(pipefd) != 0) {
+        return run_process(program, args);
+    }
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        close(pipefd[0]);
+        close(pipefd[1]);
+        return run_process(program, args);
+    }
+
+    if (pid == 0) {
+        close(pipefd[0]);
+        dup2(pipefd[1], STDOUT_FILENO);
+        dup2(pipefd[1], STDERR_FILENO);
+        close(pipefd[1]);
+        execvp(program, args);
+        _exit(127);
+    }
+
+    close(pipefd[1]);
+    size_t total = 0;
+    ssize_t n;
+    while (total < output_buf_size - 1 && (n = read(pipefd[0], output_buf + total, output_buf_size - 1 - total)) > 0) {
+        total += n;
+    }
+    output_buf[total] = '\0';
+    close(pipefd[0]);
+
+    int status = 0;
+    if (waitpid(pid, &status, 0) < 0) {
+        return 127;
+    }
+    if (WIFEXITED(status)) return WEXITSTATUS(status);
+    if (WIFSIGNALED(status)) return 128 + WTERMSIG(status);
+    return 127;
+#endif
 }

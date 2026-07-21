@@ -37,8 +37,17 @@ static bool is_safe_shell_arg(const char* s) {
 
 /* Registry URL - set CNEXT_REGISTRY_URL environment variable to override.
  * Default: local-only mode (no remote registry). */
+static bool is_https_url(const char* url) {
+    if (!url) return false;
+    return strncmp(url, "https://", 8) == 0;
+}
+
 static const char* get_registry_url(void) {
     const char* url = getenv("CNEXT_REGISTRY_URL");
+    if (url && !is_https_url(url)) {
+        fprintf(stderr, "Warning: Registry URL must use HTTPS. Refusing insecure connection to: %s\n", url);
+        return NULL;
+    }
     return url ? url : NULL;
 }
 
@@ -64,6 +73,10 @@ static const char* get_cache_dir(void) {
 
 static bool http_get(const char* url, char** out_body, long* out_status) {
     if (!is_safe_shell_arg(url)) { *out_status = 0; *out_body = NULL; return false; }
+    if (url && strncmp(url, "http://", 7) == 0) {
+        fprintf(stderr, "Warning: Refusing insecure HTTP download. Use HTTPS instead.\n");
+        *out_status = 0; *out_body = NULL; return false;
+    }
     char cmd[2048];
     char tmpfile_path[1024];
 #ifdef _WIN32
@@ -95,7 +108,7 @@ static bool http_get(const char* url, char** out_body, long* out_status) {
     long size = ftell(f);
     if (size < 0) { fclose(f); remove(tmpfile_path); *out_body = NULL; return false; }
     rewind(f);
-    *out_body = (char*)malloc(size + 1);
+    *out_body = (char*)checked_malloc(size + 1);
     if (!*out_body) { fclose(f); return false; }
     if (fread(*out_body, 1, size, f)) { /* read ok */ }
     (*out_body)[size] = '\0';
@@ -106,6 +119,10 @@ static bool http_get(const char* url, char** out_body, long* out_status) {
 
 static bool http_post(const char* url, const char* body, const char* token, long* out_status) {
     if (!is_safe_shell_arg(url) || (token && !is_safe_shell_arg(token))) { *out_status = 0; return false; }
+    if (url && strncmp(url, "http://", 7) == 0) {
+        fprintf(stderr, "Warning: Refusing insecure HTTP request. Use HTTPS instead.\n");
+        *out_status = 0; return false;
+    }
     char cmd[4096];
     char tmpfile_path[1024];
 #ifdef _WIN32
@@ -147,7 +164,7 @@ static bool http_post(const char* url, const char* body, const char* token, long
     long size = ftell(f);
     if (size < 0) { fclose(f); remove(tmpfile_path); return false; }
     rewind(f);
-    char* resp = (char*)malloc(size + 1);
+    char* resp = (char*)checked_malloc(size + 1);
     if (resp) {
         if (fread(resp, 1, size, f)) { /* read ok */ }
         resp[size] = '\0';
@@ -185,7 +202,7 @@ bool registry_search(const char* query, RegistryResult* result) {
 
                 if (result->count >= capacity) {
                     capacity = capacity ? capacity * 2 : 8;
-                    RegistryPackage* nv = realloc(result->versions, sizeof(RegistryPackage) * capacity);
+                    RegistryPackage* nv = checked_realloc(result->versions, sizeof(RegistryPackage) * capacity);
                     if (!nv) break;
                     result->versions = nv;
                 }
@@ -221,7 +238,7 @@ bool registry_search(const char* query, RegistryResult* result) {
         if (strstr(line, query)) {
             if (result->count >= capacity) {
                 capacity = capacity ? capacity * 2 : 8;
-                RegistryPackage* nv = realloc(result->versions, sizeof(RegistryPackage) * capacity);
+                RegistryPackage* nv = checked_realloc(result->versions, sizeof(RegistryPackage) * capacity);
                 if (!nv) break;
                 result->versions = nv;
             }
@@ -257,7 +274,7 @@ bool registry_info(const char* package_name, RegistryResult* result) {
 
                 if (result->count >= capacity) {
                     capacity = capacity ? capacity * 2 : 8;
-                    RegistryPackage* nv = realloc(result->versions, sizeof(RegistryPackage) * capacity);
+                    RegistryPackage* nv = checked_realloc(result->versions, sizeof(RegistryPackage) * capacity);
                     if (!nv) break;
                     result->versions = nv;
                 }
@@ -294,7 +311,7 @@ bool registry_info(const char* package_name, RegistryResult* result) {
         if (line[0] == '\0') continue;
         if (result->count >= capacity) {
             capacity = capacity ? capacity * 2 : 8;
-            RegistryPackage* nv = realloc(result->versions, sizeof(RegistryPackage) * capacity);
+            RegistryPackage* nv = checked_realloc(result->versions, sizeof(RegistryPackage) * capacity);
             if (!nv) break;
             result->versions = nv;
         }
@@ -457,7 +474,7 @@ bool registry_publish(const char* package_dir, const char* token) {
     long tsize = ftell(tf);
     if (tsize < 0) { fclose(tf); remove(tarball); return false; }
     rewind(tf);
-    char* tdata = (char*)malloc(tsize);
+    char* tdata = (char*)checked_malloc(tsize);
     if (tdata && fread(tdata, 1, tsize, tf)) { /* read ok */ }
     fclose(tf);
 
@@ -637,7 +654,7 @@ bool registry_remove(const char* package_name, const char* project_dir) {
     long size = ftell(f);
     if (size < 0) { fclose(f); return false; }
     rewind(f);
-    char* content = (char*)malloc(size + 1);
+    char* content = (char*)checked_malloc(size + 1);
     if (!content) { fclose(f); return false; }
     if (fread(content, 1, size, f)) { /* read ok */ }
     content[size] = '\0';

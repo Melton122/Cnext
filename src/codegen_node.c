@@ -306,8 +306,8 @@ void generate_node(ASTNode* node) {
                                 node->init->token.start, node->init->token.length);
             }
             if (node->init && node->init->type == AST_LAMBDA) {
-                ClosureVar* cv = (ClosureVar*)malloc(sizeof(ClosureVar));
-                cv->var_name = strndup(node->token.start, node->token.length);
+                ClosureVar* cv = (ClosureVar*)checked_malloc(sizeof(ClosureVar));
+                cv->var_name = checked_strndup(node->token.start, node->token.length);
                 cv->closure_id = closure_counter - 1;
                 cv->lambda_node = node->init;
                 cv->next = closure_vars;

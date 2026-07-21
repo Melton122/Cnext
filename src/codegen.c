@@ -138,12 +138,12 @@ bool generate_c_code(ASTNode* program, const char* output_filename, bool test_mo
     
     char** test_descriptions = NULL;
     if (test_count > 0) {
-        test_descriptions = (char**)malloc(sizeof(char*) * test_count);
+        test_descriptions = (char**)checked_malloc(sizeof(char*) * test_count);
         int idx = 0;
         for (int i = 0; i < program->child_count; i++) {
             if (program->children[i]->type == AST_TEST) {
                 ASTNode* tn = program->children[i];
-                test_descriptions[idx] = strndup(tn->token.start, tn->token.length);
+                test_descriptions[idx] = checked_strndup(tn->token.start, tn->token.length);
                 idx++;
             }
         }
@@ -172,7 +172,7 @@ bool generate_c_code(ASTNode* program, const char* output_filename, bool test_mo
             for (int i = 0; i < sw->func_decl->type_param_count && i < sw->resolved_count; i++) {
                 ASTNode* tp = sw->func_decl->type_params[i];
                 push_type_subst(
-                    strndup(tp->token.start, tp->token.length),
+                    checked_strndup(tp->token.start, tp->token.length),
                     sw->resolved_args[i],
                     sw->resolved_is_array[i]
                 );
@@ -188,7 +188,7 @@ bool generate_c_code(ASTNode* program, const char* output_filename, bool test_mo
         for (SpecWork* sw = spec_work_queue; sw; sw = sw->next) {
             for (int ti = 0; ti < sw->func_decl->type_param_count && ti < sw->resolved_count; ti++) {
                 ASTNode* tp = sw->func_decl->type_params[ti];
-                push_type_subst(strndup(tp->token.start, tp->token.length), sw->resolved_args[ti], sw->resolved_is_array[ti]);
+                push_type_subst(checked_strndup(tp->token.start, tp->token.length), sw->resolved_args[ti], sw->resolved_is_array[ti]);
             }
             generate_type(sw->func_decl->return_type, false);
             fprintf(out, " %s(", sw->mangled_name);

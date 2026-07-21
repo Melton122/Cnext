@@ -4,6 +4,7 @@
 #include "parser.h"
 #include "ast.h"
 #include "lexer.h"
+#include "checked_alloc.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

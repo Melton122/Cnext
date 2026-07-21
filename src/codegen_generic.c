@@ -21,7 +21,7 @@ char* mangle_generic_name(ASTNode* callee) {
         }
         strncat(base, arg_str, sizeof(base) - strlen(base) - 1);
     }
-    return strdup(base);
+    return checked_strdup(base);
 }
 
 bool infer_generic_type_args(ASTNode* call_node, ASTNode* func_decl) {
@@ -141,8 +141,8 @@ void enqueue_spec_work(ASTNode* func_decl, ASTNode* callee) {
     Token* res_args = NULL;
     bool* res_is_array = NULL;
     if (acount > 0) {
-        res_args = (Token*)malloc(sizeof(Token) * acount);
-        res_is_array = (bool*)malloc(sizeof(bool) * acount);
+        res_args = (Token*)checked_malloc(sizeof(Token) * acount);
+        res_is_array = (bool*)checked_malloc(sizeof(bool) * acount);
         for (int i = 0; i < acount; i++) {
             ASTNode* ta = callee->type_args[i];
             char tname[256] = {0};
@@ -160,7 +160,7 @@ void enqueue_spec_work(ASTNode* func_decl, ASTNode* callee) {
         }
     }
     
-    SpecWork* sw = (SpecWork*)malloc(sizeof(SpecWork));
+    SpecWork* sw = (SpecWork*)checked_malloc(sizeof(SpecWork));
     sw->func_decl = func_decl;
     sw->mangled_name = mangled;
     sw->resolved_args = res_args;
@@ -204,7 +204,7 @@ void generate_generic_specialization(ASTNode* func_decl, const char* mangled_nam
     for (int i = 0; i < func_decl->type_param_count && i < resolved_count; i++) {
         ASTNode* tp = func_decl->type_params[i];
         push_type_subst(
-            strndup(tp->token.start, tp->token.length),
+            checked_strndup(tp->token.start, tp->token.length),
             resolved_args[i],
             resolved_is_array[i]
         );

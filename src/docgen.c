@@ -12,7 +12,7 @@ typedef struct {
 
 static void db_init(DocBuilder* db) {
     db->capacity = 4096;
-    db->data = (char*)malloc(db->capacity);
+    db->data = (char*)checked_malloc(db->capacity);
     if (!db->data) { db->capacity = 0; return; }
     db->data[0] = '\0';
     db->length = 0;
@@ -22,7 +22,7 @@ static void db_append(DocBuilder* db, const char* text) {
     int len = (int)strlen(text);
     if (db->length + len + 1 > db->capacity) {
         int new_cap = (db->capacity + len) * 2;
-        char* newdata = (char*)realloc(db->data, new_cap);
+        char* newdata = (char*)checked_realloc(db->data, new_cap);
         if (!newdata) return;
         db->data = newdata;
         db->capacity = new_cap;
@@ -54,14 +54,14 @@ static void entries_init(DocEntries* e) {
 static void entries_add(DocEntries* e, const char* name, const char* doc, int line, char kind) {
     if (e->count >= e->capacity) {
         e->capacity = e->capacity ? e->capacity * 2 : 16;
-        DocEntry* ne = realloc(e->entries, sizeof(DocEntry) * e->capacity);
+        DocEntry* ne = checked_realloc(e->entries, sizeof(DocEntry) * e->capacity);
         if (!ne) return;
         e->entries = ne;
     }
     DocEntry* entry = &e->entries[e->count++];
     strncpy(entry->name, name, sizeof(entry->name) - 1);
     entry->name[sizeof(entry->name) - 1] = '\0';
-    entry->doc_comment = doc ? strdup(doc) : NULL;
+    entry->doc_comment = doc ? checked_strdup(doc) : NULL;
     entry->line = line;
     entry->kind = kind;
 }
@@ -210,7 +210,7 @@ bool generate_docs(const char* file_path, const char* output_dir) {
     long size = ftell(f);
     if (size < 0) { fclose(f); return false; }
     rewind(f);
-    char* source = (char*)malloc(size + 1);
+    char* source = (char*)checked_malloc(size + 1);
     if (!source) { fclose(f); return false; }
     size_t bytes_read = fread(source, 1, size, f);
     source[bytes_read] = '\0';
