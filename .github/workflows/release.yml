@@ -62,10 +62,10 @@ jobs:
 
     - name: Build (Windows)
       if: runner.os == 'Windows'
-      shell: cmd
+      shell: pwsh
       run: |
-        C:\ProgramData\chocolatey\bin\refreshenv.cmd
-        make
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+        & "C:\ProgramData\chocolatey\bin\make.exe"
 
     - name: Package (Unix)
       if: runner.os != 'Windows'
