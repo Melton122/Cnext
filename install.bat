@@ -1,12 +1,12 @@
 @echo off
 REM Cnext Installer - Downloads and installs the latest Cnext compiler
-REM Usage: install.bat
-REM Or:    iwr -useb https://raw.githubusercontent.com/Melton122/cnext/main/install.bat | iex
+REM Usage: Double-click this file, or run in cmd.exe
+REM For PowerShell: iwr -useb https://raw.githubusercontent.com/Melton122/Cnext/main/install.ps1 | iex
 
 setlocal enabledelayedexpansion
 
 set "CNEXT_VERSION=9.0.0"
-set "CNEXT_REPO=Melton122/cnext"
+set "CNEXT_REPO=Melton122/Cnext"
 set "INSTALL_DIR=%LOCALAPPDATA%\Cnext"
 
 echo ========================================

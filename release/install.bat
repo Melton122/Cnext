@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 set "CNEXT_VERSION=9.0.0"
-set "CNEXT_REPO=Melton122/cnext"
+set "CNEXT_REPO=Melton122/Cnext"
 set "INSTALL_DIR=C:\Cnext"
 
 echo ========================================

@@ -11,7 +11,7 @@ curl -fsSL https://raw.githubusercontent.com/Melton122/cnext/main/install.sh | b
 ### Windows (PowerShell)
 
 ```powershell
-iwr -useb https://raw.githubusercontent.com/Melton122/cnext/main/install.bat | iex
+iwr -useb https://raw.githubusercontent.com/Melton122/Cnext/main/install.ps1 | iex
 ```
 
 Or download `install.bat` from the [Releases page](https://github.com/Melton122/cnext/releases) and double-click it.
