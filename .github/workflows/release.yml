@@ -77,7 +77,10 @@ jobs:
 
     - name: Build (Windows)
       if: runner.os == 'Windows'
-      run: make
+      shell: cmd
+      run: |
+        call "C:\ProgramData\chocolatey\bin\make.bat"
+        if errorlevel 1 exit /b 1
 
     - name: Package (Unix)
       if: runner.os != 'Windows'
