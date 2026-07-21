@@ -1,170 +1,73 @@
 // Calculator Example
-// A simple calculator with basic operations
+// Demonstrates basic arithmetic operations
 
-import "io"
-import "string_utils"
+func add(double a, double b) -> double {
+    return a + b
+}
 
-func eval(str expr) -> double {
-    // Simple expression evaluator
-    // Supports: +, -, *, /, parentheses
-    
-    var pos = 0
-    var len = len(expr)
-    
-    func peek() -> char {
-        if pos < len { return expr[pos] }
-        return '\0'
+func subtract(double a, double b) -> double {
+    return a - b
+}
+
+func multiply(double a, double b) -> double {
+    return a * b
+}
+
+func divide(double a, double b) -> double {
+    if b == 0.0 {
+        printin("Error: Division by zero")
+        return 0.0
     }
-    
-    func advance() -> char {
-        var c = peek()
-        pos = pos + 1
-        return c
+    return a / b
+}
+
+func to_str(double val) -> str {
+    var int_part = val as int
+    var frac = val - int_part as double
+    if frac < 0.001 && frac > -0.001 {
+        return int_part as str
     }
-    
-    func skip_whitespace() {
-        while pos < len && (expr[pos] == ' ' || expr[pos] == '\t') {
-            pos = pos + 1
-        }
-    }
-    
-    func parse_number() -> double {
-        var start = pos
-        while pos < len && ((expr[pos] >= '0' && expr[pos] <= '9') || expr[pos] == '.') {
-            pos = pos + 1
-        }
-        // Simple string to double conversion
-        var result = 0.0
-        var decimal = 1.0
-        var has_decimal = false
-        var i = start
-        while i < pos {
-            if expr[i] == '.' {
-                has_decimal = true
-            } else if has_decimal {
-                decimal = decimal * 10.0
-                result = result + (double)(expr[i] - '0') / decimal
-            } else {
-                result = result * 10.0 + (double)(expr[i] - '0')
-            }
-            i = i + 1
-        }
-        return result
-    }
-    
-    func parse_factor() -> double {
-        skip_whitespace()
-        
-        if peek() == '(' {
-            advance() // skip '('
-            var result = parse_expr()
-            skip_whitespace()
-            if peek() == ')' { advance() }
-            return result
-        }
-        
-        if peek() == '-' {
-            advance()
-            return -parse_factor()
-        }
-        
-        if peek() == '+' {
-            advance()
-            return parse_factor()
-        }
-        
-        return parse_number()
-    }
-    
-    func parse_term() -> double {
-        var left = parse_factor()
-        
-        while true {
-            skip_whitespace()
-            var op = peek()
-            
-            if op == '*' {
-                advance()
-                left = left * parse_factor()
-            } else if op == '/' {
-                advance()
-                var right = parse_factor()
-                if right == 0.0 {
-                    println("Error: Division by zero")
-                    return 0.0
-                }
-                left = left / right
-            } else {
-                break
-            }
-        }
-        
-        return left
-    }
-    
-    func parse_expr() -> double {
-        var left = parse_term()
-        
-        while true {
-            skip_whitespace()
-            var op = peek()
-            
-            if op == '+' {
-                advance()
-                left = left + parse_term()
-            } else if op == '-' {
-                advance()
-                left = left - parse_term()
-            } else {
-                break
-            }
-        }
-        
-        return left
-    }
-    
-    return parse_expr()
+    return (val as str)
 }
 
 main {
-    println("Calculator Example")
-    println("==================")
-    println("Supports: +, -, *, /, parentheses")
-    println()
-    
-    // Test cases
-    var tests = {
-        "2 + 3",
-        "10 - 5",
-        "4 * 5",
-        "20 / 4",
-        "(2 + 3) * 4",
-        "10 / (5 - 3)",
-        "2 + 3 * 4",
-        "(2 + 3) * (4 - 1)"
-    }
-    
-    var expected = {5.0, 5.0, 20.0, 5.0, 20.0, 5.0, 14.0, 15.0}
-    
-    var passed = 0
-    var total = len(tests)
-    
-    for int i = 0; i < total; i = i + 1 {
-        var result = eval(tests[i])
-        var exp = expected[i]
-        
-        // Simple floating point comparison
-        var diff = result - exp
-        if diff < 0 { diff = -diff }
-        
-        if diff < 0.001 {
-            println("PASS: " + tests[i] + " = " + str(result))
-            passed = passed + 1
-        } else {
-            println("FAIL: " + tests[i] + " = " + str(result) + " (expected " + str(exp) + ")")
-        }
-    }
-    
-    println()
-    println("Results: " + str(passed) + "/" + str(total) + " passed")
+    printin("Calculator Example")
+    printin("==================")
+    printin("")
+
+    // Addition
+    var r1 = add(2.0, 3.0)
+    printin("2 + 3 = " + to_str(r1))
+
+    // Subtraction
+    var r2 = subtract(10.0, 5.0)
+    printin("10 - 5 = " + to_str(r2))
+
+    // Multiplication
+    var r3 = multiply(4.0, 5.0)
+    printin("4 * 5 = " + to_str(r3))
+
+    // Division
+    var r4 = divide(20.0, 4.0)
+    printin("20 / 4 = " + to_str(r4))
+
+    // Division by zero
+    printin("")
+    printin("Testing division by zero:")
+    var r5 = divide(10.0, 0.0)
+
+    // Combined operations
+    printin("")
+    printin("Combined operations:")
+    var r6 = add(multiply(2.0, 3.0), multiply(4.0, 5.0))
+    printin("(2 * 3) + (4 * 5) = " + to_str(r6))
+
+    var r7 = multiply(add(2.0, 3.0), add(4.0, 1.0))
+    printin("(2 + 3) * (4 + 1) = " + to_str(r7))
+
+    var r8 = subtract(multiply(3.0, 4.0), divide(10.0, 2.0))
+    printin("(3 * 4) - (10 / 2) = " + to_str(r8))
+
+    printin("")
+    printin("All operations completed!")
 }

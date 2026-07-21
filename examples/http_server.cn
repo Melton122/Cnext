@@ -1,75 +1,43 @@
-// HTTP Server Example
-// A simple HTTP server that responds to requests
+// HTTP Client Example
+// Demonstrates making HTTP requests using the net module
 
-import "io"
-import "net"
-import "json"
+import net
 
-class HttpRequest {
-    str method
-    str path
-    str body
-    
-    func new(str m, str p, str b) {
-        self.method = m
-        self.path = p
-        self.body = b
+func handle_request(str method, str path) -> str {
+    if path == "/" {
+        return "<html><body><h1>Welcome to Cnext!</h1></body></html>"
     }
+
+    if path == "/api/hello" {
+        return "{\"message\": \"Hello, World!\"}"
+    }
+
+    if path == "/api/time" {
+        return "Current time endpoint"
+    }
+
+    return "Not Found"
 }
 
-class HttpResponse {
-    int status
-    str content_type
-    str body
-    
-    func new(int s, str ct, str b) {
-        self.status = s
-        self.content_type = ct
-        self.body = b
-    }
-    
-    func to_string() -> str {
-        str status_text = "OK"
-        if self.status == 404 { status_text = "Not Found" }
-        if self.status == 500 { status_text = "Server Error" }
-        
-        return "HTTP/1.1 " + str(self.status) + " " + status_text + "\r\n" +
-               "Content-Type: " + self.content_type + "\r\n" +
-               "Content-Length: " + str(len(self.body)) + "\r\n" +
-               "Connection: close\r\n" +
-               "\r\n" +
-               self.body
-    }
-}
+main {
+    printin("HTTP Client Example")
+    printin("===================")
 
-func handle_request(HttpRequest req) -> HttpResponse {
-    if req.path == "/" {
-        return new HttpResponse(200, "text/html", 
-            "<html><body><h1>Welcome to Cnext!</h1></body></html>")
-    }
-    
-    if req.path == "/api/hello" {
-        return new HttpResponse(200, "application/json",
-            "{\"message\": \"Hello, World!\"}")
-    }
-    
-    if req.path == "/api/time" {
-        return new HttpResponse(200, "text/plain", "Current time")
-    }
-    
-    return new HttpResponse(404, "text/plain", "Not Found")
-}
+    // Make a GET request
+    printin("Fetching https://httpbin.org/get ...")
+    str response = http_get("https://httpbin.org/get")
+    printin("Response length: " + (response.length as str))
+    printin(" ")
 
-func main() {
-    println("Starting HTTP server on port 8080...")
-    
-    // In a real implementation, this would use net.tcp_listen()
-    // This is a simplified example
-    println("Server running at http://localhost:8080")
-    println("Press Ctrl+C to stop")
-    
-    // Simulate handling requests
-    HttpRequest req = new HttpRequest("GET", "/", "")
-    HttpResponse resp = handle_request(req)
-    println(resp.to_string())
+    // Make a POST request
+    printin("Posting to https://httpbin.org/post ...")
+    str post_response = http_post("https://httpbin.org/post", "{\"key\": \"value\"}")
+    printin("Response length: " + (post_response.length as str))
+    printin(" ")
+
+    // Route handling demonstration
+    printin("Route handling demo:")
+    printin("GET / => " + handle_request("GET", "/"))
+    printin("GET /api/hello => " + handle_request("GET", "/api/hello"))
+    printin("GET /unknown => " + handle_request("GET", "/unknown"))
 }
