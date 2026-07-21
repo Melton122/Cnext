@@ -79,7 +79,13 @@ jobs:
       if: runner.os == 'Windows'
       run: make
 
-    - name: Package
+    - name: Test Build
+      run: |
+        ./cnext${{ matrix.ext }} version
+        ./cnext${{ matrix.ext }} test
+
+    - name: Package (Unix)
+      if: runner.os != 'Windows'
       run: |
         mkdir -p dist
         cp cnext${{ matrix.ext }} dist/
@@ -89,6 +95,19 @@ jobs:
         cp README.md dist/ 2>/dev/null || true
         cp LICENSE dist/ 2>/dev/null || true
         cp install.sh dist/ 2>/dev/null || true
+        chmod +x dist/install.sh 2>/dev/null || true
+
+    - name: Package (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        mkdir -p dist
+        cp cnext.exe dist/
+        cp -r include dist/ 2>$null
+        cp -r examples dist/ 2>$null
+        cp -r docs dist/ 2>$null
+        cp README.md dist/ 2>$null
+        cp LICENSE dist/ 2>$null
+        cp release/install.bat dist/ 2>$null
 
     - name: Create Archive (Unix)
       if: runner.os != 'Windows'
@@ -120,16 +139,18 @@ jobs:
 
     - name: Generate Checksums
       run: |
-        find . -type f \( -name "*.zip" -o -name "*.tar.gz" \) -exec sha256sum {} \; > checksums.txt
+        find cnext-* -type f \( -name "*.zip" -o -name "*.tar.gz" \) -exec sha256sum {} \; > checksums.txt
+        echo "Checksums generated:"
+        cat checksums.txt
 
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
         generate_release_notes: true
         files: |
-          cnext-linux-x64/*
-          cnext-linux-arm64/*
-          cnext-macos-x64/*
-          cnext-macos-arm64/*
-          cnext-windows-x64/*
+          cnext-linux-x64/*.tar.gz
+          cnext-linux-arm64/*.tar.gz
+          cnext-macos-x64/*.tar.gz
+          cnext-macos-arm64/*.tar.gz
+          cnext-windows-x64/*.zip
           checksums.txt

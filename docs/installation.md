@@ -11,10 +11,10 @@ curl -fsSL https://raw.githubusercontent.com/Melton122/cnext/main/install.sh | b
 ### Windows (PowerShell)
 
 ```powershell
-iwr -useb https://raw.githubusercontent.com/Melton122/cnext/main/release/install.bat | iex
+iwr -useb https://raw.githubusercontent.com/Melton122/cnext/main/install.bat | iex
 ```
 
-Or download the installer from the [Releases page](https://github.com/Melton122/cnext/releases).
+Or download `install.bat` from the [Releases page](https://github.com/Melton122/cnext/releases) and double-click it.
 
 ## Manual Install
 
@@ -104,6 +104,28 @@ Output should show:
 ```
 Cnext version 9.0.0
 ```
+
+## VS Code Extension
+
+Install the Cnext extension for syntax highlighting, snippets, and build tasks:
+
+```bash
+cd vscode-extension
+npm install -g @vscode/vsce
+vsce package
+code --install-extension cnext-3.1.0.vsix
+```
+
+Or search for "Cnext" in the VS Code Extensions panel (Ctrl+Shift+X).
+
+Features:
+- Syntax highlighting for `.cn` files
+- Code snippets for common patterns
+- Run, build, format, and lint commands
+- Keyboard shortcuts (Ctrl+Shift+R to run, Ctrl+Shift+B to build)
+- Auto-run and auto-format on save
+
+See [vscode-extension/README.md](../vscode-extension/README.md) for the full command reference.
 
 ## Adding to PATH
 

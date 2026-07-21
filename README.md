@@ -21,6 +21,15 @@
 
 Cnext is a high-level, statically-typed language with a familiar syntax that transpiles to C. It combines modern language features like generics, closures, pattern matching, and async/await with the performance and portability of C.
 
+## What's New in v9.0
+
+- **Checked Memory Allocations** — All compiler memory allocations now use safe wrappers that exit cleanly on OOM
+- **HTTPS Enforcement** — Package registry connections require HTTPS, preventing MITM attacks
+- **Full Test Suite** — 66 tests covering all language features, up from 44
+- **CI Performance Benchmarks** — Automated build time tracking in CI
+- **VS Code Extension v3.1** — New commands: format, lint, new project, doctor, REPL
+- **Improved Project Scaffolding** — `cnext new` creates projects with VS Code config and getting-started guide
+
 ## Features
 
 - **Modern Syntax** — Clean, readable code with type inference (`var`), string interpolation, and optional semicolons
@@ -58,8 +67,10 @@ curl -fsSL https://raw.githubusercontent.com/Melton122/cnext/main/install.sh | b
 
 **Windows (PowerShell):**
 ```powershell
-iwr -useb https://raw.githubusercontent.com/Melton122/cnext/main/release/install.bat | iex
+iwr -useb https://raw.githubusercontent.com/Melton122/cnext/main/install.bat | iex
 ```
+
+Or download `install.bat` from the [Releases page](https://github.com/Melton122/cnext/releases) and run it.
 
 **From Source:**
 ```bash
@@ -70,6 +81,30 @@ sudo make install
 ```
 
 See [docs/installation.md](docs/installation.md) for all platforms and options.
+
+### VS Code Extension
+
+Install the Cnext extension for syntax highlighting, snippets, and build tasks:
+
+```bash
+# Package and install from source
+cd vscode-extension
+npm install -g @vscode/vsce
+vsce package
+code --install-extension cnext-3.1.0.vsix
+```
+
+Or search for "Cnext" in the VS Code Extensions panel.
+
+**Features:**
+- Syntax highlighting for all Cnext features
+- 25+ code snippets
+- Run, build, format, and lint with keyboard shortcuts
+- Auto-run and auto-format on save
+- New project creator
+- Interactive REPL
+
+See [vscode-extension/README.md](vscode-extension/README.md) for details.
 
 ### Create a New Project
 

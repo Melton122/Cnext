@@ -1,21 +1,24 @@
 {
   "name": "cnext",
   "displayName": "Cnext Language Support",
-  "description": "Syntax highlighting, snippets, and build tasks for the Cnext programming language",
-  "version": "3.0.0",
+  "description": "Syntax highlighting, snippets, linting, formatting, and build tasks for the Cnext programming language",
+  "version": "3.1.0",
   "publisher": "cnext-lang",
   "license": "MIT",
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": [
-    "Programming Languages"
+    "Programming Languages",
+    "Linters",
+    "Formatters"
   ],
   "keywords": [
     "cnext",
     "language",
     "transpiler",
-    "compiler"
+    "compiler",
+    "programming language"
   ],
   "main": "./extension.js",
   "contributes": {
@@ -57,9 +60,39 @@
         "icon": "$(tools)"
       },
       {
+        "command": "cnext.buildRelease",
+        "title": "Cnext: Build Release",
+        "icon": "$(package)"
+      },
+      {
         "command": "cnext.test",
         "title": "Cnext: Run Tests",
         "icon": "$(beaker)"
+      },
+      {
+        "command": "cnext.format",
+        "title": "Cnext: Format File",
+        "icon": "$(symbol-misc)"
+      },
+      {
+        "command": "cnext.lint",
+        "title": "Cnext: Lint File",
+        "icon": "$(alert)"
+      },
+      {
+        "command": "cnext.newProject",
+        "title": "Cnext: New Project",
+        "icon": "$(add)"
+      },
+      {
+        "command": "cnext.doctor",
+        "title": "Cnext: Doctor (Check Environment)",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "cnext.repl",
+        "title": "Cnext: Start REPL",
+        "icon": "$(terminal)"
       }
     ],
     "keybindings": [
@@ -79,6 +112,12 @@
         "command": "cnext.test",
         "key": "ctrl+shift+t",
         "mac": "cmd+shift+t",
+        "when": "editorLangId == cnext"
+      },
+      {
+        "command": "cnext.format",
+        "key": "shift+alt+f",
+        "mac": "shift+cmd+f",
         "when": "editorLangId == cnext"
       }
     ],
@@ -112,6 +151,11 @@
           "type": "boolean",
           "default": false,
           "description": "Automatically run file after save"
+        },
+        "cnext.autoFormat": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically format file after save"
         }
       }
     }

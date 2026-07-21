@@ -1,5 +1,11 @@
 #include "main_internal.h"
 
+#ifdef _WIN32
+#define DEV_NULL "nul"
+#else
+#define DEV_NULL "/dev/null"
+#endif
+
 static int create_project(const char* project_name) {
     if (!project_name || project_name[0] == '\0') {
         fprintf(stderr, "Project name cannot be empty.\n");
@@ -134,8 +140,7 @@ static int create_project(const char* project_name) {
                 "temp_out.c\n\n"
                 "# Packages\n"
                 "packages/\n\n"
-                "# IDE\n"
-                ".vscode/\n"
+                "# IDE (keep .vscode/tasks.json)\n"
                 ".idea/\n\n"
                 "# OS\n"
                 ".DS_Store\n"
@@ -151,36 +156,123 @@ static int create_project(const char* project_name) {
             fprintf(f,
                 "# %s\n\n"
                 "A Cnext project.\n\n"
-                "## Quick Start\n\n"
+                "## Getting Started\n\n"
+                "### Prerequisites\n\n"
+                "- [Cnext compiler](https://github.com/Melton122/cnext) installed\n"
+                "- [GCC](https://gcc.gnu.org/) or Clang compiler\n"
+                "- (Optional) [VS Code](https://code.visualstudio.com/) with the Cnext extension\n\n"
+                "### Run the project\n\n"
                 "```bash\n"
-                "# Run the project\n"
-                "cnext run src/main.cn\n\n"
-                "# Build an executable\n"
-                "cnext build src/main.cn -o %s.exe\n"
+                "cnext run src/main.cn\n"
+                "```\n\n"
+                "### Build an executable\n\n"
+                "```bash\n"
+                "cnext build src/main.cn -o %s\n"
+                "# Linux/macOS: ./%s\n"
+                "# Windows: ./%s.exe\n"
+                "```\n\n"
+                "### Run tests\n\n"
+                "```bash\n"
+                "cnext test\n"
                 "```\n\n"
                 "## Project Structure\n\n"
                 "```\n"
                 "%s/\n"
                 "  src/\n"
-                "    main.cn        # Entry point\n"
-                "    greeting.cn    # Greeting utilities\n"
-                "    models.cn      # Data models\n"
+                "    main.cn        # Entry point - run this file\n"
+                "    greeting.cn    # Utility functions\n"
+                "    models.cn      # Data model classes\n"
                 "  packages/        # Third-party packages\n"
                 "  build/           # Build output\n"
-                "  cnext.toml       # Project config\n"
+                "  cnext.toml       # Project configuration\n"
+                "  README.md        # This file\n"
                 "```\n\n"
+                "## What's in the Sample Code?\n\n"
+                "The sample code demonstrates:\n\n"
+                "- **Variables** — `int`, `str`, `bool`, `var` type inference\n"
+                "- **Functions** — Regular functions with parameters and return types\n"
+                "- **String interpolation** — `\"Hello, {name}!\"` syntax\n"
+                "- **Classes** — Object-oriented programming with constructors\n"
+                "- **For-in loops** — Iterating over arrays\n"
+                "- **Imports** — Using code from other files\n\n"
                 "## Learn More\n\n"
                 "- [Language Guide](https://github.com/Melton122/cnext/blob/main/docs/getting-started.md)\n"
+                "- [Type System](https://github.com/Melton122/cnext/blob/main/docs/types.md)\n"
                 "- [Standard Library](https://github.com/Melton122/cnext/blob/main/docs/stdlib.md)\n"
-                "- [Examples](https://github.com/Melton122/cnext/tree/main/examples)\n",
-                project_name, project_name, project_name);
+                "- [Examples](https://github.com/Melton122/cnext/tree/main/examples)\n"
+                "- [VS Code Extension](https://github.com/Melton122/cnext/tree/main/vscode-extension)\n",
+                project_name, project_name, project_name, project_name, project_name);
             fclose(f);
         }
     }
 
-    printf("Project '%s' created.\n\n", project_name);
-    printf("  cd %s\n", project_name);
-    printf("  cnext run src/main.cn\n\n");
+    // Create .vscode/tasks.json for VS Code integration
+    char vscode_dir[CNEXT_PATH_MAX];
+    char tasks_path[CNEXT_PATH_MAX];
+    if (join_path(vscode_dir, sizeof(vscode_dir), project_name, ".vscode") == 0) {
+        make_dir(vscode_dir);
+        if (join_path(tasks_path, sizeof(tasks_path), vscode_dir, "tasks.json") == 0) {
+            FILE* f = fopen(tasks_path, "w");
+            if (f) {
+                fprintf(f,
+                    "{\n"
+                    "    \"version\": \"2.0.0\",\n"
+                    "    \"tasks\": [\n"
+                    "        {\n"
+                    "            \"label\": \"Cnext: Run\",\n"
+                    "            \"type\": \"shell\",\n"
+                    "            \"command\": \"cnext run src/main.cn\",\n"
+                    "            \"group\": \"build\",\n"
+                    "            \"problemMatcher\": []\n"
+                    "        },\n"
+                    "        {\n"
+                    "            \"label\": \"Cnext: Build\",\n"
+                    "            \"type\": \"shell\",\n"
+                    "            \"command\": \"cnext build src/main.cn\",\n"
+                    "            \"group\": \"build\",\n"
+                    "            \"problemMatcher\": []\n"
+                    "        },\n"
+                    "        {\n"
+                    "            \"label\": \"Cnext: Build Release\",\n"
+                    "            \"type\": \"shell\",\n"
+                    "            \"command\": \"cnext build src/main.cn --release\",\n"
+                    "            \"group\": \"build\",\n"
+                    "            \"problemMatcher\": []\n"
+                    "        },\n"
+                    "        {\n"
+                    "            \"label\": \"Cnext: Test\",\n"
+                    "            \"type\": \"shell\",\n"
+                    "            \"command\": \"cnext test\",\n"
+                    "            \"group\": \"test\",\n"
+                    "            \"problemMatcher\": []\n"
+                    "        },\n"
+                    "        {\n"
+                    "            \"label\": \"Cnext: Format\",\n"
+                    "            \"type\": \"shell\",\n"
+                    "            \"command\": \"cnext fmt src/main.cn\",\n"
+                    "            \"group\": \"none\",\n"
+                    "            \"problemMatcher\": []\n"
+                    "        }\n"
+                    "    ]\n"
+                    "}\n");
+                fclose(f);
+            }
+        }
+    }
+
+    printf("Project '%s' created!\n\n", project_name);
+    printf("  Next steps:\n");
+    printf("    cd %s\n", project_name);
+    printf("    cnext run src/main.cn\n\n");
+    printf("  What's included:\n");
+    printf("    src/main.cn       - Entry point with sample code\n");
+    printf("    src/greeting.cn   - Utility functions\n");
+    printf("    src/models.cn     - Data model classes\n");
+    printf("    .vscode/tasks.json - VS Code build tasks\n");
+    printf("    cnext.toml         - Project configuration\n");
+    printf("    README.md          - Getting started guide\n\n");
+    printf("  Install the VS Code extension for syntax highlighting:\n");
+    printf("    code --install-extension cnext\n\n");
     return 0;
 }
 
@@ -413,42 +505,14 @@ int main(int argc, char** argv) {
     }
 
     if (strcmp(command, "test") == 0) {
-        // Run test files from tests/ directory
         printf("Running Cnext test suite...\n\n");
         int passed = 0;
         int failed = 0;
 
-        // Resolve the path to the cnext executable from argv[0]
-        char exe_path[CNEXT_PATH_MAX];
-        if (!build_include_path(argv[0], exe_path, sizeof(exe_path))) {
-            fprintf(stderr, "Cannot locate cnext executable.\n");
-            return 1;
-        }
-        // build_include_path returns the include dir; strip it to get the executable
-        // Instead, use argv[0] directly — it already points to the running binary
-        snprintf(exe_path, sizeof(exe_path), "%s", argv[0]);
-
-        // Collect .cn files from tests/ directory
         typedef struct { char name[256]; } TestEntry;
         TestEntry entries[512];
         int entry_count = 0;
 
-#ifdef _WIN32
-        system("dir /b tests\\*.cn > tests\\_test_list.txt 2>nul");
-        FILE* list = fopen("tests/_test_list.txt", "r");
-        if (list) {
-            char buf[256];
-            while (entry_count < 512 && fgets(buf, sizeof(buf), list)) {
-                buf[strcspn(buf, "\r\n")] = '\0';
-                if (buf[0] != '\0') {
-                    strncpy(entries[entry_count].name, buf, 255);
-                    entries[entry_count].name[255] = '\0';
-                    entry_count++;
-                }
-            }
-            fclose(list);
-        }
-#else
         DIR* dir = opendir("tests");
         if (dir) {
             struct dirent* ent;
@@ -462,7 +526,6 @@ int main(int argc, char** argv) {
             }
             closedir(dir);
         }
-#endif
 
         if (entry_count == 0) {
             printf("No test files found.\n");
@@ -473,26 +536,46 @@ int main(int argc, char** argv) {
             const char* test_file = entries[i].name;
             char input_path[512];
             char output_path[512];
-            char run_cmd[512];
-            char run_err[512];
 
             snprintf(input_path, sizeof(input_path), "tests/%s", test_file);
-#ifdef _WIN32
-            snprintf(output_path, sizeof(output_path), "tests/_test_out.exe");
-            snprintf(run_cmd, sizeof(run_cmd), "tests/_test_out.exe");
-            snprintf(run_err, sizeof(run_err), "tests/_test_out.exe 2>nul");
-#else
-            snprintf(output_path, sizeof(output_path), "tests/_test_out");
-            snprintf(run_cmd, sizeof(run_cmd), "tests/_test_out");
-            snprintf(run_err, sizeof(run_err), "tests/_test_out 2>/dev/null");
-#endif
+            snprintf(output_path, sizeof(output_path), "tests/_test_out%s", CNEXT_DEFAULT_EXE_EXT);
 
-            char cmd[CNEXT_PATH_MAX * 3 + 256];
-            snprintf(cmd, sizeof(cmd), "\"%s\" build \"%s\" -o \"%s\" 2>/dev/null", exe_path, input_path, output_path);
-            int build_ok = system(cmd) == 0;
+            const char* build_argv[] = {
+                argv[0], "build", input_path, "-o", output_path, NULL
+            };
+            int build_status = run_process(argv[0], (char* const*)build_argv);
 
-            if (build_ok) {
-                int run_ok = system(run_err) == 0;
+            if (build_status != 0) {
+                printf("  SKIP: %s (compile error)\n", test_file);
+                fflush(stdout);
+                continue;
+            }
+
+            ExpectedLine expects[MAX_EXPECT_LINES];
+            int expect_count = parse_expect_lines(input_path, expects, MAX_EXPECT_LINES);
+
+            if (expect_count > 0) {
+                char captured[65536];
+                const char* run_argv[] = { output_path, NULL };
+                run_process_captured(output_path, (char* const*)run_argv, captured, sizeof(captured));
+
+                bool all_found = true;
+                for (int e = 0; e < expect_count; e++) {
+                    if (!strstr(captured, expects[e].text)) {
+                        all_found = false;
+                        printf("  FAIL: %s\n", test_file);
+                        printf("    expected: %s\n", expects[e].text);
+                        failed++;
+                        break;
+                    }
+                }
+                if (all_found) {
+                    printf("  PASS: %s\n", test_file);
+                    passed++;
+                }
+            } else {
+                const char* run_argv[] = { output_path, NULL };
+                int run_ok = run_process(output_path, (char* const*)run_argv) == 0;
                 if (run_ok) {
                     printf("  PASS: %s\n", test_file);
                     passed++;
@@ -500,9 +583,8 @@ int main(int argc, char** argv) {
                     printf("  FAIL: %s\n", test_file);
                     failed++;
                 }
-            } else {
-                printf("  SKIP: %s (compile error)\n", test_file);
             }
+            fflush(stdout);
         }
 
         printf("\nResults: %d passed, %d failed\n", passed, failed);
@@ -589,21 +671,21 @@ int main(int argc, char** argv) {
         printf("Checking system...\n\n");
 
         // Check GCC
-        int gcc_ok = system("gcc --version >nul 2>&1") == 0;
+        int gcc_ok = system("gcc --version >" DEV_NULL " 2>&1") == 0;
         printf("  GCC:          %s\n", gcc_ok ? "OK" : "NOT FOUND");
 
         // Check Make
-        int make_ok = system("make --version >nul 2>&1") == 0 ||
-                      system("mingw32-make --version >nul 2>&1") == 0;
+        int make_ok = system("make --version >" DEV_NULL " 2>&1") == 0 ||
+                      system("mingw32-make --version >" DEV_NULL " 2>&1") == 0;
         printf("  Make:         %s\n", make_ok ? "OK" : "NOT FOUND");
 
         // Check curl (for networking)
-        int curl_ok = system("curl --version >nul 2>&1") == 0;
+        int curl_ok = system("curl --version >" DEV_NULL " 2>&1") == 0;
         printf("  curl:         %s\n", curl_ok ? "OK" : "NOT FOUND");
 
         // Check Python (for tests)
-        int python_ok = system("python3 --version >nul 2>&1") == 0 ||
-                        system("python --version >nul 2>&1") == 0;
+        int python_ok = system("python3 --version >" DEV_NULL " 2>&1") == 0 ||
+                        system("python --version >" DEV_NULL " 2>&1") == 0;
         printf("  Python:       %s\n", python_ok ? "OK" : "NOT FOUND");
 
         printf("\n");
@@ -641,12 +723,20 @@ int main(int argc, char** argv) {
     if (strcmp(command, "cache") == 0) {
         const char* action = argc >= 3 ? argv[2] : "status";
         if (strcmp(action, "clear") == 0) {
+#ifdef _WIN32
+            int unused = system("rmdir /s /q .cnext\\cache 2>nul"); (void)unused;
+#else
             int unused = system("rm -rf .cnext/cache 2>/dev/null || true"); (void)unused;
+#endif
             printf("Cache cleared.\n");
         } else {
             printf("Build cache status:\n");
             printf("  Location: .cnext/cache/\n");
+#ifdef _WIN32
+            int unused = system("dir .cnext\\cache 2>nul || echo   No cache found."); (void)unused;
+#else
             int unused = system("ls -la .cnext/cache/ 2>/dev/null || echo '  No cache found.'"); (void)unused;
+#endif
         }
         return 0;
     }
