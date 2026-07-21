@@ -1,5 +1,0 @@
-// EXPECT: (1, hello, 3.140000)
-main {
-    var t = (1, "hello", 3.14)
-    printin(t)
-}

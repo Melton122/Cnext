@@ -1,9 +1,0 @@
-// EXPECT: name is null
-// EXPECT: x = 0
-main {
-    str name = null
-    printin("name is null")
-
-    int x = 0
-    printin("x = " + x)
-}

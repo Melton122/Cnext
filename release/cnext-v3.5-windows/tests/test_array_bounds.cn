@@ -1,7 +1,0 @@
-// Test array bounds checking
-// EXPECT: Array bounds out of range: index 5 >= length 3
-main {
-    int[] nums = {10, 20, 30}
-    // This should trigger a bounds check error and exit
-    printin(nums[5])
-}

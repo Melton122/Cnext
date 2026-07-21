@@ -1,4 +1,0 @@
-main {
- int age = 19
- printin(age)
-}
