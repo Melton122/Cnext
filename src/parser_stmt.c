@@ -134,6 +134,23 @@ static ASTNode* for_statement() {
             node->init = stmt;
         }
     } else if (is_type()) {
+        Token saved_type = parser.current;
+        advance_token();
+        if (parser.current.type == TOKEN_IDENTIFIER) {
+            Token name = parser.current;
+            advance_token();
+            if (match_token(TOKEN_IN)) {
+                node->type = AST_FOR_IN;
+                ASTNode* vdecl = create_node(AST_VAR_DECL, name);
+                vdecl->var_type = saved_type;
+                node->init = vdecl;
+                node->condition = expression();
+                node->left = block();
+                return node;
+            }
+            parser.current = name;
+        }
+        parser.current = saved_type;
         node->init = var_declaration(false);
     } else {
         node->init = expr_stmt();
@@ -373,6 +390,12 @@ ASTNode* statement() {
     if (match_token(TOKEN_MATCH)) return match_statement();
     if (match_token(TOKEN_ASSERT)) return assert_statement();
     if (match_token(TOKEN_BENCH)) return bench_statement();
+    if (match_token(TOKEN_DEFER)) {
+        ASTNode* node = create_node(AST_DEFER, parser.previous);
+        node->left = expression();
+        optionally_consume_semicolon();
+        return node;
+    }
     if (match_token(TOKEN_RUN_ASYNC)) {
         // run_async func_name() or run_async func_name(args)
         ASTNode* node = create_node(AST_RUN_ASYNC, parser.previous);

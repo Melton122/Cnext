@@ -4,6 +4,7 @@ int bench_counter = 0;
 int loop_counter = 0;
 int try_counter = 0;
 int match_counter = 0;
+int defer_counter = 0;
 
 void generate_block(ASTNode* node) {
     if (!node) { fprintf(out, "{}\n"); return; }
@@ -526,6 +527,15 @@ void generate_node(ASTNode* node) {
                 indent_level--;
                 write_indent();
                 fprintf(out, "}\n");
+            } else if (node->condition->type == AST_RANGE) {
+                fprintf(out, "for (int %.*s = ", node->init->token.length, node->init->token.start);
+                generate_expression(node->condition->left);
+                fprintf(out, "; %.*s < ", node->init->token.length, node->init->token.start);
+                generate_expression(node->condition->right);
+                fprintf(out, "; %.*s = %.*s + 1) ",
+                        node->init->token.length, node->init->token.start,
+                        node->init->token.length, node->init->token.start);
+                generate_block(node->left);
             } else {
                 fprintf(out, "for (size_t _i%d = 0; _i%d < (", current_loop, current_loop);
                 generate_expression(node->condition);
@@ -602,6 +612,20 @@ void generate_node(ASTNode* node) {
         case AST_CONTINUE:
             fprintf(out, "continue;\n");
             break;
+        case AST_DEFER: {
+            int d = defer_counter++;
+            write_indent();
+            fprintf(out, "void _cnext_defer_fn_%d(void* _d) { ", d);
+            if (node->left) generate_expression(node->left);
+            fprintf(out, "; }\n");
+            write_indent();
+            fprintf(out, "volatile int _cnext_defer_done_%d = 0;\n", d);
+            write_indent();
+            fprintf(out, "char _cnext_defer_cleanup_%d __attribute__((cleanup(_cnext_defer_fn_%d))) = 0;\n", d, d);
+            write_indent();
+            fprintf(out, "_cnext_defer_done_%d = 1;\n", d);
+            break;
+        }
         case AST_TRY: {
             int current_try = try_counter++;
             fprintf(out, "{\n");
@@ -792,6 +816,9 @@ void generate_node(ASTNode* node) {
             }
             break;
         }
+        case AST_BLOCK:
+            generate_block(node);
+            break;
         default:
             break;
     }

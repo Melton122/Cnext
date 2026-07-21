@@ -22,9 +22,25 @@ bool analyze_semantics(ASTNode* program, bool require_main) {
     Token printin_token = {TOKEN_IDENTIFIER, "printin", 7, 0};
     Token input_token = {TOKEN_IDENTIFIER, "input", 5, 0};
     Token free_token = {TOKEN_IDENTIFIER, "free", 4, 0};
+    Token len_token = {TOKEN_IDENTIFIER, "len", 3, 0};
+    Token is_null_token = {TOKEN_IDENTIFIER, "is_null", 7, 0};
+    Token split_token = {TOKEN_IDENTIFIER, "split", 5, 0};
+    Token join_token = {TOKEN_IDENTIFIER, "join", 4, 0};
+    Token unwrap_token = {TOKEN_IDENTIFIER, "unwrap", 6, 0};
+    Token expect_token = {TOKEN_IDENTIFIER, "expect", 6, 0};
     define_symbol_if_missing(printin_token, TOKEN_FUNC, true, NULL);
     define_symbol_if_missing(input_token, TOKEN_FUNC, true, NULL);
     define_symbol_if_missing(free_token, TOKEN_FUNC, true, NULL);
+    define_symbol_if_missing(len_token, TOKEN_FUNC, true, NULL);
+    define_symbol_if_missing(is_null_token, TOKEN_FUNC, true, NULL);
+    define_symbol_if_missing(split_token, TOKEN_FUNC, true, NULL);
+    define_symbol_if_missing(join_token, TOKEN_FUNC, true, NULL);
+    define_symbol_if_missing(unwrap_token, TOKEN_FUNC, true, NULL);
+    define_symbol_if_missing(expect_token, TOKEN_FUNC, true, NULL);
+    Token str_to_int_token = {TOKEN_IDENTIFIER, "str_to_int", 10, 0};
+    Token str_to_float_token = {TOKEN_IDENTIFIER, "str_to_float", 12, 0};
+    define_symbol_if_missing(str_to_int_token, TOKEN_FUNC, true, NULL);
+    define_symbol_if_missing(str_to_float_token, TOKEN_FUNC, true, NULL);
 
     for (int i = 0; i < program->child_count; i++) {
         predeclare_global(program->children[i]);

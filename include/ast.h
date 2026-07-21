@@ -102,7 +102,10 @@ typedef enum {
     AST_BENCH_DECL,     // bench { code } — performance measurement block
     AST_OWN_EXPR,       // own expr — ownership transfer expression
     // v8.0: Type aliases
-    AST_TYPE_ALIAS      // type MyType = OtherType
+    AST_TYPE_ALIAS,     // type MyType = OtherType
+    // v10.0: New features
+    AST_DEFER,          // defer expr
+    AST_RANGE           // a..b range expression
 } ASTNodeType;
 
 typedef struct ASTNode {

@@ -347,6 +347,52 @@ typedef struct {
 
 static inline void printin_tuple(CnextTuple x) { printf("%s\n", x.repr.data ? x.repr.data : "(null)"); }
 
+/* --- print (no newline) variants --- */
+static inline void _cnext_print(const char* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    vprintf(fmt, args);
+    va_end(args);
+}
+static inline void print_int(int x) { _cnext_print("%d", x); }
+static inline void print_uint(unsigned int x) { _cnext_print("%u", x); }
+static inline void print_long(long x) { _cnext_print("%ld", x); }
+static inline void print_ulong(unsigned long x) { _cnext_print("%lu", x); }
+static inline void print_llong(long long x) { _cnext_print("%lld", x); }
+static inline void print_ullong(unsigned long long x) { _cnext_print("%llu", x); }
+static inline void print_float(float x) { _cnext_print("%f", x); }
+static inline void print_double(double x) { _cnext_print("%f", x); }
+static inline void print_str(CnextString x) { _cnext_print("%s", x.data ? x.data : "(null)"); }
+static inline void print_cstr(const char* x) { _cnext_print("%s", x ? x : "(null)"); }
+static inline void print_bool(bool x) { _cnext_print("%s", x ? "true" : "false"); }
+static inline void print_ptr(void* x) { _cnext_print("%p", x); }
+static inline void print_char(char x) { _cnext_print("%c", x); }
+static inline void print_closure(CnextClosure x) { (void)x; _cnext_print("<closure>"); }
+static inline void print_iter(CnextIterBase x) { (void)x; _cnext_print("<iterator>"); }
+static inline void print_tuple(CnextTuple x) { printf("%s", x.repr.data ? x.repr.data : "(null)"); }
+
+#define print_raw(...) do { __auto_type _x = (__VA_ARGS__); _Generic((_x), \
+    int: print_int, \
+    unsigned int: print_uint, \
+    short: print_int, \
+    unsigned short: print_uint, \
+    long: print_long, \
+    unsigned long: print_ulong, \
+    long long: print_llong, \
+    unsigned long long: print_ullong, \
+    float: print_float, \
+    double: print_double, \
+    CnextString: print_str, \
+    CnextTuple: print_tuple, \
+    char*: print_cstr, \
+    const char*: print_cstr, \
+    char: print_char, \
+    unsigned char: print_uint, \
+    bool: print_bool, \
+    CnextClosure: print_closure, \
+    CnextIterBase: print_iter, \
+    default: print_ptr)(_x); } while(0)
+
 #define printin(...) do { __auto_type _x = (__VA_ARGS__); _Generic((_x), \
     int: printin_int, \
     unsigned int: printin_uint, \
@@ -406,6 +452,27 @@ static inline CnextString cnext_concat(CnextString s1, CnextString s2) {
     return (CnextString){result, total};
 }
 
+/* --- Null Safety --- */
+
+static inline bool cnext_is_null_ptr(void* p) { return p == NULL; }
+static inline bool cnext_is_null_cstr(const char* p) { return p == NULL; }
+static inline bool cnext_is_null_str(CnextString s) { return s.data == NULL; }
+
+static inline void* cnext_unwrap_ptr(void* p, const char* msg) {
+    if (!p) { fprintf(stderr, "Unwrap failed: %s\n", msg ? msg : "value is null"); exit(1); }
+    return p;
+}
+
+static inline CnextString cnext_unwrap_str(CnextString s, const char* msg) {
+    if (!s.data) { fprintf(stderr, "Unwrap failed: %s\n", msg ? msg : "value is null"); exit(1); }
+    return s;
+}
+
+static inline CnextString cnext_expect_str(CnextString s, const char* msg) {
+    if (!s.data) { cnext_throw(msg ? (CnextString){(char*)msg, strlen(msg)} : (CnextString){(char*)"expect failed: value is null", 29}); }
+    return s;
+}
+
 /* --- To-String Conversion --- */
 
 static inline CnextString cnext_to_string_int(int x) { char* b = (char*)malloc(32); if (!b) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); } snprintf(b, 32, "%d", x); _cnext_track(b); return (CnextString){b, strlen(b)}; }
@@ -426,6 +493,8 @@ static inline CnextString cnext_to_string_char(char x) { char* b = (char*)malloc
 #define cnext_to_string(...) _Generic((__VA_ARGS__), \
     int: cnext_to_string_int, \
     unsigned int: cnext_to_string_uint, \
+    short: cnext_to_string_int, \
+    unsigned short: cnext_to_string_uint, \
     long: cnext_to_string_long, \
     unsigned long: cnext_to_string_ulong, \
     long long: cnext_to_string_llong, \
@@ -436,6 +505,7 @@ static inline CnextString cnext_to_string_char(char x) { char* b = (char*)malloc
     char*: cnext_to_string_cstr, \
     const char*: cnext_to_string_cstr, \
     char: cnext_to_string_char, \
+    unsigned char: cnext_to_string_uint, \
     bool: cnext_to_string_bool, \
     default: cnext_to_string_ptr)(__VA_ARGS__)
 
@@ -575,6 +645,66 @@ static inline bool cnext_str_is_empty(CnextString s) {
     return s.length == 0 || s.data == NULL;
 }
 
+/* --- String Split/Join --- */
+
+typedef struct {
+    CnextString* items;
+    int length;
+} CnextStringArray;
+
+static inline CnextStringArray cnext_str_split(CnextString s, CnextString delim) {
+    if (!s.data || s.length == 0) { CnextStringArray r = {NULL, 0}; return r; }
+    if (!delim.data || delim.length == 0) {
+        CnextStringArray r = (CnextStringArray){(CnextString*)malloc(sizeof(CnextString) * s.length), (int)s.length};
+        for (size_t i = 0; i < s.length; i++) {
+            r.items[i] = (CnextString){s.data + i, 1};
+        }
+        return r;
+    }
+    int cap = 8;
+    int count = 0;
+    CnextString* items = (CnextString*)malloc(sizeof(CnextString) * cap);
+    size_t pos = 0;
+    while (pos <= s.length) {
+        int found = -1;
+        if (pos + delim.length <= s.length) {
+            for (size_t j = 0; j <= s.length - delim.length - pos; j++) {
+                if (memcmp(s.data + pos + j, delim.data, delim.length) == 0) { found = (int)j; break; }
+            }
+        }
+        if (found >= 0) {
+            if (count >= cap) { cap *= 2; items = (CnextString*)realloc(items, sizeof(CnextString) * cap); }
+            items[count++] = (CnextString){s.data + pos, (size_t)found};
+            pos += found + delim.length;
+        } else {
+            if (count >= cap) { cap *= 2; items = (CnextString*)realloc(items, sizeof(CnextString) * cap); }
+            items[count++] = (CnextString){s.data + pos, s.length - pos};
+            break;
+        }
+    }
+    _cnext_track(items);
+    CnextStringArray r = {items, count};
+    return r;
+}
+
+static inline CnextString cnext_str_join(CnextStringArray parts, CnextString delim) {
+    if (parts.length == 0) return (CnextString){NULL, 0};
+    if (parts.length == 1) return parts.items[0];
+    size_t total = 0;
+    for (int i = 0; i < parts.length; i++) { total += parts.items[i].length; }
+    if (delim.length > 0) total += (size_t)(parts.length - 1) * delim.length;
+    char* buf = (char*)malloc(total + 1);
+    if (!buf) return (CnextString){NULL, 0};
+    size_t w = 0;
+    for (int i = 0; i < parts.length; i++) {
+        if (i > 0 && delim.data) { memcpy(buf + w, delim.data, delim.length); w += delim.length; }
+        if (parts.items[i].data) { memcpy(buf + w, parts.items[i].data, parts.items[i].length); w += parts.items[i].length; }
+    }
+    buf[w] = '\0';
+    _cnext_track(buf);
+    return (CnextString){buf, w};
+}
+
 static inline CnextString cnext_str_reverse(CnextString s) {
     char* result = (char*)malloc(s.length + 1);
     if (!result) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
@@ -602,6 +732,48 @@ static inline double cnext_str_to_double(CnextString s) {
     memcpy(buf, s.data, len);
     buf[len] = '\0';
     return strtod(buf, NULL);
+}
+
+static inline float cnext_str_parse_float(CnextString s) {
+    return (float)cnext_str_to_double(s);
+}
+
+static inline int cnext_str_char_at(CnextString s, int index) {
+    if (!s.data || index < 0 || (size_t)index >= s.length) return -1;
+    return (unsigned char)s.data[index];
+}
+
+static inline int cnext_str_index_of_char(CnextString s, char c) {
+    if (!s.data) return -1;
+    for (size_t i = 0; i < s.length; i++) {
+        if (s.data[i] == c) return (int)i;
+    }
+    return -1;
+}
+
+static inline CnextString cnext_str_char_to_string(char c) {
+    char* buf = (char*)malloc(2);
+    if (!buf) return (CnextString){NULL, 0};
+    buf[0] = c;
+    buf[1] = '\0';
+    _cnext_track(buf);
+    return (CnextString){buf, 1};
+}
+
+static inline CnextString cnext_int_to_string(int x) {
+    char* buf = (char*)malloc(32);
+    if (!buf) return (CnextString){NULL, 0};
+    snprintf(buf, 32, "%d", x);
+    _cnext_track(buf);
+    return (CnextString){buf, strlen(buf)};
+}
+
+static inline CnextString cnext_float_to_string(float x) {
+    char* buf = (char*)malloc(64);
+    if (!buf) return (CnextString){NULL, 0};
+    snprintf(buf, 64, "%f", x);
+    _cnext_track(buf);
+    return (CnextString){buf, strlen(buf)};
 }
 
 /* --- Array Bounds Checking --- */

@@ -183,6 +183,26 @@ void register_import(Token module) {
         define_symbol_if_missing(os_os_name_token, TOKEN_FUNC, true, NULL);
         define_symbol_if_missing(os_hostname_token, TOKEN_FUNC, true, NULL);
         define_symbol_if_missing(os_pid_token, TOKEN_FUNC, true, NULL);
+        Token os_exec_output_token = {TOKEN_IDENTIFIER, "os_exec_output", 14, module.line};
+        Token os_exec_status_token = {TOKEN_IDENTIFIER, "os_exec_status", 14, module.line};
+        Token os_arch_token = {TOKEN_IDENTIFIER, "os_arch", 7, module.line};
+        Token os_file_exists_token = {TOKEN_IDENTIFIER, "os_file_exists", 14, module.line};
+        Token os_is_dir_token = {TOKEN_IDENTIFIER, "os_is_dir", 9, module.line};
+        Token os_file_size_token = {TOKEN_IDENTIFIER, "os_file_size", 12, module.line};
+        Token os_rename_token = {TOKEN_IDENTIFIER, "os_rename", 9, module.line};
+        Token os_remove_token = {TOKEN_IDENTIFIER, "os_remove", 9, module.line};
+        Token os_read_dir_token = {TOKEN_IDENTIFIER, "os_read_dir", 11, module.line};
+        Token os_mkdir_p_token = {TOKEN_IDENTIFIER, "os_mkdir_p", 10, module.line};
+        define_symbol_if_missing(os_exec_output_token, TOKEN_FUNC, true, NULL);
+        define_symbol_if_missing(os_exec_status_token, TOKEN_FUNC, true, NULL);
+        define_symbol_if_missing(os_arch_token, TOKEN_FUNC, true, NULL);
+        define_symbol_if_missing(os_file_exists_token, TOKEN_FUNC, true, NULL);
+        define_symbol_if_missing(os_is_dir_token, TOKEN_FUNC, true, NULL);
+        define_symbol_if_missing(os_file_size_token, TOKEN_FUNC, true, NULL);
+        define_symbol_if_missing(os_rename_token, TOKEN_FUNC, true, NULL);
+        define_symbol_if_missing(os_remove_token, TOKEN_FUNC, true, NULL);
+        define_symbol_if_missing(os_read_dir_token, TOKEN_FUNC, true, NULL);
+        define_symbol_if_missing(os_mkdir_p_token, TOKEN_FUNC, true, NULL);
     } else if (token_matches_name(module, "string_utils")) {
         Token str_trim_token = {TOKEN_IDENTIFIER, "str_trim", 8, module.line};
         Token str_trim_left_token = {TOKEN_IDENTIFIER, "str_trim_left", 13, module.line};
@@ -210,6 +230,10 @@ void register_import(Token module) {
         define_symbol_if_missing(str_substring_token, TOKEN_FUNC, true, NULL);
         define_symbol_if_missing(str_repeat_token, TOKEN_FUNC, true, NULL);
         define_symbol_if_missing(str_reverse_token, TOKEN_FUNC, true, NULL);
+        Token str_to_int_token = {TOKEN_IDENTIFIER, "str_to_int", 10, module.line};
+        Token str_to_float_token = {TOKEN_IDENTIFIER, "str_to_float", 12, module.line};
+        define_symbol_if_missing(str_to_int_token, TOKEN_FUNC, true, NULL);
+        define_symbol_if_missing(str_to_float_token, TOKEN_FUNC, true, NULL);
     } else if (token_matches_name(module, "time")) {
         Token time_now_token = {TOKEN_IDENTIFIER, "time_now", 8, module.line};
         Token time_now_ms_token = {TOKEN_IDENTIFIER, "time_now_ms", 11, module.line};
@@ -361,5 +385,25 @@ void register_import(Token module) {
         define_symbol_if_missing(channel_send_token, TOKEN_FUNC, true, NULL);
         define_symbol_if_missing(channel_recv_token, TOKEN_FUNC, true, NULL);
         define_symbol_if_missing(channel_free_token, TOKEN_FUNC, true, NULL);
+    } else if (token_matches_name(module, "math")) {
+        static const struct { const char* name; int len; } math_funcs[] = {
+            {"math_abs", 8}, {"math_max", 8}, {"math_min", 8},
+            {"math_sqrt", 9}, {"math_pow", 8}, {"math_sin", 8},
+            {"math_cos", 8}, {"math_tan", 8}, {"math_log", 8},
+            {"math_log10", 10}, {"math_log2", 9}, {"math_logb", 9},
+            {"math_exp", 8}, {"math_floor", 10}, {"math_ceil", 9},
+            {"math_round", 10}, {"math_fabs", 9}, {"math_atan2", 9},
+            {"math_atan", 9}, {"math_acos", 9}, {"math_asin", 9},
+            {"math_sinh", 9}, {"math_cosh", 9}, {"math_tanh", 9},
+            {"math_fmod", 9}, {"math_trunc", 10}, {"math_clamp", 10},
+            {"math_lerp", 9}, {"math_sign", 9},
+            {"math_clamp_int", 14}, {"math_random_seed", 16},
+            {"math_random_int", 16}, {"math_random_float", 17},
+            {NULL, 0}
+        };
+        for (int i = 0; math_funcs[i].name; i++) {
+            Token t = {TOKEN_IDENTIFIER, math_funcs[i].name, math_funcs[i].len, module.line};
+            define_symbol_if_missing(t, TOKEN_FUNC, true, NULL);
+        }
     }
 }

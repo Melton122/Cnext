@@ -158,7 +158,11 @@ typedef enum {
     TOKEN_EXTERN,       // extern
     TOKEN_OWN,          // own
     TOKEN_BENCH,        // bench
-    TOKEN_DOLLAR        // $ (for FFI naming: $function_name)
+    TOKEN_DOLLAR,       // $ (for FFI naming: $function_name)
+
+    // v10.0: New keywords & operators
+    TOKEN_DEFER,        // defer
+    TOKEN_RANGE,        // .. (range operator)
 } CnextTokenType;
 
 typedef struct {

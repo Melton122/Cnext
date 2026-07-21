@@ -167,6 +167,7 @@ void synchronize(void) {
             case TOKEN_MACRO:
             case TOKEN_CONSTEXPR:
             case TOKEN_EXTERN:
+            case TOKEN_DEFER:
                 return;
             default:
                 ;

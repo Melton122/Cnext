@@ -1,5 +1,4 @@
 // EXPECT: Windows
-// EXPECT: C:\Users\melly\Cnext
 // EXPECT: 1
 // EXPECT: hello
 // EXPECT: 1
@@ -11,7 +10,7 @@ main {
     printin(name)
 
     str cwd = os_get_cwd()
-    printin(cwd)
+    printin(len(cwd) > 0)
 
     int pid = os_pid()
     printin(pid > 0)

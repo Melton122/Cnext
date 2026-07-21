@@ -18,7 +18,9 @@ test_generators_full.cn
 test_generics_full.cn
 test_increment.cn
 test_inheritance.cn
+test_int.cn
 test_interfaces.cn
+test_int_only.cn
 test_io.cn
 test_json.cn
 test_lambdas.cn
@@ -38,6 +40,8 @@ test_path.cn
 test_process.cn
 test_random.cn
 test_regex.cn
+test_simple.cn
+test_simple_uint.cn
 test_slices.cn
 test_string_utils.cn
 test_string_utils_v8.cn
@@ -49,9 +53,14 @@ test_traits.cn
 test_try_catch.cn
 test_tuples.cn
 test_typeof.cn
+test_ubyte.cn
+test_uint.cn
 test_v3.cn
 test_v3_new.cn
 test_v4_features.cn
+test_v8.cn
 test_v8_comprehensive.cn
+test_v9.cn
+test_v9_features.cn
 test_variadic.cn
 test_var_inference.cn

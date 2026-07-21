@@ -285,11 +285,29 @@ void generate_expression(ASTNode* node) {
                 bool is_input = (node->left->token.length == 5 && strncmp(node->left->token.start, "input", 5) == 0);
                 bool is_free = (node->left->token.length == 4 && strncmp(node->left->token.start, "free", 4) == 0);
                 bool is_len = (node->left->token.length == 3 && strncmp(node->left->token.start, "len", 3) == 0);
+                bool is_is_null = (node->left->token.length == 7 && strncmp(node->left->token.start, "is_null", 7) == 0);
+                bool is_split = (node->left->token.length == 5 && strncmp(node->left->token.start, "split", 5) == 0);
+                bool is_join = (node->left->token.length == 4 && strncmp(node->left->token.start, "join", 4) == 0);
+                bool is_unwrap = (node->left->token.length == 6 && strncmp(node->left->token.start, "unwrap", 6) == 0);
+                bool is_expect = (node->left->token.length == 6 && strncmp(node->left->token.start, "expect", 6) == 0);
+                bool is_str_to_int = (node->left->token.length == 10 && strncmp(node->left->token.start, "str_to_int", 10) == 0);
+                bool is_str_to_float = (node->left->token.length == 12 && strncmp(node->left->token.start, "str_to_float", 12) == 0);
 
                 if (is_printin) {
-                    fprintf(out, "printin(");
-                    if (node->child_count > 0) generate_expression(node->children[0]);
-                    fprintf(out, ")");
+                    if (node->child_count > 1) {
+                        for (int pi = 0; pi < node->child_count - 1; pi++) {
+                            fprintf(out, "print_raw(");
+                            generate_expression(node->children[pi]);
+                            fprintf(out, "); ");
+                        }
+                        fprintf(out, "printin(");
+                        generate_expression(node->children[node->child_count - 1]);
+                        fprintf(out, ")");
+                    } else {
+                        fprintf(out, "printin(");
+                        if (node->child_count > 0) generate_expression(node->children[0]);
+                        fprintf(out, ")");
+                    }
                 } else if (is_input) {
                     fprintf(out, "cnext_input(");
                     if (node->child_count > 0) generate_expression(node->children[0]);
@@ -302,6 +320,53 @@ void generate_expression(ASTNode* node) {
                     fprintf(out, "(int)(");
                     if (node->child_count > 0) generate_expression(node->children[0]);
                     fprintf(out, ".length)");
+                } else if (is_is_null) {
+                    if (node->child_count > 0) {
+                        ASTNode* arg = node->children[0];
+                        bool is_str = (arg->type_name && strncmp(arg->type_name, "str", 3) == 0) ||
+                                      (arg->type == AST_LITERAL && arg->token.type == TOKEN_STRING_LITERAL) ||
+                                      (arg->expr_type == TOKEN_STR_TYPE);
+                        if (is_str) {
+                            fprintf(out, "cnext_is_null_str(");
+                            generate_expression(arg);
+                            fprintf(out, ")");
+                        } else {
+                            fprintf(out, "cnext_is_null_ptr((void*)(");
+                            generate_expression(arg);
+                            fprintf(out, "))");
+                        }
+                    } else {
+                        fprintf(out, "true");
+                    }
+                } else if (is_split) {
+                    fprintf(out, "cnext_str_split(");
+                    if (node->child_count > 0) generate_expression(node->children[0]);
+                    if (node->child_count > 1) { fprintf(out, ", "); generate_expression(node->children[1]); }
+                    fprintf(out, ")");
+                } else if (is_join) {
+                    fprintf(out, "cnext_str_join(");
+                    if (node->child_count > 0) generate_expression(node->children[0]);
+                    if (node->child_count > 1) { fprintf(out, ", "); generate_expression(node->children[1]); }
+                    fprintf(out, ")");
+                } else if (is_unwrap) {
+                    fprintf(out, "cnext_unwrap_str(");
+                    if (node->child_count > 0) generate_expression(node->children[0]);
+                    fprintf(out, ", \"unwrap failed: value is null\")");
+                } else if (is_expect) {
+                    fprintf(out, "cnext_expect_str(");
+                    if (node->child_count > 0) generate_expression(node->children[0]);
+                    fprintf(out, ", ");
+                    if (node->child_count > 1) generate_expression(node->children[1]);
+                    else fprintf(out, "\"expect failed: value is null\"");
+                    fprintf(out, ")");
+                } else if (is_str_to_int) {
+                    fprintf(out, "cnext_str_to_int(");
+                    if (node->child_count > 0) generate_expression(node->children[0]);
+                    fprintf(out, ")");
+                } else if (is_str_to_float) {
+                    fprintf(out, "cnext_str_to_float(");
+                    if (node->child_count > 0) generate_expression(node->children[0]);
+                    fprintf(out, ")");
                 } else {
                     if (node->left && node->left->type == AST_IDENTIFIER && node->left->type_arg_count > 0) {
                         char fname[256];
@@ -755,6 +820,15 @@ void generate_expression(ASTNode* node) {
         }
         case AST_OWN_EXPR:
             generate_expression(node->left);
+            break;
+        case AST_RANGE:
+            fprintf(out, "({ struct { int start; int end; } _r; ");
+            fprintf(out, "_r.start = (int)(");
+            generate_expression(node->left);
+            fprintf(out, "); ");
+            fprintf(out, "_r.end = (int)(");
+            generate_expression(node->right);
+            fprintf(out, "); _r; })");
             break;
         default:
             break;

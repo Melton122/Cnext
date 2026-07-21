@@ -3,13 +3,13 @@
 test "basic operations" {
     int x = 42
     assert(x == 42)
-    println("basic operations: OK")
+    printin("basic operations: OK")
 }
 
 test "string operations" {
     str s = "hello"
     assert(len(s) == 5)
-    println("string operations: OK")
+    printin("string operations: OK")
 }
 
 test "control flow" {
@@ -18,7 +18,7 @@ test "control flow" {
         sum = sum + i
     }
     assert(sum == 55)
-    println("control flow: OK")
+    printin("control flow: OK")
 }
 
 test "functions" {
@@ -26,7 +26,7 @@ test "functions" {
         return a + b
     }
     assert(add(3, 4) == 7)
-    println("functions: OK")
+    printin("functions: OK")
 }
 
 test "classes" {
@@ -46,9 +46,9 @@ test "classes" {
     
     Point p = new Point(3, 4)
     assert(p.distance() == 25)
-    println("classes: OK")
+    printin("classes: OK")
 }
 
 main {
-    println("All CLI feature tests passed!")
+    printin("All CLI feature tests passed!")
 }

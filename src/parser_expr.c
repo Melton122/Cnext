@@ -490,6 +490,17 @@ static ASTNode* logic_or() {
     return expr;
 }
 
+static ASTNode* range_expr() {
+    ASTNode* expr = logic_or();
+    while (match_token(TOKEN_RANGE)) {
+        ASTNode* node = create_node(AST_RANGE, parser.previous);
+        node->left = expr;
+        node->right = logic_or();
+        expr = node;
+    }
+    return expr;
+}
+
 ASTNode* expression() {
-    return logic_or();
+    return range_expr();
 }

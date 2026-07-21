@@ -32,6 +32,7 @@ extern int bench_counter;
 extern int loop_counter;
 extern int try_counter;
 extern int match_counter;
+extern int defer_counter;
 
 /* --- Utility Functions (codegen_emit.c) --- */
 const char* type_token_to_c(CnextTokenType type);

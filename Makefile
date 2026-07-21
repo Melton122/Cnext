@@ -1,7 +1,20 @@
 # Cnext Compiler - Modern Makefile
 # Platform detection
 UNAME_S := $(shell uname -s 2>/dev/null || echo Windows)
+# Detect MSYS2/Cygwin/MinGW on Windows (uname returns MSYS_NT-*, CYGWIN_*, MINGW_*)
+ifneq (,$(findstring MINGW,$(UNAME_S)))
+    WINDOWS_BUILD := true
+endif
+ifneq (,$(findstring MSYS,$(UNAME_S)))
+    WINDOWS_BUILD := true
+endif
+ifneq (,$(findstring CYGWIN,$(UNAME_S)))
+    WINDOWS_BUILD := true
+endif
 ifeq ($(UNAME_S),Windows)
+    WINDOWS_BUILD := true
+endif
+ifdef WINDOWS_BUILD
     EXEC = cnext.exe
     PLATFORM_LIBS = -lwinhttp -lws2_32
     INSTALL_DIR = $(LOCALAPPDATA)/Cnext/bin
@@ -83,7 +96,7 @@ check: $(EXEC)
 	@python3 tests/run_tests.py 2>/dev/null || python tests/run_tests.py 2>/dev/null || echo "Python tests skipped"
 
 install: $(EXEC)
-ifeq ($(UNAME_S),Windows)
+ifdef WINDOWS_BUILD
 	@if not exist "$(INSTALL_DIR)" mkdir "$(INSTALL_DIR)"
 	copy /Y $(EXEC) "$(INSTALL_DIR)\$(EXEC)"
 	@echo Copying include directory...
@@ -97,7 +110,7 @@ endif
 	@echo "Add $(INSTALL_DIR) to your PATH to use 'cnext' globally."
 
 uninstall:
-ifeq ($(UNAME_S),Windows)
+ifdef WINDOWS_BUILD
 	@if exist "$(INSTALL_DIR)\$(EXEC)" del /f "$(INSTALL_DIR)\$(EXEC)"
 	@if exist "$(INSTALL_DIR)\..\include" rmdir /S /Q "$(INSTALL_DIR)\..\include" 2>nul
 else

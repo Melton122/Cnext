@@ -120,6 +120,11 @@ CnextTokenType analyze_expression(ASTNode* node) {
         case AST_UNARY:
             type = analyze_expression(node->right);
             break;
+        case AST_RANGE:
+            analyze_expression(node->left);
+            analyze_expression(node->right);
+            type = TOKEN_INT_TYPE;
+            break;
         case AST_POSTFIX:
             analyze_postfix(node);
             break;

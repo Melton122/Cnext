@@ -68,6 +68,74 @@ static inline float math_fabs(float x) {
     return fabsf(x);
 }
 
+static inline float math_log2(float x) {
+    return log2f(x);
+}
+
+static inline float math_logb(float x) {
+    return logbf(x);
+}
+
+static inline float math_atan2(float y, float x) {
+    return atan2f(y, x);
+}
+
+static inline float math_atan(float x) {
+    return atanf(x);
+}
+
+static inline float math_acos(float x) {
+    return acosf(x);
+}
+
+static inline float math_asin(float x) {
+    return asinf(x);
+}
+
+static inline float math_sinh(float x) {
+    return sinhf(x);
+}
+
+static inline float math_cosh(float x) {
+    return coshf(x);
+}
+
+static inline float math_tanh(float x) {
+    return tanhf(x);
+}
+
+static inline float math_sqrt_float(float x) {
+    return sqrtf(x);
+}
+
+static inline float math_fmod(float x, float y) {
+    return fmodf(x, y);
+}
+
+static inline float math_trunc(float x) {
+    return truncf(x);
+}
+
+static inline float math_clamp(float x, float lo, float hi) {
+    if (x < lo) return lo;
+    if (x > hi) return hi;
+    return x;
+}
+
+static inline float math_lerp(float a, float b, float t) {
+    return a + t * (b - a);
+}
+
+static inline int math_sign(int x) {
+    return (x > 0) - (x < 0);
+}
+
+static inline int math_clamp_int(int x, int lo, int hi) {
+    if (x < lo) return lo;
+    if (x > hi) return hi;
+    return x;
+}
+
 // --- Random ---
 
 static inline void math_random_seed(int seed) {

@@ -190,7 +190,13 @@ void analyze_node(ASTNode* node) {
             loop_depth++;
             sem_push_scope();
             analyze_expression(node->condition);
-            if (node->init) define_symbol(node->init->token, TOKEN_VAR, false, NULL, node->init);
+            if (node->init) {
+                if (node->init->type == AST_VAR_DECL && node->init->var_type.type != TOKEN_VAR) {
+                    define_symbol(node->init->token, node->init->var_type.type, false, NULL, node->init);
+                } else {
+                    define_symbol(node->init->token, TOKEN_VAR, false, NULL, node->init);
+                }
+            }
             analyze_node(node->left);
             sem_pop_scope();
             loop_depth--;
@@ -219,6 +225,9 @@ void analyze_node(ASTNode* node) {
             if (loop_depth == 0) {
                 report_error(node->token.line, "Cannot use 'continue' outside of a loop.", NULL);
             }
+            break;
+        case AST_DEFER:
+            if (node->left) analyze_expression(node->left);
             break;
         case AST_YIELD:
             if (generator_depth == 0) {

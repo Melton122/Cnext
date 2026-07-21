@@ -159,7 +159,9 @@ static CnextTokenType identifier_type(void) {
         case 'd': {
             CnextTokenType t = check_keyword(1, 6, "efault", TOKEN_DEFAULT);
             if (t != TOKEN_IDENTIFIER) return t;
-            return check_keyword(1, 6, "ouble", TOKEN_DOUBLE_TYPE);
+            t = check_keyword(1, 5, "ouble", TOKEN_DOUBLE_TYPE);
+            if (t != TOKEN_IDENTIFIER) return t;
+            return check_keyword(1, 4, "efer", TOKEN_DEFER);
         }
         case 'e': 
             if (lexer.current - lexer.start > 1) {
@@ -395,7 +397,10 @@ Token next_token(void) {
         case ';': return make_token(TOKEN_SEMICOLON);
         case ',': return make_token(TOKEN_COMMA);
         case '.':
-            if (match('.') && match('.')) return make_token(TOKEN_ELLIPSIS);
+            if (match('.')) {
+                if (match('.')) return make_token(TOKEN_ELLIPSIS);
+                return make_token(TOKEN_RANGE);
+            }
             return make_token(TOKEN_DOT);
         case ':': return make_token(TOKEN_COLON);
         case '?':

@@ -1,0 +1,2645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cnext: The Complete Guide</title>
+<style>
+  @page { size: A4; margin: 2cm; }
+  @media print {
+    body { font-size: 11pt; }
+    .page-break { page-break-before: always; }
+    .no-break { page-break-inside: avoid; }
+    nav { display: none; }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Georgia', 'Times New Roman', serif; line-height: 1.7; color: #1a1a1a; max-width: 800px; margin: 0 auto; padding: 40px 20px; background: #fff; }
+  h1 { font-size: 2.4em; margin: 0.8em 0 0.4em; color: #1a1a1a; border-bottom: 3px solid #2c3e50; padding-bottom: 10px; }
+  h2 { font-size: 1.8em; margin: 1.2em 0 0.4em; color: #2c3e50; border-bottom: 2px solid #bdc3c7; padding-bottom: 6px; }
+  h3 { font-size: 1.3em; margin: 1em 0 0.3em; color: #34495e; }
+  h4 { font-size: 1.1em; margin: 0.8em 0 0.2em; color: #555; }
+  p { margin: 0.6em 0; text-align: justify; }
+  pre { background: #f4f4f4; border: 1px solid #ddd; border-left: 4px solid #2c3e50; padding: 14px 18px; margin: 1em 0; overflow-x: auto; font-size: 0.9em; line-height: 1.5; }
+  code { font-family: 'Consolas', 'Courier New', monospace; }
+  pre code { background: none; padding: 0; }
+  code { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; font-size: 0.92em; }
+  table { width: 100%; border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid #ccc; padding: 8px 12px; text-align: left; }
+  th { background: #2c3e50; color: #fff; font-weight: bold; }
+  tr:nth-child(even) { background: #f9f9f9; }
+  ul, ol { margin: 0.5em 0 0.5em 2em; }
+  li { margin: 0.3em 0; }
+  .cover { text-align: center; padding: 120px 20px 60px; }
+  .cover h1 { font-size: 3em; border: none; color: #2c3e50; }
+  .cover .subtitle { font-size: 1.4em; color: #7f8c8d; margin: 10px 0 40px; }
+  .cover .author { font-size: 1.3em; color: #2c3e50; margin: 40px 0 10px; font-style: italic; }
+  .cover .edition { font-size: 1em; color: #95a5a6; margin: 5px 0; }
+  .cover .year { font-size: 1em; color: #95a5a6; margin: 5px 0; }
+  .cover .logo { font-size: 5em; margin: 20px 0; }
+  .toc { padding: 20px 0; }
+  .toc h2 { border-bottom: 3px solid #2c3e50; }
+  .toc ul { list-style: none; margin: 0; padding: 0; }
+  .toc li { padding: 5px 0; border-bottom: 1px dotted #ddd; }
+  .toc li a { text-decoration: none; color: #2c3e50; }
+  .tip { background: #eaf6ff; border-left: 4px solid #3498db; padding: 12px 16px; margin: 1em 0; border-radius: 0 4px 4px 0; }
+  .warning { background: #fff8e1; border-left: 4px solid #f39c12; padding: 12px 16px; margin: 1em 0; border-radius: 0 4px 4px 0; }
+  .note { background: #f0f0f0; border-left: 4px solid #95a5a6; padding: 12px 16px; margin: 1em 0; border-radius: 0 4px 4px 0; }
+  .chapter-intro { font-size: 1.05em; color: #555; font-style: italic; margin-bottom: 1em; }
+  blockquote { border-left: 4px solid #2c3e50; padding: 10px 20px; margin: 1em 0; background: #fafafa; color: #333; }
+  hr { border: none; border-top: 2px solid #eee; margin: 2em 0; }
+  a { color: #2c3e50; }
+</style>
+</head>
+<body>
+
+<!-- ==================== COVER PAGE ==================== -->
+<div class="cover">
+  <div class="logo">&#9670;</div>
+  <h1>Cnext</h1>
+  <div class="subtitle">The Complete Guide</div>
+  <p style="font-size:1.1em; color:#555; max-width:500px; margin:0 auto;">
+    A Comprehensive Introduction to the Cnext Programming Language &mdash; From First Steps to Advanced Concepts
+  </p>
+  <div class="author">Melton Hlungwani</div>
+  <div class="edition">First Edition</div>
+  <div class="year">2026</div>
+  <p style="margin-top:60px; color:#999; font-size:0.9em;">
+    Version 9.0.0 &bull; MIT License
+  </p>
+</div>
+
+<!-- ==================== COPYRIGHT PAGE ==================== -->
+<div class="page-break"></div>
+<div style="padding: 60px 0;">
+  <h2>Copyright</h2>
+  <p><strong>Cnext: The Complete Guide</strong></p>
+  <p>Author: Melton Hlungwani</p>
+  <p>Copyright &copy; 2024&ndash;2026 Melton Hlungwani and Cnext Contributors</p>
+  <p>License: MIT</p>
+  <p style="margin-top:30px;">
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+  </p>
+  <p>
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+  </p>
+  <p style="margin-top:30px;">
+    <strong>Disclaimer:</strong> The software is provided "as is", without warranty of any kind,
+    express or implied, including but not limited to the warranties of merchantability,
+    fitness for a particular purpose and noninfringement.
+  </p>
+</div>
+
+<!-- ==================== DEDICATION ==================== -->
+<div class="page-break"></div>
+<div style="padding: 80px 0; text-align:center;">
+  <h2 style="border:none; font-style:italic;">Dedication</h2>
+  <p style="font-size:1.15em; margin-top:30px; max-width:500px; margin-left:auto; margin-right:auto;">
+    To every developer who believes that systems programming
+    can be both powerful and pleasant. May Cnext make your
+    journey from idea to executable as smooth as possible.
+  </p>
+  <p style="margin-top:40px; font-style:italic; color:#777;">
+    &mdash; Melton Hlungwani
+  </p>
+</div>
+
+<!-- ==================== TABLE OF CONTENTS ==================== -->
+<div class="page-break"></div>
+<div class="toc">
+  <h2>Table of Contents</h2>
+  <ul>
+    <li><strong>Preface</strong> &mdash; About This Book</li>
+    <li><strong>Chapter 1</strong> &mdash; Introduction to Cnext</li>
+    <li><strong>Chapter 2</strong> &mdash; Installation &amp; Setup</li>
+    <li><strong>Chapter 3</strong> &mdash; Your First Program</li>
+    <li><strong>Chapter 4</strong> &mdash; Language Basics</li>
+    <li><strong>Chapter 5</strong> &mdash; Types</li>
+    <li><strong>Chapter 6</strong> &mdash; Operators &amp; Expressions</li>
+    <li><strong>Chapter 7</strong> &mdash; Control Flow</li>
+    <li><strong>Chapter 8</strong> &mdash; Functions</li>
+    <li><strong>Chapter 9</strong> &mdash; Arrays &amp; Strings</li>
+    <li><strong>Chapter 10</strong> &mdash; Tuples &amp; Destructuring</li>
+    <li><strong>Chapter 11</strong> &mdash; Structs &amp; Enums</li>
+    <li><strong>Chapter 12</strong> &mdash; Classes &amp; OOP</li>
+    <li><strong>Chapter 13</strong> &mdash; Interfaces &amp; Traits</li>
+    <li><strong>Chapter 14</strong> &mdash; Closures</li>
+    <li><strong>Chapter 15</strong> &mdash; Generics</li>
+    <li><strong>Chapter 16</strong> &mdash; Error Handling</li>
+    <li><strong>Chapter 17</strong> &mdash; Generators &amp; Coroutines</li>
+    <li><strong>Chapter 18</strong> &mdash; Async/Await</li>
+    <li><strong>Chapter 19</strong> &mdash; Threading</li>
+    <li><strong>Chapter 20</strong> &mdash; Standard Library</li>
+    <li><strong>Chapter 21</strong> &mdash; Cnext CLI Reference</li>
+    <li><strong>Chapter 22</strong> &mdash; Package Manager</li>
+    <li><strong>Chapter 23</strong> &mdash; VS Code Extension</li>
+    <li><strong>Chapter 24</strong> &mdash; Advanced Topics</li>
+    <li><strong>Chapter 25</strong> &mdash; Project Examples</li>
+    <li><strong>Chapter 26</strong> &mdash; Range-Based For Loops</li>
+    <li><strong>Chapter 27</strong> &mdash; Defer</li>
+    <li><strong>Chapter 28</strong> &mdash; Null Safety &amp; Type Conversions</li>
+    <li><strong>Chapter 29</strong> &mdash; Standard Library Modules</li>
+    <li><strong>Appendix A</strong> &mdash; Complete Grammar Reference</li>
+    <li><strong>Appendix B</strong> &mdash; Keyboard Shortcuts &amp; Quick Reference</li>
+  </ul>
+</div>
+
+<!-- ==================== PREFACE ==================== -->
+<div class="page-break"></div>
+<h1>Preface &mdash; About This Book</h1>
+
+<p class="chapter-intro">
+  This book is your complete guide to learning the Cnext programming language, from absolute beginner to confident practitioner.
+</p>
+
+<p>
+  <strong>Cnext</strong> is a modern, high-level, statically-typed programming language that transpiles to C. It was designed to give developers the best of both worlds: the modern language features you love (generics, closures, pattern matching, async/await, OOP) combined with the raw performance and portability of C.
+</p>
+
+<p>The compiler itself is written in C (GNU C11 standard) and produces equivalent C code that is then compiled by GCC or Clang into native executables.</p>
+
+<h3>Who This Book Is For</h3>
+<ul>
+  <li><strong>New programmers</strong> who want a clean, modern first language</li>
+  <li><strong>C developers</strong> looking for a higher-level abstraction without sacrificing performance</li>
+  <li><strong>Developers from other languages</strong> (Python, JavaScript, Rust, Go, Swift) who want to explore systems programming</li>
+  <li><strong>Students</strong> studying compiler design and language theory</li>
+</ul>
+
+<h3>How to Use This Book</h3>
+<p>Read the chapters in order for a structured learning experience, or jump to specific topics using the Table of Contents. Every chapter includes code examples you can type, run, and modify.</p>
+
+<h3>Conventions Used</h3>
+<ul>
+  <li><code>Code</code> &mdash; inline code for keywords, functions, and file names</li>
+  <li><strong>Bold</strong> &mdash; important terms and definitions</li>
+  <li><em>Italic</em> &mdash; emphasis and book titles</li>
+  <li><code style="display:block; background:#f4f4f4; padding:10px; border-left:4px solid #2c3e50; margin:8px 0; border-radius:4px;">Code blocks</code> &mdash; complete, runnable examples</li>
+</ul>
+
+<div class="tip">
+  <strong>Tip:</strong> All code examples in this book use the <code>.cn</code> file extension and can be run with <code>cnext run filename.cn</code>.
+</div>
+
+<!-- ==================== CHAPTER 1 ==================== -->
+<div class="page-break"></div>
+<h1>Chapter 1 &mdash; Introduction to Cnext</h1>
+
+<p class="chapter-intro">
+  Understand what Cnext is, why it exists, and how it compares to other languages.
+</p>
+
+<h2>1.1 What is Cnext?</h2>
+<p>
+  Cnext is a <strong>transpiler</strong> &mdash; a program that translates source code from one language to another. Specifically, Cnext takes <code>.cn</code> source files and produces equivalent <code>.c</code> files, which are then compiled by GCC or Clang into native machine code.
+</p>
+
+<p>The name "Cnext" reflects its philosophy: <strong>C, but next generation</strong>. It preserves everything that makes C powerful (performance, portability, low-level control) while adding modern conveniences that make developers more productive.</p>
+
+<h2>1.2 Key Features</h2>
+<table>
+  <tr><th>Feature</th><th>Description</th></tr>
+  <tr><td>Static Typing</td><td>Type safety with optional type inference via <code>var</code></td></tr>
+  <tr><td>Object-Oriented Programming</td><td>Classes, inheritance, interfaces, and traits</td></tr>
+  <tr><td>Generics</td><td>Parameterized types with monomorphization (zero-cost abstractions)</td></tr>
+  <tr><td>Closures</td><td>First-class functions with variable capture</td></tr>
+  <tr><td>Pattern Matching</td><td>Powerful <code>match</code> expressions for enums and values</td></tr>
+  <tr><td>Error Handling</td><td><code>try</code>/<code>catch</code>/<code>finally</code> with <code>throw</code></td></tr>
+  <tr><td>Generators</td><td>Lazy iteration with <code>yield</code></td></tr>
+  <tr><td>Async/Await</td><td>Asynchronous programming with cooperative scheduling</td></tr>
+  <tr><td>Threading</td><td>Built-in <code>Mutex</code> and <code>Channel</code> primitives</td></tr>
+  <tr><td>C Interoperability</td><td>Direct FFI with <code>extern "C"</code></td></tr>
+  <tr><td>Macros</td><td>Compile-time code generation</td></tr>
+  <tr><td>Optional Semicolons</td><td>Write cleaner code without mandatory semicolons</td></tr>
+  <tr><td>Built-in Tooling</td><td>Formatter, linter, REPL, doc generator, package manager</td></tr>
+  <tr><td>Cross-Platform</td><td>Linux, macOS, and Windows support</td></tr>
+</table>
+
+<h2>1.3 How Cnext Works</h2>
+<p>The Cnext compiler follows a classic multi-stage pipeline:</p>
+
+<pre><code>Source (.cn) → Lexer → Tokens → Parser → AST → Semantic Analyzer → Optimizer → Code Generator → C Source (.c) → GCC/Clang → Executable</code></pre>
+
+<ol>
+  <li><strong>Lexer</strong> &mdash; Reads your <code>.cn</code> source code and breaks it into tokens (keywords, identifiers, literals, operators)</li>
+  <li><strong>Parser</strong> &mdash; Parses the token stream into an Abstract Syntax Tree (AST)</li>
+  <li><strong>Semantic Analyzer</strong> &mdash; Performs type checking, scope resolution, and safety validation</li>
+  <li><strong>Optimizer</strong> &mdash; Applies 9 optimization passes (constant folding, dead code elimination, tail-call detection, etc.)</li>
+  <li><strong>Code Generator</strong> &mdash; Traverses the AST and emits equivalent C code</li>
+  <li><strong>C Compiler</strong> &mdash; GCC or Clang compiles the generated C into a native executable</li>
+</ol>
+
+<h2>1.4 Why Cnext?</h2>
+<p>If you know C, you know its strengths and weaknesses. Cnext addresses the weaknesses while preserving the strengths:</p>
+
+<table>
+  <tr><th>C Pain Point</th><th>Cnext Solution</th></tr>
+  <tr><td>No type inference</td><td><code>var</code> keyword for automatic type deduction</td></tr>
+  <tr><td>No OOP</td><td>Full class system with inheritance, interfaces, and traits</td></tr>
+  <tr><td>Manual memory management</td><td>Checked allocation wrappers, arena/pool allocators</td></tr>
+  <tr><td>No generics</td><td>Full generic system with monomorphization</td></tr>
+  <tr><td>Fragile error handling</td><td>Structured <code>try</code>/<code>catch</code>/<code>finally</code></td></tr>
+  <tr><td>No closures</td><td>First-class closures with variable capture</td></tr>
+  <tr><td>No built-in package manager</td><td>Integrated package registry and dependency management</td></tr>
+  <tr><td>Inconsistent formatting</td><td>Built-in code formatter</td></tr>
+</table>
+
+<h2>1.5 Cnext vs. Other Languages</h2>
+<table>
+  <tr><th>Language</th><th>Cnext Comparison</th></tr>
+  <tr><td>C</td><td>Cnext transpiles to C; same performance, more features</td></tr>
+  <tr><td>Rust</td><td>Similar goals (safety + performance), but Cnext is simpler and transpiles to C</td></tr>
+  <tr><td>Go</td><td>Both emphasize simplicity; Cnext has richer OOP and closures</td></tr>
+  <tr><td>Swift</td><td>Similar syntax feel; Cnext targets systems programming</td></tr>
+  <tr><td>TypeScript</td><td>Similar transpilation approach; Cnext targets native code, not JavaScript</td></tr>
+</table>
+
+<!-- ==================== CHAPTER 2 ==================== -->
+<div class="page-break"></div>
+<h1>Chapter 2 &mdash; Installation &amp; Setup</h1>
+
+<p class="chapter-intro">
+  Get Cnext installed on your system in minutes.
+</p>
+
+<h2>2.1 System Requirements</h2>
+<ul>
+  <li>A C compiler: GCC or Clang (C11 standard)</li>
+  <li>Make (Linux/macOS) or MinGW/MSYS2 (Windows)</li>
+  <li>libcurl (Linux/macOS only, for networking features)</li>
+  <li>Git (for building from source)</li>
+</ul>
+
+<h2>2.2 Quick Install (One Command)</h2>
+
+<h3>Linux / macOS</h3>
+<pre><code>curl -fsSL https://raw.githubusercontent.com/Melton122/cnext/main/install.sh | bash</code></pre>
+
+<h3>Windows (PowerShell)</h3>
+<pre><code>iwr -useb https://raw.githubusercontent.com/Melton122/Cnext/main/install.ps1 | iex</code></pre>
+<p>Or download <code>install.bat</code> from the GitHub Releases page and double-click it.</p>
+
+<h2>2.3 Build from Source</h2>
+<pre><code>git clone https://github.com/Melton122/cnext.git
+cd cnext
+make
+sudo make install</code></pre>
+
+<h3>Build Options</h3>
+<table>
+  <tr><th>Command</th><th>Description</th></tr>
+  <tr><td><code>make</code></td><td>Release build (optimized)</td></tr>
+  <tr><td><code>make DEBUG=1</code></td><td>Debug build with symbols</td></tr>
+  <tr><td><code>make clean</code></td><td>Clean build artifacts</td></tr>
+  <tr><td><code>make install</code></td><td>Install to /usr/local/bin</td></tr>
+  <tr><td><code>make test</code></td><td>Run the built-in test suite</td></tr>
+  <tr><td><code>make format</code></td><td>Format source code</td></tr>
+  <tr><td><code>make help</code></td><td>Show all available targets</td></tr>
+</table>
+
+<h2>2.4 Verify Installation</h2>
+<pre><code>cnext version</code></pre>
+<p>Expected output:</p>
+<pre><code>Cnext version 9.0.0</code></pre>
+
+<h2>2.5 Run a System Check</h2>
+<pre><code>cnext doctor</code></pre>
+<p>This checks that all required dependencies (GCC, Make, libcurl) are installed and available.</p>
+
+<h2>2.6 Troubleshooting</h2>
+
+<div class="no-break">
+<h4>"gcc: command not found"</h4>
+<ul>
+  <li><strong>Linux:</strong> <code>sudo apt install gcc</code></li>
+  <li><strong>macOS:</strong> <code>xcode-select --install</code></li>
+  <li><strong>Windows:</strong> Install <a href="https://www.msys2.org/">MSYS2</a> or <a href="https://mingw-w64.org/">MinGW</a></li>
+</ul>
+
+<h4>"runtime.h: No such file or directory"</h4>
+<p>The <code>include/</code> directory was not installed. Reinstall with <code>sudo make install</code> or manually copy the include files.</p>
+
+<h4>Permission Denied</h4>
+<pre><code>chmod +x cnext</code></pre>
+
+<h4>Windows Defender Warning</h4>
+<p>Click "More info" then "Run anyway" if Windows SmartScreen blocks the executable.</p>
+</div>
+
+<!-- ==================== CHAPTER 3 ==================== -->
+<div class="page-break"></div>
+<h1>Chapter 3 &mdash; Your First Program</h1>
+
+<p class="chapter-intro">
+  Write, compile, and run your very first Cnext program.
+</p>
+
+<h2>3.1 Hello, World!</h2>
+<p>Create a file called <code>hello.cn</code>:</p>
+
+<pre><code>main {
+    printin("Hello, World!")
+}</code></pre>
+
+<p>Run it:</p>
+<pre><code>cnext run hello.cn</code></pre>
+
+<p>Output:</p>
+<pre><code>Hello, World!</code></pre>
+
+<p>Congratulations! You just wrote and ran your first Cnext program.</p>
+
+<h2>3.2 Understanding the Code</h2>
+<p>Let's break down what happened:</p>
+<ul>
+  <li><code>main { ... }</code> &mdash; The entry point of every Cnext program. This is equivalent to <code>int main(void) { ... }</code> in C.</li>
+  <li><code>printin("Hello, World!")</code> &mdash; Prints the string followed by a newline. This maps to <code>printf()</code> in the generated C code.</li>
+</ul>
+
+<h2>3.3 Creating a Project</h2>
+<p>For larger programs, use <code>cnext new</code> to create a project scaffold:</p>
+<pre><code>cnext new my-project</code></pre>
+
+<p>This creates:</p>
+<ul>
+  <li>A <code>cnext.toml</code> configuration file</li>
+  <li>A <code>src/</code> directory with a starter file</li>
+  <li>VS Code configuration files</li>
+  <li>A README file</li>
+</ul>
+
+<h2>3.4 Run vs. Build</h2>
+<table>
+  <tr><th>Command</th><th>Description</th></tr>
+  <tr><td><code>cnext run hello.cn</code></td><td>Compile and run immediately (no executable saved)</td></tr>
+  <tr><td><code>cnext build hello.cn</code></td><td>Compile to an executable file</td></tr>
+  <tr><td><code>cnext build hello.cn --release</code></td><td>Optimized build with <code>-O2</code></td></tr>
+  <tr><td><code>cnext build hello.cn --debug</code></td><td>Debug build with <code>-O0 -g</code></td></tr>
+</table>
+
+<h2>3.5 Using the REPL</h2>
+<p>Cnext includes an interactive REPL (Read-Eval-Print Loop):</p>
+<pre><code>cnext repl</code></pre>
+<p>Type expressions and see results immediately:</p>
+<pre><code>> 2 + 2
+4
+> "hello" + " world"
+hello world
+> var x = 10
+> x * 2
+20</code></pre>
+
+<!-- ==================== CHAPTER 4 ==================== -->
+<div class="page-break"></div>
+<h1>Chapter 4 &mdash; Language Basics</h1>
+
+<p class="chapter-intro">
+  Learn the fundamental building blocks of Cnext syntax.
+</p>
+
+<h2>4.1 Comments</h2>
+<pre><code>// Single line comment
+
+/* Multi
+   line
+   comment */</code></pre>
+
+<h2>4.2 Semicolons</h2>
+<p>Semicolons are <strong>optional</strong> in Cnext. Both are valid:</p>
+<pre><code>var x = 42
+var y = 42;</code></pre>
+
+<h2>4.3 Blocks</h2>
+<p>Code blocks are delimited by curly braces:</p>
+<pre><code>if condition {
+    // code
+}</code></pre>
+
+<h2>4.4 Variables</h2>
+<h3>Explicit Type Declaration</h3>
+<pre><code>int x = 42
+float pi = 3.14
+str name = "Cnext"
+bool flag = true
+char c = 'a'</code></pre>
+
+<h3>Type Inference with <code>var</code></h3>
+<pre><code>var auto = 100        // inferred as int
+var text = "hello"    // inferred as str
+var decimal = 3.14    // inferred as float
+var boolean = false   // inferred as bool</code></pre>
+
+<h3>Constants</h3>
+<pre><code>const int MAX_SIZE = 100
+const str PI = "3.14159"</code></pre>
+
+<h3>Scope</h3>
+<p>Variables are <strong>block-scoped</strong>:</p>
+<pre><code>var x = 10
+if true {
+    var y = 20  // y only exists inside this block
+}
+// y is NOT accessible here</code></pre>
+
+<h2>4.5 Printing Output</h2>
+<pre><code>printin("Hello!")       // Print with newline
+printin("Value: " + x)  // Print with concatenation</code></pre>
+
+<h2>4.6 Reading Input</h2>
+<pre><code>str name = input("Enter your name: ")
+printin("Hello, " + name + "!")</code></pre>
+
+<!-- ==================== CHAPTER 5 ==================== -->
+<div class="page-break"></div>
+<h1>Chapter 5 &mdash; Types</h1>
+
+<p class="chapter-intro">
+  Master Cnext's type system, from primitives to advanced composite types.
+</p>
+
+<h2>5.1 Primitive Types</h2>
+<table>
+  <tr><th>Type</th><th>Size</th><th>Description</th><th>Example</th></tr>
+  <tr><td><code>int</code></td><td>32-bit</td><td>Signed integer</td><td><code>42</code></td></tr>
+  <tr><td><code>long</code></td><td>64-bit</td><td>Large signed integer</td><td><code>9999999999</code></td></tr>
+  <tr><td><code>float</code></td><td>32-bit</td><td>Floating point</td><td><code>3.14</code></td></tr>
+  <tr><td><code>double</code></td><td>64-bit</td><td>Precise floating point</td><td><code>3.14159265358979</code></td></tr>
+  <tr><td><code>str</code></td><td>&mdash;</td><td>String</td><td><code>"hello"</code></td></tr>
+  <tr><td><code>bool</code></td><td>&mdash;</td><td>Boolean</td><td><code>true</code> / <code>false</code></td></tr>
+  <tr><td><code>char</code></td><td>8-bit</td><td>Single character</td><td><code>'a'</code></td></tr>
+  <tr><td><code>byte</code></td><td>8-bit</td><td>Unsigned byte (0-255)</td><td><code>255</code></td></tr>
+  <tr><td><code>uint</code></td><td>32-bit</td><td>Unsigned integer</td><td><code>4294967295</code></td></tr>
+  <tr><td><code>ulong</code></td><td>64-bit</td><td>Unsigned large integer</td><td><code>18446744073709551615</code></td></tr>
+  <tr><td><code>ushort</code></td><td>16-bit</td><td>Unsigned short</td><td><code>65535</code></td></tr>
+  <tr><td><code>ubyte</code></td><td>8-bit</td><td>Unsigned byte</td><td><code>255</code></td></tr>
+</table>
+
+<h2>5.2 Type Aliases</h2>
+<pre><code>type MyInt = int
+type Name = str
+
+MyInt x = 100
+Name name = "Test"</code></pre>
+
+<h2>5.3 Nullable Types</h2>
+<p>Add <code>?</code> to make a type nullable:</p>
+<pre><code>str? optional_str = null
+int? optional_int = 42
+
+if optional_str != null {
+    printin(optional_str)
+}</code></pre>
+
+<h2>5.4 Arrays</h2>
+<pre><code>int[] numbers = {1, 2, 3, 4, 5}
+str[] words = {"hello", "world"}
+float[] decimals = {1.1, 2.2, 3.3}</code></pre>
+
+<h2>5.5 Tuples</h2>
+<p>Heterogeneous collections of mixed types:</p>
+<pre><code>var pair = (1, "hello")
+var triple = (1, 2.0, true)</code></pre>
+
+<h2>5.6 Type Casting</h2>
+<p>Convert between types with the <code>as</code> keyword:</p>
+<pre><code>float f = 7.8
+int i = f as int      // 7 (truncates decimal)
+
+int n = 5
+float fn = n as float  // 5.0</code></pre>
+
+<h2>5.7 Null Safety</h2>
+<pre><code>str s = null
+bool is_null = (s == null)     // true
+bool not_null = (s != null)   // false
+
+// Null coalescing: provide a default
+str result = s ?? "default"
+
+// Optional chaining
+str val = obj?.field?.subfield</code></pre>
+
+<h2>5.8 Function Types</h2>
+<pre><code>func apply(int x, func f) -> int {
+    return f(x)
+}
+
+var dbl = (int x) => x * 2
+printin(apply(5, dbl))  // 10</code></pre>
+
+<!-- ==================== CHAPTER 6 ==================== -->
+<div class="page-break"></div>
+<h1>Chapter 6 &mdash; Operators &amp; Expressions</h1>
+
+<p class="chapter-intro">
+  Learn all the operators available in Cnext.
+</p>
+
+<h2>6.1 Arithmetic Operators</h2>
+<pre><code>var a = 10 + 5   // 15  (addition)
+var b = 10 - 5   // 5   (subtraction)
+var c = 10 * 5   // 50  (multiplication)
+var d = 10 / 5   // 2   (division)
+var e = 10 % 3   // 1   (modulus)</code></pre>
+
+<h2>6.2 Comparison Operators</h2>
+<pre><code>10 == 10   // true   (equal to)
+10 != 5    // true   (not equal to)
+10 > 5     // true   (greater than)
+10 < 5     // false  (less than)
+10 >= 10   // true   (greater or equal)
+10 <= 5    // false  (less or equal)</code></pre>
+
+<h2>6.3 Logical Operators</h2>
+<pre><code>true && false   // false  (AND)
+true || false   // true   (OR)
+!true           // false  (NOT)</code></pre>
+
+<h2>6.4 Assignment Operators</h2>
+<pre><code>var x = 10
+x = 20
+x += 5    // x = 25
+x -= 3    // x = 22
+x *= 2    // x = 44
+x /= 4    // x = 11</code></pre>
+
+<h2>6.5 String Operations</h2>
+<pre><code>str a = "hello"
+str b = " world"
+str c = a + b          // "hello world"
+bool d = (a == b)      // false
+int e = a.length       // 5</code></pre>
+
+<h2>6.6 String Interpolation</h2>
+<pre><code>var name = "Alice"
+var age = 25
+var msg = "I am {name} and I am {age} years old"
+printin(msg)  // "I am Alice and I am 25 years old"</code></pre>
+
+<!-- ==================== CHAPTER 7 ==================== -->
+<div class="page-break"></div>
+<h1>Chapter 7 &mdash; Control Flow</h1>
+
+<p class="chapter-intro">
+  Direct the execution of your programs with conditionals, loops, and pattern matching.
+</p>
+
+<h2>7.1 If/Else</h2>
+<pre><code>var x = 15
+
+if x > 10 {
+    printin("big")
+} else if x > 5 {
+    printin("medium")
+} else {
+    printin("small")
+}</code></pre>
+
+<h2>7.2 While Loop</h2>
+<pre><code>var i = 0
+while i < 10 {
+    printin(i)
+    i = i + 1
+}</code></pre>
+
+<h2>7.3 For Loop</h2>
+<pre><code>for int i = 0; i < 10; i = i + 1 {
+    printin(i)
+}</code></pre>
+
+<h2>7.4 For-In Loop</h2>
+<pre><code>int[] nums = {1, 2, 3, 4, 5}
+for var n in nums {
+    printin(n)
+}</code></pre>
+
+<h2>7.5 Break and Continue</h2>
+<pre><code>for int i = 0; i < 10; i = i + 1 {
+    if i == 3 {
+        continue  // skip 3
+    }
+    if i == 7 {
+        break     // stop at 7
+    }
+    printin(i)
+}</code></pre>
+
+<h2>7.6 Switch</h2>
+<pre><code>var x = 2
+switch x {
+    case 1:
+        printin("one")
+    case 2:
+        printin("two")
+    case 3:
+        printin("three")
+    default:
+        printin("other")
+}</code></pre>
+
+<h2>7.7 Match (Pattern Matching)</h2>
+<pre><code>enum Color { RED, GREEN, BLUE }
+
+Color c = RED
+match c {
+    RED => printin("red")
+    GREEN => printin("green")
+    BLUE => printin("blue")
+    _ => printin("other")
+}</code></pre>
+
+<h2>7.8 Guard Clauses</h2>
+<pre><code>func process(int? value) {
+    guard value != null else {
+        printin("No value provided")
+        return
+    }
+    // value is guaranteed non-null here
+    printin("Processing: " + value)
+}</code></pre>
+
+<!-- ==================== CHAPTER 8 ==================== -->
+<div class="page-break"></div>
+<h1>Chapter 8 &mdash; Functions</h1>
+
+<p class="chapter-intro">
+  Organize your code into reusable, composable functions.
+</p>
+
+<h2>8.1 Basic Functions</h2>
+<pre><code>func greet(str name) {
+    printin("Hello, " + name + "!")
+}
+
+greet("World")</code></pre>
+
+<h2>8.2 Return Values</h2>
+<pre><code>func add(int a, int b) -> int {
+    return a + b
+}
+
+var result = add(5, 3)
+printin(result)  // 8</code></pre>
+
+<h2>8.3 Arrow Functions</h2>
+<p>For single-expression functions, use the arrow syntax:</p>
+<pre><code>func multiply(int a, int b) -> int => a * b
+func square(int x) -> int => x * x
+
+printin(multiply(3, 4))  // 12
+printin(square(5))       // 25</code></pre>
+
+<h2>8.4 Default Arguments</h2>
+<pre><code>func greet(str name, str greeting = "Hello") {
+    printin(greeting + ", " + name + "!")
+}
+
+greet("World")                    // Hello, World!
+greet("Alice", greeting = "Hi")   // Hi, Alice!</code></pre>
+
+<h2>8.5 Named Arguments</h2>
+<pre><code>func create_person(str name, int age, str city = "Unknown") {
+    printin(name + " is " + age + " from " + city)
+}
+
+create_person(name = "Bob", age = 25, city = "NYC")
+create_person(age = 30, name = "Charlie")</code></pre>
+
+<h2>8.6 Variadic Functions</h2>
+<p>Accept any number of arguments with <code>...</code>:</p>
+<pre><code>func sum(int... args) -> int {
+    var total = 0
+    for var n in args {
+        total = total + n
+    }
+    return total
+}
+
+printin(sum(1, 2, 3))          // 6
+printin(sum(1, 2, 3, 4, 5))    // 15</code></pre>
+
+<h2>8.7 Higher-Order Functions</h2>
+<p>Functions can be passed as arguments and returned:</p>
+<pre><code>func apply(int x, func f) -> int {
+    return f(x)
+}
+
+func double(int x) -> int => x * 2
+func square(int x) -> int => x * x
+
+printin(apply(5, double))  // 10
+printin(apply(5, square))  // 25</code></pre>
+
+<h2>8.8 Extension Methods</h2>
+<p>Add methods to existing types:</p>
+<pre><code>extend str {
+    func shout() -> str {
+        return self + "!!!"
+    }
+}
+
+var msg = "Hello"
+printin(msg.shout())  // Hello!!!</code></pre>
+
+<h2>8.9 Operator Overloading</h2>
+<pre><code>class Vec2 {
+    int x
+    int y
+
+    func new(int x_val, int y_val) {
+        self.x = x_val
+        self.y = y_val
+    }
+
+    func operator+(Vec2 other) -> Vec2 {
+        return new Vec2(self.x + other.x, self.y + other.y)
+    }
+}
+
+var a = new Vec2(1, 2)
+var b = new Vec2(3, 4)
+var c = a + b
+printin(c.x)  // 4
+printin(c.y)  // 6</code></pre>
+
+<!-- ==================== CHAPTER 9 ==================== -->
+<div class="page-break"></div>
+<h1>Chapter 9 &mdash; Arrays &amp; Strings</h1>
+
+<p class="chapter-intro">
+  Work with collections of data and text.
+</p>
+
+<h2>9.1 Array Declaration</h2>
+<pre><code>int[] nums = {1, 2, 3, 4, 5}
+str[] words = {"hello", "world"}</code></pre>
+
+<h2>9.2 Accessing Elements</h2>
+<pre><code>var first = nums[0]    // 1
+var last = nums[4]     // 5</code></pre>
+
+<h2>9.3 Array Length</h2>
+<pre><code>printin(nums.length)   // 5</code></pre>
+
+<h2>9.4 Slicing</h2>
+<pre><code>int[] slice = nums[1:3]     // {2, 3}
+int[] from_two = nums[2:]   // {3, 4, 5}
+int[] to_three = nums[:3]   // {1, 2, 3}</code></pre>
+
+<h2>9.5 Bounds Checking</h2>
+<p>Cnext checks array bounds at runtime to prevent undefined behavior:</p>
+<pre><code>int[] nums = {1, 2, 3}
+// nums[5] would cause a runtime error with a clear message</code></pre>
+
+<h2>9.6 String Interpolation</h2>
+<pre><code>var name = "Alice"
+var age = 25
+var msg = "I am {name} and I am {age} years old"
+printin(msg)</code></pre>
+
+<h2>9.7 String Concatenation</h2>
+<pre><code>str result = "hello" + " " + "world"
+printin(result)  // "hello world"</code></pre>
+
+<h2>9.8 String Comparison</h2>
+<pre><code>bool equal = ("hello" == "hello")      // true
+bool not_equal = ("hello" == "world")  // false</code></pre>
+
+<!-- ==================== CHAPTER 10 ==================== -->
+<div class="page-break"></div>
+<h1>Chapter 10 &mdash; Tuples &amp; Destructuring</h1>
+
+<p class="chapter-intro">
+  Group related values together and unpack them elegantly.
+</p>
+
+<h2>10.1 Creating Tuples</h2>
+<pre><code>var pair = (1, "hello")
+var triple = (1, 2.0, true)
+var mixed = ("name", 42, true)</code></pre>
+
+<h2>10.2 Accessing Tuple Elements</h2>
+<pre><code>var pair = (1, "hello")
+printin(pair[0])  // 1
+printin(pair[1])  // "hello"</code></pre>
+
+<h2>10.3 Destructuring</h2>
+<pre><code>var (x, y) = (1, 2)
+printin(x)  // 1
+printin(y)  // 2</code></pre>
+
+<h2>10.4 Tuples as Return Values</h2>
+<pre><code>func swap(int a, int b) -> (int, int) {
+    return (b, a)
+}
+
+var (x, y) = swap(1, 2)
+printin(x)  // 2
+printin(y)  // 1</code></pre>
+
+<h2>10.5 Named Tuples</h2>
+<pre><code>var point = (x: 10, y: 20)
+printin(point.x)  // 10
+printin(point.y)  // 20</code></pre>
+
+<!-- ==================== CHAPTER 11 ==================== -->
+<div class="page-break"></div>
+<h1>Chapter 11 &mdash; Structs &amp; Enums</h1>
+
+<p class="chapter-intro">
+  Define custom data types for organized, meaningful code.
+</p>
+
+<h2>11.1 Structs</h2>
+<p>Structs are simple data containers:</p>
+<pre><code>struct Point {
+    int x
+    int y
+}
+
+Point p = Point { x: 10, y: 20 }
+printin(p.x)  // 10
+printin(p.y)  // 20</code></pre>
+
+<h2>11.2 Modifying Struct Fields</h2>
+<pre><code>Point p
+p.x = 10
+p.y = 20
+printin(p.x)  // 10</code></pre>
+
+<h2>11.3 Enums</h2>
+<pre><code>enum Color {
+    RED,
+    GREEN,
+    BLUE
+}
+
+Color c = RED
+printin(c == RED)  // true</code></pre>
+
+<h2>11.4 Enums with Explicit Values</h2>
+<pre><code>enum HttpStatus {
+    OK = 200,
+    NOT_FOUND = 404,
+    ERROR = 500
+}
+
+HttpStatus code = OK
+match code {
+    200 => printin("OK")
+    404 => printin("Not Found")
+    _ => printin("Error")
+}</code></pre>
+
+<h2>11.5 Enums with Values</h2>
+<pre><code>enum Shape {
+    CIRCLE,
+    RECTANGLE,
+    TRIANGLE
+}
+
+func describe(Shape s) -> str {
+    match s {
+        CIRCLE => "Circle"
+        RECTANGLE => "Rectangle"
+        TRIANGLE => "Triangle"
+        _ => "Unknown"
+    }
+}</code></pre>
+
+<!-- ==================== CHAPTER 12 ==================== -->
+<div class="page-break"></div>
+<h1>Chapter 12 &mdash; Classes &amp; OOP</h1>
+
+<p class="chapter-intro">
+  Embrace object-oriented programming with classes, inheritance, and constructors.
+</p>
+
+<h2>12.1 Basic Classes</h2>
+<pre><code>class Point {
+    int x
+    int y
+
+    func new(int x_val, int y_val) {
+        self.x = x_val
+        self.y = y_val
+    }
+}
+
+Point p = new Point(3, 4)
+printin(p.x)  // 3
+printin(p.y)  // 4</code></pre>
+
+<h2>12.2 Methods</h2>
+<pre><code>class Circle {
+    float radius
+
+    func new(float r) {
+        self.radius = r
+    }
+
+    func area() -> float {
+        return 3.14159 * self.radius * self.radius
+    }
+
+    func circumference() -> float {
+        return 2 * 3.14159 * self.radius
+    }
+}
+
+Circle c = new Circle(5.0)
+printin(c.area())           // 78.53975
+printin(c.circumference())  // 31.4159</code></pre>
+
+<h2>12.3 Inheritance</h2>
+<pre><code>class Animal {
+    str name
+
+    func new(str n) {
+        self.name = n
+    }
+
+    func speak() {
+        printin("...")
+    }
+}
+
+class Dog extends Animal {
+    func new(str n) {
+        super.new(n)
+    }
+
+    override func speak() {
+        printin("Woof!")
+    }
+}
+
+Dog d = new Dog("Rex")
+d.speak()  // Woof!</code></pre>
+
+<h2>12.4 Null Safety with Classes</h2>
+<pre><code>Person p = null
+bool is_null = (p == null)  // true
+
+// Safe access with optional chaining
+str name = p?.name ?? "Unknown"</code></pre>
+
+<h2>12.5 Generic Classes</h2>
+<pre><code>class Box&lt;T&gt; {
+    T value
+
+    func new(T v) {
+        self.value = v
+    }
+
+    func get() -> T {
+        return self.value
+    }
+}
+
+var int_box = new Box&lt;int&gt;(42)
+var str_box = new Box&lt;str&gt;("hello")
+
+printin(int_box.get())  // 42
+printin(str_box.get())  // "hello"</code></pre>
+
+<h2>12.6 Pattern Matching with Enums</h2>
+<pre><code>enum Shape {
+    CIRCLE,
+    RECTANGLE,
+    TRIANGLE
+}
+
+func area(Shape s) -> str {
+    match s {
+        CIRCLE => "Circle"
+        RECTANGLE => "Rectangle"
+        TRIANGLE => "Triangle"
+        _ => "Unknown"
+    }
+}</code></pre>
+
+<!-- ==================== CHAPTER 13 ==================== -->
+<div class="page-break"></div>
+<h1>Chapter 13 &mdash; Interfaces &amp; Traits</h1>
+
+<p class="chapter-intro">
+  Define contracts and share behavior across unrelated types.
+</p>
+
+<h2>13.1 Interfaces</h2>
+<p>Interfaces define a set of methods that a class must implement:</p>
+<pre><code>interface Drawable {
+    func draw()
+}
+
+class Circle implements Drawable {
+    float radius
+
+    func new(float r) {
+        self.radius = r
+    }
+
+    override func draw() {
+        printin("Drawing circle with radius " + self.radius)
+    }
+}</code></pre>
+
+<h2>13.2 Traits</h2>
+<p>Traits provide default implementations along with the contract:</p>
+<pre><code>trait Loggable {
+    func log() {
+        printin("Logging: " + self.to_string())
+    }
+}
+
+class User implements Loggable {
+    str name
+
+    func new(str n) {
+        self.name = n
+    }
+
+    func to_string() -> str {
+        return "User(" + self.name + ")"
+    }
+}
+
+var user = new User("Alice")
+user.log()  // Logging: User(Alice)</code></pre>
+
+<h2>13.3 Generic Interfaces</h2>
+<pre><code>interface Container&lt;T&gt; {
+    func add(T item)
+    func get(int index) -> T
+    func size() -> int
+}
+
+class List&lt;T&gt; implements Container&lt;T&gt; {
+    T[] items
+
+    func new() {
+        self.items = {}
+    }
+
+    override func add(T item) {
+        // Add item to list
+    }
+
+    override func get(int index) -> T {
+        return self.items[index]
+    }
+
+    override func size() -> int {
+        return self.items.length
+    }
+}</code></pre>
+
+<h2>13.4 Generic Traits</h2>
+<pre><code>trait Serializable&lt;T&gt; {
+    func serialize() -> str
+    func deserialize(str data) -> T
+}
+
+class User implements Serializable&lt;User&gt; {
+    str name
+
+    func new(str n) {
+        self.name = n
+    }
+
+    override func serialize() -> str {
+        return '{"name": "' + self.name + '"}'
+    }
+
+    override func deserialize(str data) -> User {
+        return new User("parsed")
+    }
+}</code></pre>
+
+<!-- ==================== CHAPTER 14 ==================== -->
+<div class="page-break"></div>
+<h1>Chapter 14 &mdash; Closures</h1>
+
+<p class="chapter-intro">
+  Work with first-class functions that capture variables from their enclosing scope.
+</p>
+
+<h2>14.1 Basic Closures</h2>
+<pre><code>var x = 10
+var add_x = (int a) => a + x
+printin(add_x(5))  // 15</code></pre>
+
+<h2>14.2 Capturing Variables</h2>
+<p>Closures capture variables by reference and can modify them:</p>
+<pre><code>var counter = 0
+var increment = () => {
+    counter = counter + 1
+    return counter
+}
+
+printin(increment())  // 1
+printin(increment())  // 2
+printin(increment())  // 3</code></pre>
+
+<h2>14.3 Closures as Arguments</h2>
+<pre><code>func apply(int x, func f) -> int {
+    return f(x)
+}
+
+func double(int x) -> int => x * 2
+func square(int x) -> int => x * x
+
+printin(apply(5, double))  // 10
+printin(apply(5, square))  // 25</code></pre>
+
+<h2>14.4 Returning Closures</h2>
+<pre><code>func make_adder(int x) -> func {
+    return (int a) => a + x
+}
+
+var add5 = make_adder(5)
+var add10 = make_adder(10)
+
+printin(add5(3))   // 8
+printin(add10(3))  // 13</code></pre>
+
+<h2>14.5 Closures in Loops</h2>
+<div class="warning">
+  <strong>Warning:</strong> Be careful with closures inside loops. Create a new variable for each iteration to capture the correct value.
+</div>
+<pre><code>var functions = {}
+for int i = 0; i < 5; i = i + 1 {
+    var val = i  // New variable per iteration
+    functions[i] = () => val
+}
+
+printin(functions[0]())  // 0
+printin(functions[1]())  // 1</code></pre>
+
+<h2>14.6 Array Operations with Closures</h2>
+<pre><code>int[] nums = {1, 2, 3, 4, 5}
+
+// Filter
+int[] evens = filter(nums, (int n) => n % 2 == 0)
+
+// Map
+int[] doubled = map(nums, (int n) => n * 2)</code></pre>
+
+<!-- ==================== CHAPTER 15 ==================== -->
+<div class="page-break"></div>
+<h1>Chapter 15 &mdash; Generics</h1>
+
+<p class="chapter-intro">
+  Write code that works with any type while maintaining type safety.
+</p>
+
+<h2>15.1 Generic Functions</h2>
+<pre><code>func first&lt;T&gt;(T[] arr) -> T {
+    return arr[0]
+}
+
+var numbers = {1, 2, 3}
+var first_num = first(numbers)  // 1
+
+var words = {"hello", "world"}
+var first_word = first(words)  // "hello"</code></pre>
+
+<h2>15.2 Generic Classes</h2>
+<pre><code>class Box&lt;T&gt; {
+    T value
+
+    func new(T v) {
+        self.value = v
+    }
+
+    func get() -> T {
+        return self.value
+    }
+
+    func set(T v) {
+        self.value = v
+    }
+}
+
+var int_box = new Box&lt;int&gt;(42)
+printin(int_box.get())  // 42
+
+var str_box = new Box&lt;str&gt;("hello")
+printin(str_box.get())  // "hello"</code></pre>
+
+<h2>15.3 Multiple Type Parameters</h2>
+<pre><code>class Pair&lt;A, B&gt; {
+    A first
+    B second
+
+    func new(A a, B b) {
+        self.first = a
+        self.second = b
+    }
+}
+
+var pair = new Pair&lt;int, str&gt;(1, "hello")
+printin(pair.first)   // 1
+printin(pair.second)  // "hello"</code></pre>
+
+<h2>15.4 Generic Specialization</h2>
+<p>The compiler generates specialized versions of generic code for each type used. This means zero runtime overhead:</p>
+<pre><code>func add&lt;T&gt;(T a, T b) -> T {
+    return a + b
+}
+
+// The compiler generates:
+// int add_int(int a, int b) { return a + b; }
+// float add_float(float a, float b) { return a + b; }
+
+var x = add(1, 2)      // Uses add_int
+var y = add(1.5, 2.5)  // Uses add_float</code></pre>
+
+<h2>15.5 Generic Interfaces</h2>
+<pre><code>interface Container&lt;T&gt; {
+    func add(T item)
+    func get(int index) -> T
+    func size() -> int
+}</code></pre>
+
+<h2>15.6 Generic Enums</h2>
+<pre><code>enum Option&lt;T&gt; {
+    Some(T),
+    None
+}
+
+var some = Option&lt;int&gt;.Some(42)
+var none = Option&lt;int&gt;.None</code></pre>
+
+<!-- ==================== CHAPTER 16 ==================== -->
+<div class="page-break"></div>
+<h1>Chapter 16 &mdash; Error Handling</h1>
+
+<p class="chapter-intro">
+  Handle errors gracefully with try/catch/finally and throw.
+</p>
+
+<h2>16.1 Throwing Errors</h2>
+<pre><code>func divide(int a, int b) -> int {
+    if b == 0 {
+        throw "Division by zero"
+    }
+    return a / b
+}</code></pre>
+
+<h2>16.2 Try/Catch</h2>
+<pre><code>try {
+    var result = divide(10, 0)
+} catch (str err) {
+    printin("Error: " + err)
+}</code></pre>
+
+<h2>16.3 Try/Catch/Finally</h2>
+<pre><code>try {
+    var result = divide(10, 0)
+} catch (str err) {
+    printin("Error: " + err)
+} finally {
+    printin("This always runs")
+}</code></pre>
+
+<h2>16.4 Multiple Catch Blocks</h2>
+<pre><code>try {
+    risky_operation()
+} catch (str err) {
+    printin("String error: " + err)
+} catch (int code) {
+    printin("Error code: " + code)
+}</code></pre>
+
+<h2>16.5 Re-throwing</h2>
+<pre><code>try {
+    risky_operation()
+} catch (str err) {
+    printin("Logging error: " + err)
+    throw err  // Re-throw the error
+}</code></pre>
+
+<h2>16.6 Error Handling in Async Functions</h2>
+<pre><code>async func risky_operation() -> int {
+    throw "Something went wrong"
+}
+
+async func safe_operation() {
+    try {
+        var result = await risky_operation()
+    } catch (str err) {
+        printin("Error: " + err)
+    }
+}</code></pre>
+
+<h2>16.7 Null Safety with Error Handling</h2>
+<pre><code>str? value = get_value()
+if value == null {
+    throw "Value is null"
+}
+// value is guaranteed non-null here
+process(value)</code></pre>
+
+<!-- ==================== CHAPTER 17 ==================== -->
+<div class="page-break"></div>
+<h1>Chapter 17 &mdash; Generators &amp; Coroutines</h1>
+
+<p class="chapter-intro">
+  Create lazy iterators and cooperative functions for efficient data processing.
+</p>
+
+<h2>17.1 Basic Generators</h2>
+<p>Generators produce values lazily using <code>yield</code>:</p>
+<pre><code>func count_to(int n) -> iter&lt;int&gt; {
+    var i = 1
+    while i <= n {
+        yield i
+        i = i + 1
+    }
+}
+
+for var x in count_to(5) {
+    printin(x)  // 1, 2, 3, 4, 5
+}</code></pre>
+
+<h2>17.2 Fibonacci Sequence</h2>
+<pre><code>func fibonacci() -> iter&lt;int&gt; {
+    var a = 0, b = 1
+    while true {
+        yield a
+        var temp = a + b
+        a = b
+        b = temp
+    }
+}
+
+for var x in fibonacci() {
+    if x > 100 { break }
+    printin(x)
+}</code></pre>
+
+<h2>17.3 Generator with Parameters</h2>
+<pre><code>func range_gen(int start, int end) -> iter&lt;int&gt; {
+    var i = start
+    while i < end {
+        yield i
+        i = i + 1
+    }
+}
+
+for var x in range_gen(3, 7) {
+    printin(x)  // 3, 4, 5, 6
+}</code></pre>
+
+<h2>17.4 Nested Generators</h2>
+<pre><code>func inner() -> iter&lt;int&gt; {
+    yield 1
+    yield 2
+}
+
+func outer() -> iter&lt;int&gt; {
+    for var x in inner() {
+        yield x
+    }
+    yield 3
+}
+
+for var x in outer() {
+    printin(x)  // 1, 2, 3
+}</code></pre>
+
+<h2>17.5 Coroutines</h2>
+<p>Coroutines are generators that support bidirectional communication:</p>
+<pre><code>coroutine func counter() -> iter&lt;int&gt; {
+    var i = 0
+    while true {
+        yield i
+        i = i + 1
+    }
+}
+
+var gen = counter()
+printin(gen.next())  // 0
+printin(gen.next())  // 1
+printin(gen.next())  // 2</code></pre>
+
+<h2>17.6 Memory Efficiency</h2>
+<p>Generators are memory efficient &mdash; they don't store all values at once:</p>
+<pre><code>// This is safe - only processes values as needed
+func infinite() -> iter&lt;int&gt; {
+    var i = 0
+    while true {
+        yield i
+        i = i + 1
+    }
+}
+
+for var x in infinite() {
+    if x > 1000 { break }
+}</code></pre>
+
+<!-- ==================== CHAPTER 18 ==================== -->
+<div class="page-break"></div>
+<h1>Chapter 18 &mdash; Async/Await</h1>
+
+<p class="chapter-intro">
+  Write asynchronous code that is easy to read and maintain.
+</p>
+
+<h2>18.1 Basic Async Functions</h2>
+<pre><code>async func fetch_data(str url) -> str {
+    return "data from " + url
+}</code></pre>
+
+<h2>18.2 Using Await</h2>
+<pre><code>async func main_async() {
+    var result = await fetch_data("https://example.com")
+    printin(result)
+}
+
+main {
+    run_async main_async()
+}</code></pre>
+
+<h2>18.3 Multiple Awaits</h2>
+<pre><code>async func step1() -> str {
+    return "step1"
+}
+
+async func step2() -> str {
+    return "step2"
+}
+
+async func workflow() {
+    var r1 = await step1()
+    var r2 = await step2()
+    printin(r1 + " " + r2)
+}</code></pre>
+
+<h2>18.4 Nested Async Calls</h2>
+<pre><code>async func inner(int x) -> int {
+    return x + 1
+}
+
+async func outer(int x) -> int {
+    var temp = await inner(x)
+    var result = await inner(temp)
+    return result
+}
+
+async func main_async() {
+    var result = await outer(5)
+    printin(result)  // 7
+}</code></pre>
+
+<h2>18.5 Async Error Handling</h2>
+<pre><code>async func risky_operation() -> int {
+    throw "Something went wrong"
+}
+
+async func safe_operation() {
+    try {
+        var result = await risky_operation()
+    } catch (str err) {
+        printin("Error: " + err)
+    }
+}</code></pre>
+
+<h2>18.6 Async with Closures</h2>
+<pre><code>async func apply_async(func f, int x) -> int {
+    return await f(x)
+}
+
+var double = async (int x) => x * 2
+async func main_async() {
+    var result = await apply_async(double, 5)
+    printin(result)  // 10
+}</code></pre>
+
+<h2>18.7 The Async Model</h2>
+<p>Cnext uses a <strong>synchronous cooperative model</strong>:</p>
+<ul>
+  <li><code>async</code> marks a function as asynchronous</li>
+  <li><code>await</code> pauses until the async function completes</li>
+  <li><code>run_async</code> starts the async execution from a synchronous context</li>
+</ul>
+
+<!-- ==================== CHAPTER 19 ==================== -->
+<div class="page-break"></div>
+<h1>Chapter 19 &mdash; Threading</h1>
+
+<p class="chapter-intro">
+  Write concurrent programs with built-in Mutex and Channel primitives.
+</p>
+
+<h2>19.1 Importing the Thread Module</h2>
+<pre><code>import thread</code></pre>
+
+<h2>19.2 Mutex</h2>
+<p>Mutex provides mutual exclusion for thread-safe access:</p>
+<pre><code>var m = mutex_new()
+
+// Lock before accessing shared data
+mutex_lock(m)
+var x = shared_data
+mutex_unlock(m)
+
+// Clean up
+mutex_free(m)</code></pre>
+
+<h2>19.3 Channel</h2>
+<p>Channel provides communication between threads:</p>
+<pre><code>var ch = channel_new(8)  // Buffer size 8
+
+// Send messages
+channel_send(ch, "hello")
+channel_send(ch, "world")
+
+// Receive messages
+var msg1 = channel_recv(ch)
+var msg2 = channel_recv(ch)
+
+// Clean up
+channel_free(ch)</code></pre>
+
+<h2>19.4 Thread-Safe Counter</h2>
+<pre><code>import thread
+
+main {
+    var m = mutex_new()
+    var count = 0
+
+    func increment() {
+        mutex_lock(m)
+        count = count + 1
+        mutex_unlock(m)
+    }
+
+    increment()
+    increment()
+    increment()
+
+    printin(count)  // 3
+    mutex_free(m)
+}</code></pre>
+
+<h2>19.5 Producer-Consumer Pattern</h2>
+<pre><code>import thread
+
+main {
+    var ch = channel_new(8)
+
+    // Producer
+    channel_send(ch, "message1")
+    channel_send(ch, "message2")
+    channel_send(ch, "message3")
+
+    // Consumer
+    var msg1 = channel_recv(ch)
+    var msg2 = channel_recv(ch)
+    var msg3 = channel_recv(ch)
+
+    printin(msg1 + " " + msg2 + " " + msg3)
+}</code></pre>
+
+<h2>19.6 Thread Safety Tips</h2>
+<ol>
+  <li>Always use mutex when accessing shared data</li>
+  <li>Keep critical sections as small as possible</li>
+  <li>Always unlock mutex, even on error paths</li>
+  <li>Use channels for communication, mutex for shared state</li>
+  <li>Avoid deadlocks by locking in consistent order</li>
+</ol>
+
+<h2>19.7 Platform Support</h2>
+<table>
+  <tr><th>Platform</th><th>Threading Backend</th></tr>
+  <tr><td>Windows</td><td>Win32 threads (CreateThread)</td></tr>
+  <tr><td>Linux</td><td>pthreads</td></tr>
+  <tr><td>macOS</td><td>pthreads</td></tr>
+</table>
+
+<!-- ==================== CHAPTER 20 ==================== -->
+<div class="page-break"></div>
+<h1>Chapter 20 &mdash; Standard Library</h1>
+
+<p class="chapter-intro">
+  Explore the 16 modules that come built-in with Cnext.
+</p>
+
+<h2>20.1 IO Module</h2>
+<pre><code>import io
+
+str content = read_file("data.txt")
+write_file("output.txt", "Hello, World!")
+append_file("log.txt", "New entry\n")</code></pre>
+
+<h2>20.2 Math Module</h2>
+<pre><code>import math
+
+var x = math.abs(-5)      // 5
+var y = math.sqrt(16)     // 4.0
+var z = math.pow(2, 10)   // 1024.0
+var w = math.floor(3.7)   // 3.0
+var v = math.ceil(3.2)    // 4.0
+var u = math.min(5, 3)    // 3
+var t = math.max(5, 3)    // 5
+var s = math.sin(3.14)    // ~0
+var c = math.cos(0)       // 1.0
+var l = math.log(2.718)   // ~1.0
+var r = math.round(3.7)   // 4.0
+// Constants: math.PI, math.E</code></pre>
+
+<h2>20.3 String Utils Module</h2>
+<pre><code>import string_utils
+
+var s = "  Hello, World!  "
+str trimmed = str_trim(s)                    // "Hello, World!"
+str upper = str_to_upper("hello")            // "HELLO"
+str lower = str_to_lower("HELLO")            // "hello"
+bool starts = str_starts_with("hello", "he") // true
+bool ends = str_ends_with("hello", "lo")     // true
+bool contains = str_contains("hello", "ell") // true
+int idx = str_index_of("hello", "ll")        // 2
+str replaced = str_replace("hello", "l", "r") // "herro"
+int count = str_count("hello", "l")           // 2
+str repeated = str_repeat("ab", 3)            // "ababab"
+str reversed = str_reverse("hello")           // "olleh"</code></pre>
+
+<h2>20.4 JSON Module</h2>
+<pre><code>import json
+
+var data = json_parse('{"name": "Alice", "age": 30}')
+str name = json_get_string(data, "name")
+int age = json_get_int(data, "age")
+str json_str = json_stringify(data)
+json_free(data)</code></pre>
+
+<h2>20.5 Net Module</h2>
+<pre><code>import net
+
+// HTTP
+str response = http_get("https://api.example.com/data")
+str result = http_post("https://api.example.com/submit", "data")
+
+// TCP
+var conn = tcp_connect("example.com", 80)
+tcp_send(conn, "GET / HTTP/1.1\r\nHost: example.com\r\n\r\n")
+str data = tcp_receive(conn)
+tcp_close(conn)</code></pre>
+
+<h2>20.6 File Module</h2>
+<pre><code>import file
+
+copy_file("source.txt", "dest.txt")
+delete_file("temp.txt")
+bool exists = file_exists("data.txt")
+int size = file_size("data.txt")</code></pre>
+
+<h2>20.7 OS Module</h2>
+<pre><code>import os
+
+str home = os_home_dir()
+str temp = os_temp_dir()
+str cwd = os_get_cwd()
+os_set_cwd("/path/to/dir")
+os_mkdir("new_dir")
+os_rmdir("empty_dir")
+int pid = os_pid()
+str host = os_hostname()</code></pre>
+
+<h2>20.8 Time Module</h2>
+<pre><code>import time
+
+long now = time_now()
+long ms = time_now_ms()
+time_sleep(1000)
+str formatted = time_format(now, "%Y-%m-%d %H:%M:%S")
+int year = time_year(now)
+int month = time_month(now)
+int day = time_day(now)</code></pre>
+
+<h2>20.9 Collections Module</h2>
+<pre><code>import collections
+
+// List
+var list = list_new()
+list_add(list, "item1")
+list_add(list, "item2")
+str item = list_get(list, 0)
+list_set(list, 0, "updated")
+int size = list_size(list)
+list_sort(list)
+bool has = list_contains(list, 2)
+list_free(list)
+
+// Map
+var map = map_new()
+map_set(map, "key1", "value1")
+str value = map_get(map, "key1")
+bool exists = map_has(map, "key1")
+map_remove(map, "key1")
+map_free(map)
+
+// Set
+var set = set_new()
+set_add(set, "item1")
+bool contains = set_has(set, "item1")
+set_remove(set, "item1")
+set_free(set)</code></pre>
+
+<h2>20.10 Regex Module</h2>
+<pre><code>import regex
+
+bool match = regex_match("hello world", "hello")
+str found = regex_search("hello world", "world")
+str replaced = regex_replace("hello world", "world", "there")</code></pre>
+
+<h2>20.11 Crypto Module</h2>
+<pre><code>import crypto
+
+str md5 = crypto_md5("hello")
+str sha = crypto_sha256("hello")
+str encoded = crypto_base64_encode("hello")
+str decoded = crypto_base64_decode(encoded)</code></pre>
+
+<h2>20.12 Path Module</h2>
+<pre><code>import path
+
+str joined = path_join("/home", "user", "file.txt")
+str dir = path_dirname("/home/user/file.txt")     // "/home/user"
+str base = path_basename("/home/user/file.txt")   // "file.txt"
+str ext = path_extension("file.txt")              // ".txt"</code></pre>
+
+<h2>20.13 Encoding Module</h2>
+<pre><code>import encoding
+
+str b64 = base64_encode("hello")
+str decoded = base64_decode(b64)
+str hex = hex_encode("hello")
+str url = url_encode("hello world")</code></pre>
+
+<h2>20.14 Process Module</h2>
+<pre><code>import process
+
+var proc = process_run("ls", {"-la"})
+int status = process_run_status(proc)
+bool exists = process_exists(proc)
+process_kill(proc)</code></pre>
+
+<h2>20.15 Random Module</h2>
+<pre><code>import random
+
+random_seed(42)
+int rand_int = random_int(1, 100)
+float rand_float = random_float(0.0, 1.0)
+float gaussian = random_gaussian(0.0, 1.0)</code></pre>
+
+<h2>20.16 HashMap</h2>
+<pre><code>var map = hashmap_new(16)
+
+hashmap_put(map, "name", "Alice")
+hashmap_put(map, "age", "30")
+
+str name = hashmap_get(map, "name")           // "Alice"
+bool exists = hashmap_contains(map, "name")   // true
+hashmap_remove(map, "age")
+hashmap_free(map)</code></pre>
+
+<h2>20.17 Memory Allocators</h2>
+<h3>Pool Allocator</h3>
+<pre><code>// Allocate from the global pool
+void* mem = POOL_ALLOC(1024)
+
+// Free all pool allocations at once
+POOL_FREE_ALL()</code></pre>
+
+<h3>Arena Allocator</h3>
+<pre><code>// Allocate from the global arena
+void* mem = ARENA_ALLOC(1024)
+
+// Free all arena allocations at once
+ARENA_FREE_ALL()</code></pre>
+
+<!-- ==================== CHAPTER 21 ==================== -->
+<div class="page-break"></div>
+<h1>Chapter 21 &mdash; Cnext CLI Reference</h1>
+
+<p class="chapter-intro">
+  A complete reference for every command the Cnext CLI provides.
+</p>
+
+<h2>21.1 Project Commands</h2>
+<table>
+  <tr><th>Command</th><th>Description</th></tr>
+  <tr><td><code>cnext new &lt;name&gt;</code></td><td>Create a new project with sample code and config</td></tr>
+  <tr><td><code>cnext init</code></td><td>Initialize a <code>cnext.toml</code> in the current directory</td></tr>
+  <tr><td><code>cnext run &lt;file.cn&gt;</code></td><td>Compile and run a Cnext file</td></tr>
+  <tr><td><code>cnext build &lt;file.cn&gt;</code></td><td>Compile to an executable</td></tr>
+  <tr><td><code>cnext test</code></td><td>Run the project's test suite</td></tr>
+  <tr><td><code>cnext repl</code></td><td>Start the interactive REPL</td></tr>
+</table>
+
+<h2>21.2 Build Flags</h2>
+<table>
+  <tr><th>Flag</th><th>Description</th></tr>
+  <tr><td><code>-o, --output &lt;path&gt;</code></td><td>Set output file path</td></tr>
+  <tr><td><code>--release</code></td><td>Optimized build (<code>-O2</code>)</td></tr>
+  <tr><td><code>--debug</code></td><td>Debug build (<code>-O0 -g</code>)</td></tr>
+  <tr><td><code>--no-optimize</code></td><td>Disable the optimizer</td></tr>
+  <tr><td><code>--verbose</code></td><td>Show the generated C code</td></tr>
+  <tr><td><code>--clean</code></td><td>Remove build artifacts</td></tr>
+</table>
+
+<h2>21.3 Code Quality Commands</h2>
+<table>
+  <tr><th>Command</th><th>Description</th></tr>
+  <tr><td><code>cnext fmt &lt;file.cn&gt;</code></td><td>Format code</td></tr>
+  <tr><td><code>cnext lint &lt;file.cn&gt;</code></td><td>Lint code for issues</td></tr>
+  <tr><td><code>cnext doc &lt;file.cn&gt;</code></td><td>Generate documentation</td></tr>
+</table>
+
+<h2>21.4 Package Manager Commands</h2>
+<table>
+  <tr><th>Command</th><th>Description</th></tr>
+  <tr><td><code>cnext install</code></td><td>Install all dependencies</td></tr>
+  <tr><td><code>cnext install &lt;pkg&gt;</code></td><td>Install a single package</td></tr>
+  <tr><td><code>cnext remove &lt;pkg&gt;</code></td><td>Remove a package</td></tr>
+  <tr><td><code>cnext search &lt;query&gt;</code></td><td>Search the package registry</td></tr>
+  <tr><td><code>cnext info &lt;package&gt;</code></td><td>Show package info</td></tr>
+  <tr><td><code>cnext publish</code></td><td>Publish to the registry</td></tr>
+  <tr><td><code>cnext update</code></td><td>Update dependencies</td></tr>
+  <tr><td><code>cnext login</code></td><td>Authenticate with registry</td></tr>
+  <tr><td><code>cnext logout</code></td><td>Log out from registry</td></tr>
+</table>
+
+<h2>21.5 Utility Commands</h2>
+<table>
+  <tr><th>Command</th><th>Description</th></tr>
+  <tr><td><code>cnext version</code></td><td>Show compiler version</td></tr>
+  <tr><td><code>cnext doctor</code></td><td>Check system dependencies</td></tr>
+  <tr><td><code>cnext upgrade</code></td><td>Check for Cnext updates</td></tr>
+  <tr><td><code>cnext cache clear</code></td><td>Clear the build cache</td></tr>
+</table>
+
+<h2>21.6 Project Configuration</h2>
+<p>The <code>cnext.toml</code> file defines your project:</p>
+<pre><code>[package]
+name = "my-project"
+version = "0.1.0"
+
+[dependencies]
+mylib = "https://github.com/user/mylib/raw/main/mylib.cn"</code></pre>
+
+<!-- ==================== CHAPTER 22 ==================== -->
+<div class="page-break"></div>
+<h1>Chapter 22 &mdash; Package Manager</h1>
+
+<p class="chapter-intro">
+  Manage dependencies and share your own packages with the world.
+</p>
+
+<h2>22.1 Creating a Project</h2>
+<pre><code>cnext new my-project
+cd my-project</code></pre>
+
+<h2>22.2 Adding Dependencies</h2>
+<p>Edit <code>cnext.toml</code> to add a dependency:</p>
+<pre><code>[dependencies]
+mylib = "https://github.com/user/mylib/raw/main/mylib.cn"</code></pre>
+<p>Then install:</p>
+<pre><code>cnext install</code></pre>
+
+<h2>22.3 Searching for Packages</h2>
+<pre><code>cnext search json
+cnext info mylib</code></pre>
+
+<h2>22.4 Publishing Your Package</h2>
+<pre><code>cnext login
+cnext publish</code></pre>
+
+<h2>22.5 Dependency Management</h2>
+<pre><code>cnext update          // Update all dependencies
+cnext remove mylib    // Remove a dependency</code></pre>
+
+<h2>22.6 Module Resolution</h2>
+<p>Cnext uses namespaced module names:</p>
+<pre><code>// Import from std library
+import io
+import math
+import json
+
+// Import from a package
+import mylib
+import org/mylib</code></pre>
+
+<!-- ==================== CHAPTER 23 ==================== -->
+<div class="page-break"></div>
+<h1>Chapter 23 &mdash; VS Code Extension</h1>
+
+<p class="chapter-intro">
+  Supercharge your development with the official Cnext VS Code extension.
+</p>
+
+<h2>23.1 Installation</h2>
+<pre><code>cd vscode-extension
+npm install -g @vscode/vsce
+vsce package
+code --install-extension cnext-3.1.0.vsix</code></pre>
+<p>Or search for "Cnext" in the VS Code Extensions panel (<code>Ctrl+Shift+X</code>).</p>
+
+<h2>23.2 Features</h2>
+<ul>
+  <li><strong>Syntax Highlighting</strong> &mdash; Full highlighting for <code>.cn</code> files</li>
+  <li><strong>Code Snippets</strong> &mdash; 25+ snippets for common patterns</li>
+  <li><strong>Build &amp; Run</strong> &mdash; Keyboard shortcuts for building and running</li>
+  <li><strong>Formatting</strong> &mdash; Auto-format on save</li>
+  <li><strong>Linting</strong> &mdash; Real-time error detection</li>
+  <li><strong>REPL</strong> &mdash; Integrated REPL in the terminal</li>
+  <li><strong>New Project</strong> &mdash; Create new Cnext projects from the command palette</li>
+</ul>
+
+<h2>23.3 Keyboard Shortcuts</h2>
+<table>
+  <tr><th>Shortcut</th><th>Action</th></tr>
+  <tr><td><code>Ctrl+Shift+R</code></td><td>Run current file</td></tr>
+  <tr><td><code>Ctrl+Shift+B</code></td><td>Build current file</td></tr>
+  <tr><td><code>Ctrl+Shift+F</code></td><td>Format file</td></tr>
+  <tr><td><code>Ctrl+Shift+L</code></td><td>Lint file</td></tr>
+</table>
+
+<h2>23.4 LSP Support</h2>
+<p>Cnext includes a Language Server Protocol (LSP) implementation for advanced editor features:</p>
+<ul>
+  <li>Autocomplete</li>
+  <li>Hover information</li>
+  <li>Go-to-definition</li>
+  <li>Diagnostics</li>
+  <li>Formatting</li>
+</ul>
+<p>The LSP server is written in Python. See <code>lsp/README.md</code> for setup instructions for Neovim, Helix, Sublime Text, and other editors.</p>
+
+<!-- ==================== CHAPTER 24 ==================== -->
+<div class="page-break"></div>
+<h1>Chapter 24 &mdash; Advanced Topics</h1>
+
+<p class="chapter-intro">
+  Explore the more sophisticated features of Cnext.
+</p>
+
+<h2>24.1 Macros</h2>
+<p>Macros generate code at compile time:</p>
+<pre><code>macro swap(a, b) {
+    var temp = a
+    a = b
+    b = temp
+}
+
+// Usage
+var x = 1
+var y = 2
+swap(x, y)
+printin(x)  // 2
+printin(y)  // 1</code></pre>
+
+<h2>24.2 Attributes/Annotations</h2>
+<pre><code>@deprecated
+func old_function() { }
+
+// The compiler will warn when this function is used</code></pre>
+
+<h2>24.3 typeof</h2>
+<pre><code>str type_name = typeof(42)       // "int"
+str type_str = typeof("hello")   // "str"</code></pre>
+
+<h2>24.4 constexpr</h2>
+<p>Compile-time constants:</p>
+<pre><code>constexpr int MAX_SIZE = 1024
+constexpr str VERSION = "1.0.0"</code></pre>
+
+<h2>24.5 Benchmarks</h2>
+<pre><code>bench {
+    // Code to benchmark
+    for int i = 0; i < 1000000; i = i + 1 {
+        var x = i * i
+    }
+}</code></pre>
+
+<h2>24.6 FFI (Foreign Function Interface)</h2>
+<p>Call C functions directly from Cnext:</p>
+<pre><code>extern "C" func printf(str fmt, ...)
+
+// Now use it
+printf("Hello from C: %s\n", "world")</code></pre>
+
+<h2>24.7 Ownership Semantics</h2>
+<pre><code>// own transfers ownership
+own str data = get_string()</code></pre>
+
+<h2>24.8 The Optimizer</h2>
+<p>Cnext includes a 9-pass optimizer:</p>
+<ol>
+  <li><strong>Constant Propagation</strong> &mdash; Replaces variables with known constant values</li>
+  <li><strong>Copy Propagation</strong> &mdash; Eliminates unnecessary temporary variables</li>
+  <li><strong>Peephole Optimization</strong> &mdash; Simplifies common instruction patterns</li>
+  <li><strong>Identity Elimination</strong> &mdash; Removes identity operations (x + 0, x * 1)</li>
+  <li><strong>Constant Folding</strong> &mdash; Evaluates constant expressions at compile time</li>
+  <li><strong>Dead Code Elimination</strong> &mdash; Removes unreachable code</li>
+  <li><strong>Branch Simplification</strong> &mdash; Simplifies conditional expressions</li>
+  <li><strong>Tail-Call Detection</strong> &mdash; Identifies and optimizes tail-recursive calls</li>
+  <li><strong>Loop Optimizations</strong> &mdash; Optimizes loop structures</li>
+</ol>
+
+<h2>24.9 Source Maps</h2>
+<p>Cnext generates source maps that map generated C code back to your <code>.cn</code> source, enabling meaningful stack traces and debugging.</p>
+
+<h2>24.10 Checked Memory Allocation</h2>
+<p>All memory allocations in the runtime use safe wrappers that exit gracefully on out-of-memory conditions:</p>
+<pre><code>// This is handled automatically by the runtime
+// If malloc fails, Cnext terminates with a clear error message
+// rather than proceeding with a null pointer</code></pre>
+
+<!-- ==================== CHAPTER 25 ==================== -->
+<div class="page-break"></div>
+<h1>Chapter 25 &mdash; Project Examples</h1>
+
+<p class="chapter-intro">
+  Learn by building real projects with complete, runnable examples.
+</p>
+
+<h2>25.1 Hello World</h2>
+<pre><code>main {
+    printin("Hello, World!")
+}</code></pre>
+
+<h2>25.2 Calculator</h2>
+<pre><code>func add(int a, int b) -> int => a + b
+func subtract(int a, int b) -> int => a - b
+func multiply(int a, int b) -> int => a * b
+func divide(int a, int b) -> int {
+    if b == 0 {
+        throw "Division by zero"
+    }
+    return a / b
+}
+
+main {
+    printin("5 + 3 = " + add(5, 3))
+    printin("5 - 3 = " + subtract(5, 3))
+    printin("5 * 3 = " + multiply(5, 3))
+
+    try {
+        printin("5 / 3 = " + divide(5, 3))
+        printin("5 / 0 = " + divide(5, 0))
+    } catch (str err) {
+        printin("Error: " + err)
+    }
+}</code></pre>
+
+<h2>25.3 Todo CLI</h2>
+<pre><code>import io
+import os
+
+func show_usage() {
+    printin("Usage: todo &lt;command&gt;")
+    printin("Commands:")
+    printin("  add &lt;task&gt;    Add a new task")
+    printin("  list          List all tasks")
+    printin("  done &lt;n&gt;     Mark task n as done")
+}
+
+main {
+    str[] args = os_args()
+
+    if args.length < 2 {
+        show_usage()
+        return
+    }
+
+    str command = args[1]
+
+    if command == "add" {
+        if args.length < 3 {
+            printin("Usage: todo add &lt;task&gt;")
+            return
+        }
+        str task = args[2]
+        append_file("todos.txt", task + "\n")
+        printin("Added: " + task)
+    } else if command == "list" {
+        try {
+            str content = read_file("todos.txt")
+            printin(content)
+        } catch (str err) {
+            printin("No tasks yet.")
+        }
+    } else {
+        show_usage()
+    }
+}</code></pre>
+
+<h2>25.4 HTTP Server</h2>
+<pre><code>import net
+
+main {
+    printin("Server starting on port 8080...")
+    var server = http_server_new(8080)
+
+    http_server_route(server, "GET", "/", (req) => {
+        return "Hello from Cnext!"
+    })
+
+    http_server_route(server, "GET", "/time", (req) => {
+        return "Current time: " + time_now()
+    })
+
+    http_server_start(server)
+}</code></pre>
+
+<h2>25.5 Generators &mdash; Fibonacci</h2>
+<pre><code>func fibonacci() -> iter&lt;int&gt; {
+    var a = 0, b = 1
+    while true {
+        yield a
+        var temp = a + b
+        a = b
+        b = temp
+    }
+}
+
+main {
+    var sum = 0
+    for var x in fibonacci() {
+        if x > 1000 { break }
+        sum = sum + x
+    }
+    printin("Sum of Fibonacci numbers up to 1000: " + sum)
+}</code></pre>
+
+<h2>25.6 Classes &mdash; Bank Account</h2>
+<pre><code>class BankAccount {
+    str owner
+    double balance
+
+    func new(str owner_name, double initial_balance) {
+        self.owner = owner_name
+        self.balance = initial_balance
+    }
+
+    func deposit(double amount) {
+        if amount <= 0 {
+            throw "Amount must be positive"
+        }
+        self.balance = self.balance + amount
+        printin("Deposited: $" + amount)
+    }
+
+    func withdraw(double amount) -> bool {
+        if amount > self.balance {
+            printin("Insufficient funds")
+            return false
+        }
+        self.balance = self.balance - amount
+        printin("Withdrew: $" + amount)
+        return true
+    }
+
+    func get_balance() -> double {
+        return self.balance
+    }
+
+    func to_string() -> str {
+        return self.owner + ": $" + self.balance
+    }
+}
+
+main {
+    var account = new BankAccount("Alice", 1000.0)
+    account.deposit(500.0)
+    account.withdraw(200.0)
+    printin(account.to_string())
+}</code></pre>
+
+<h2>25.7 Threading Example</h2>
+<pre><code>import thread
+
+main {
+    var m = mutex_new()
+    var counter = 0
+
+    func increment() {
+        mutex_lock(m)
+        counter = counter + 1
+        mutex_unlock(m)
+    }
+
+    // Simulate concurrent access
+    for int i = 0; i < 1000; i = i + 1 {
+        increment()
+    }
+
+    printin("Counter: " + counter)  // 1000
+    mutex_free(m)
+}</code></pre>
+
+<!-- ==================== CHAPTER 26 ==================== -->
+<div class="page-break"></div>
+<h1>Chapter 26 &mdash; Range-Based For Loops</h1>
+
+<p class="chapter-intro">
+  Cnext v10 introduces the range operator <code>..</code> and range-based for loops for elegant iteration over integer ranges.
+</p>
+
+<h2>The Range Operator</h2>
+<p>The <code>..</code> operator creates an exclusive range from a start value to an end value:</p>
+<pre><code>// Range expression: 0..5 means [0, 1, 2, 3, 4]
+// The end value is EXCLUSIVE (not included)
+var r = 0..5</code></pre>
+
+<h2>Range-Based For Loops</h2>
+<p>Use <code>for</code> with <code>in</code> and a range expression to iterate over integer ranges:</p>
+<pre><code>// Explicit type
+for int i in 0..5 {
+    printin(i)  // 0, 1, 2, 3, 4
+}
+
+// Inferred type with var
+for var j in 1..10 {
+    printin(j)  // 1, 2, 3, ..., 9
+}
+
+// Calculate sum of 1 to 100
+int sum = 0
+for int i in 1..101 {
+    sum = sum + i
+}
+printin("Sum: ", sum)  // 5050</code></pre>
+
+<div class="tip">
+  <strong>Tip:</strong> The range operator is exclusive on the right side. <code>0..5</code> produces values 0, 1, 2, 3, 4.
+  To include the end value, add 1: <code>0..6</code> produces 0 through 5.
+</div>
+
+<!-- ==================== CHAPTER 27 ==================== -->
+<div class="page-break"></div>
+<h1>Chapter 27 &mdash; Defer</h1>
+
+<p class="chapter-intro">
+  The <code>defer</code> statement schedules an expression to execute when the current block scope exits.
+</p>
+
+<h2>Basic Defer</h2>
+<pre><code>main {
+    printin("Opening resource")
+    {
+        defer printin("Closing resource")
+        printin("Using resource")
+    }
+    printin("Scope exited")
+}
+
+// Output:
+// Opening resource
+// Using resource
+// Closing resource     &lt;-- deferred
+// Scope exited</code></pre>
+
+<h2>Defer in Functions</h2>
+<pre><code>func process_data(str data) {
+    printin("Processing: ", data)
+    {
+        defer printin("Cleanup after processing")
+        printin("  Step 1: Validate")
+        printin("  Step 2: Transform")
+    }
+    printin("Back in function")
+}</code></pre>
+
+<h2>Multiple Defers (LIFO Order)</h2>
+<pre><code>main {
+    {
+        defer printin("First deferred")
+        defer printin("Second deferred")
+        printin("Body")
+    }
+}
+// Output: Body, Second deferred, First deferred</code></pre>
+
+<div class="warning">
+  <strong>Note:</strong> <code>defer</code> runs when the enclosing <code>{ }</code> block exits, in LIFO order (last deferred runs first).
+</div>
+
+<!-- ==================== CHAPTER 28 ==================== -->
+<div class="page-break"></div>
+<h1>Chapter 28 &mdash; Null Safety &amp; Type Conversions</h1>
+
+<p class="chapter-intro">
+  Cnext v10 adds null checking, unwrap/expect, and string-to-number conversions.
+</p>
+
+<h2>is_null()</h2>
+<pre><code>str s = "hello"
+printin(is_null(s))    // false</code></pre>
+
+<h2>unwrap() and expect()</h2>
+<pre><code>str value = "hello"
+printin(unwrap(value))
+printin(expect(value, "must not be null"))</code></pre>
+
+<h2>String/Number Conversions</h2>
+<pre><code>int n = str_to_int("42")
+float f = str_to_float("3.14")
+
+int num = 42
+str s = num as str
+
+printin(len("hello"))  // 5</code></pre>
+
+<!-- ==================== CHAPTER 29 ==================== -->
+<div class="page-break"></div>
+<h1>Chapter 29 &mdash; Standard Library Modules</h1>
+
+<p class="chapter-intro">
+  Cnext v10 ships with math, string, file, networking, crypto, and OS modules.
+</p>
+
+<h2>Math Module</h2>
+<pre><code>import math
+main {
+    printin(math_sqrt(16.0))      // 4.0
+    printin(math_pow(2.0, 10.0))  // 1024.0
+    printin(math_abs(-42))        // 42
+    printin(math_floor(3.7))      // 3.0
+    printin(math_ceil(3.2))       // 4.0
+    printin(math_sign(-5))        // -1
+    printin(math_clamp(15, 0, 10)) // 10
+    printin(math_lerp(0.0, 10.0, 0.5)) // 5.0
+}</code></pre>
+
+<h3>All Math Functions</h3>
+<table>
+  <tr><th>Function</th><th>Description</th></tr>
+  <tr><td><code>math_abs(x)</code></td><td>Absolute value</td></tr>
+  <tr><td><code>math_max(a, b)</code></td><td>Maximum</td></tr>
+  <tr><td><code>math_min(a, b)</code></td><td>Minimum</td></tr>
+  <tr><td><code>math_sqrt(x)</code></td><td>Square root</td></tr>
+  <tr><td><code>math_pow(x, y)</code></td><td>Power (x^y)</td></tr>
+  <tr><td><code>math_sin/cos/tan(x)</code></td><td>Trig functions</td></tr>
+  <tr><td><code>math_log/log10/log2(x)</code></td><td>Logarithms</td></tr>
+  <tr><td><code>math_exp(x)</code></td><td>e^x</td></tr>
+  <tr><td><code>math_floor/ceil/round(x)</code></td><td>Rounding</td></tr>
+  <tr><td><code>math_sign(x)</code></td><td>Sign (-1, 0, or 1)</td></tr>
+  <tr><td><code>math_clamp(x, lo, hi)</code></td><td>Clamp to range</td></tr>
+  <tr><td><code>math_lerp(a, b, t)</code></td><td>Linear interpolation</td></tr>
+  <tr><td><code>math_atan2(y, x)</code></td><td>Arctangent</td></tr>
+  <tr><td><code>math_sinh/cosh/tanh(x)</code></td><td>Hyperbolic trig</td></tr>
+</table>
+
+<h2>String Utils Module</h2>
+<pre><code>import string_utils
+main {
+    printin(str_trim("  hello  "))           // "hello"
+    printin(str_to_upper("hello"))           // "HELLO"
+    printin(str_contains("hello", "ell"))    // true
+    printin(str_repeat("ab", 3))             // "ababab"
+    printin(str_replace("hello", "l", "r"))  // "herro"
+    printin(str_substring("hello", 1, 4))    // "ell"
+    printin(str_index_of("hello", "ll"))     // 2
+    printin(str_starts_with("hello", "he"))  // true
+    printin(str_ends_with("hello", "lo"))    // true
+}</code></pre>
+
+<h2>File &amp; IO Modules</h2>
+<pre><code>import io
+import file
+main {
+    write_file("data.txt", "Hello, Cnext!")
+    str content = read_file("data.txt")
+    printin(content)
+
+    printin(file_exists("data.txt"))  // true
+    printin(file_size("data.txt"))    // 13
+
+    copy_file("data.txt", "backup.txt")
+    delete_file("data.txt")
+    delete_file("backup.txt")
+}</code></pre>
+
+<h2>OS Module</h2>
+<pre><code>import os
+main {
+    printin(os_get_cwd())
+    printin(os_os_name())      // "Windows" / "macOS" / "Linux"
+    printin(os_hostname())
+    printin(os_pid())
+    printin(os_temp_dir())
+    printin(os_home_dir())
+    os_mkdir("test_dir")
+    os_rmdir("test_dir")
+}</code></pre>
+
+<h2>Net Module</h2>
+<pre><code>import net
+main {
+    str response = http_get("https://api.example.com/data")
+    printin(response)
+
+    str body = http_post("https://api.example.com/submit", "key=value")
+    printin(body)
+
+    int sock = tcp_connect("127.0.0.1", 8080)
+    tcp_send(sock, "Hello!")
+    str data = tcp_receive(sock, 1024)
+    tcp_close(sock)
+}</code></pre>
+
+<h2>Crypto Module</h2>
+<pre><code>import crypto
+main {
+    printin(crypto_md5("hello"))
+    printin(crypto_sha256("hello"))
+    str enc = crypto_base64_encode("Hello!")
+    printin(crypto_base64_decode(enc))
+}</code></pre>
+
+<h2>Encoding Module</h2>
+<pre><code>import encoding
+main {
+    printin(base64_encode("Hello"))
+    printin(hex_encode("Hello"))
+    printin(url_encode("hello world?yes=1"))
+}</code></pre>
+
+<!-- ==================== APPENDIX A ==================== -->
+<div class="page-break"></div>
+<h1>Appendix A &mdash; Complete Grammar Reference</h1>
+
+<p class="chapter-intro">
+  The formal EBNF grammar of the Cnext language.
+</p>
+
+<h2>Program Structure</h2>
+<pre><code>program        = { declaration } ;
+declaration    = func_decl | class_decl | interface_decl | trait_decl
+               | enum_decl | struct_decl | macro_decl | statement ;
+</code></pre>
+
+<h2>Functions</h2>
+<pre><code>func_decl      = [ "async" ] "func" IDENTIFIER "(" [ params ] ")" [ "->" type ] block ;
+params         = param { "," param } ;
+param          = type IDENTIFIER [ "=" expression ] | "..." IDENTIFIER ;
+arrow_func     = [ "async" ] "func" IDENTIFIER "(" [ params ] ")" "->" type "=>" expression ;
+</code></pre>
+
+<h2>Classes</h2>
+<pre><code>class_decl     = "class" IDENTIFIER [ "&lt;" type_params "&gt;" ]
+                 [ "extends" type ] [ "implements" type_list ] "{" { member } "}" ;
+member         = field | method | constructor ;
+field          = type IDENTIFIER ;
+method         = func_decl ;
+constructor    = "func" "new" "(" [ params ] ")" block ;
+</code></pre>
+
+<h2>Statements</h2>
+<pre><code>statement      = expr_stmt | block | if_stmt | while_stmt | for_stmt
+               | for_in_stmt | return_stmt | throw_stmt | try_stmt
+               | var_decl | const_decl | switch_stmt | match_stmt
+               | guard_stmt ;
+if_stmt        = "if" expression block { "else if" expression block } [ "else" block ] ;
+while_stmt     = "while" expression block ;
+for_stmt       = "for" var_decl ";" expression ";" expression ";" block ;
+for_in_stmt    = "for" "var" IDENTIFIER "in" expression block ;
+return_stmt    = "return" [ expression ] ;
+throw_stmt     = "throw" expression ;
+try_stmt       = "try" block { "catch" "(" type IDENTIFIER ")" block }
+                 [ "finally" block ] ;
+switch_stmt    = "switch" expression "{" { "case" expression ":" block } [ "default:" block ] "}" ;
+match_stmt     = "match" expression "{" { pattern "=>" expression } [ "_ =>" expression ] "}" ;
+guard_stmt     = "guard" expression "else" block ;
+</code></pre>
+
+<h2>Expressions</h2>
+<pre><code>expression     = assignment ;
+assignment     = IDENTIFIER "=" assignment | ternary ;
+ternary        = logical_or [ "?" expression ":" expression ] ;
+logical_or     = logical_and { "||" logical_and } ;
+logical_and    = equality { "&&" equality } ;
+equality       = comparison { ("==" | "!=") comparison } ;
+comparison     = addition { ("<" | ">" | "<=" | ">=") addition } ;
+addition       = multiply { ("+" | "-") multiply } ;
+multiply       = unary { ("*" | "/" | "%") unary } ;
+unary          = ("-" | "!" | "await") unary | postfix ;
+postfix        = primary { "[" expression "]" | "." IDENTIFIER | "(" [ args ] ")" } ;
+primary        = NUMBER | STRING | CHAR | "true" | "false" | "null"
+               | IDENTIFIER | "(" expression ")"
+               | array_literal | tuple_literal | lambda ;
+</code></pre>
+
+<h2>Types</h2>
+<pre><code>type           = primitive | array_type | tuple_type | function_type | generic_type ;
+primitive      = "int" | "long" | "float" | "double" | "str" | "bool" | "char"
+               | "byte" | "uint" | "ulong" | "ushort" | "ubyte" ;
+array_type     = type "[]" ;
+tuple_type     = "(" type { "," type } ")" ;
+function_type  = "func" "(" [ type_list ] ")" [ "->" type ] ;
+generic_type   = IDENTIFIER "&lt;" type { "," type } "&gt;" ;
+nullable_type  = type "?" ;
+</code></pre>
+
+<!-- ==================== APPENDIX B ==================== -->
+<div class="page-break"></div>
+<h1>Appendix B &mdash; Quick Reference</h1>
+
+<h2>Keywords</h2>
+<table>
+  <tr>
+    <td><code>as</code></td><td><code>async</code></td><td><code>await</code></td><td><code>bool</code></td>
+  </tr>
+  <tr>
+    <td><code>break</code></td><td><code>byte</code></td><td><code>catch</code></td><td><code>char</code></td>
+  </tr>
+  <tr>
+    <td><code>class</code></td><td><code>const</code></td><td><code>constexpr</code></td><td><code>continue</code></td>
+  </tr>
+  <tr>
+    <td><code>coroutine</code></td><td><code>default</code></td><td><code>double</code></td><td><code>else</code></td>
+  </tr>
+  <tr>
+    <td><code>enum</code></td><td><code>extends</code></td><td><code>extern</code></td><td><code>false</code></td>
+  </tr>
+  <tr>
+    <td><code>finally</code></td><td><code>float</code></td><td><code>for</code></td><td><code>func</code></td>
+  </tr>
+  <tr>
+    <td><code>guard</code></td><td><code>if</code></td><td><code>implements</code></td><td><code>import</code></td>
+  </tr>
+  <tr>
+    <td><code>in</code></td><td><code>int</code></td><td><code>interface</code></td><td><code>iter</code></td>
+  </tr>
+  <tr>
+    <td><code>long</code></td><td><code>macro</code></td><td><code>main</code></td><td><code>match</code></td>
+  </tr>
+  <tr>
+    <td><code>null</code></td><td><code>own</code></td><td><code>return</code></td><td><code>self</code></td>
+  </tr>
+  <tr>
+    <td><code>str</code></td><td><code>struct</code></td><td><code>super</code></td><td><code>switch</code></td>
+  </tr>
+  <tr>
+    <td><code>test</code></td><td><code>this</code></td><td><code>throw</code></td><td><code>trait</code></td>
+  </tr>
+  <tr>
+    <td><code>true</code></td><td><code>try</code></td><td><code>type</code></td><td><code>uint</code></td>
+  </tr>
+  <tr>
+    <td><code>ulong</code></td><td><code>ubyte</code></td><td><code>ushort</code></td><td><code>var</code></td>
+  </tr>
+  <tr>
+    <td><code>while</code></td><td><code>yield</code></td><td><code>typeof</code></td><td><code>override</code></td>
+  </tr>
+</table>
+
+<h2>Built-in Functions</h2>
+<table>
+  <tr><th>Function</th><th>Description</th></tr>
+  <tr><td><code>printin(x)</code></td><td>Print with newline</td></tr>
+  <tr><td><code>input(prompt)</code></td><td>Read user input</td></tr>
+  <tr><td><code>typeof(x)</code></td><td>Get type name as string</td></tr>
+  <tr><td><code>run_async f()</code></td><td>Execute async function</td></tr>
+</table>
+
+<h2>Operators</h2>
+<table>
+  <tr><th>Category</th><th>Operators</th></tr>
+  <tr><td>Arithmetic</td><td><code>+</code> <code>-</code> <code>*</code> <code>/</code> <code>%</code></td></tr>
+  <tr><td>Comparison</td><td><code>==</code> <code>!=</code> <code>&lt;</code> <code>&gt;</code> <code>&lt;=</code> <code>&gt;=</code></td></tr>
+  <tr><td>Logical</td><td><code>&&</code> <code>||</code> <code>!</code></td></tr>
+  <tr><td>Assignment</td><td><code>=</code> <code>+=</code> <code>-=</code> <code>*=</code> <code>/=</code></td></tr>
+  <tr><td>Null Safety</td><td><code>??</code> <code>?.</code></td></tr>
+  <tr><td>String</td><td><code>+</code> (concatenation)</td></tr>
+  <tr><td>Range</td><td><code>..</code> (exclusive end)</td></tr>
+  <tr><td>Casting</td><td><code>as</code></td></tr>
+</table>
+
+<h2>File Extension</h2>
+<p>All Cnext source files use the <code>.cn</code> extension.</p>
+
+<hr>
+
+<div style="text-align:center; padding:40px 0; color:#777;">
+  <p><strong>Cnext: The Complete Guide</strong></p>
+  <p>By Melton Hlungwani</p>
+  <p>First Edition, 2026 (Updated for v10.0)</p>
+  <p style="margin-top:20px;">&copy; 2024&ndash;2026 Melton Hlungwani. MIT License.</p>
+  <p style="margin-top:10px;">https://github.com/Melton122/cnext</p>
+</div>
+
+</body>
+</html>
