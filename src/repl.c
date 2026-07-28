@@ -100,6 +100,27 @@ static bool compile_and_run(const char* c_code) {
     return true;
 }
 
+// Validate that a bare expression was parsed as a single printin call,
+// rejecting injected statements that could cause command injection.
+static bool validate_repl_expr_ast(ASTNode* program) {
+    if (!program || program->type != AST_PROGRAM) return false;
+    if (program->child_count != 1) return false;
+    ASTNode* main_node = program->children[0];
+    if (!main_node || main_node->type != AST_MAIN) return false;
+    ASTNode* body = main_node->left;
+    if (!body || body->type != AST_BLOCK) return false;
+    if (body->child_count != 1) return false;
+    ASTNode* stmt = body->children[0];
+    if (stmt->type != AST_EXPR_STMT || !stmt->left) return false;
+    ASTNode* call = stmt->left;
+    if (call->type != AST_CALL || !call->left) return false;
+    ASTNode* callee = call->left;
+    if (callee->type != AST_IDENTIFIER) return false;
+    if (callee->token.length != 7 ||
+        strncmp(callee->token.start, "printin", 7) != 0) return false;
+    return true;
+}
+
 bool run_repl(void) {
     print_banner();
 
@@ -143,9 +164,10 @@ bool run_repl(void) {
 
         // Wrap bare expressions in a main() with printin
         char expr_buf[8192];
-        if (line[0] != '{' && strstr(line, "func ") != line &&
+        bool is_bare_expr = (line[0] != '{' && strstr(line, "func ") != line &&
             strstr(line, "class ") == NULL && strstr(line, "struct ") == NULL &&
-            strstr(line, "enum ") == NULL) {
+            strstr(line, "enum ") == NULL);
+        if (is_bare_expr) {
             snprintf(expr_buf, sizeof(expr_buf),
                 "main {\n    printin(%s);\n}\n", line);
         } else {
@@ -156,6 +178,13 @@ bool run_repl(void) {
         ASTNode* program = parse_program(expr_buf);
         if (!program) {
             fprintf(stderr, "Parse error.\n");
+            continue;
+        }
+
+        // Structural validation: reject injected statements in bare expressions
+        if (is_bare_expr && !validate_repl_expr_ast(program)) {
+            fprintf(stderr, "Invalid expression.\n");
+            free_ast(program);
             continue;
         }
 

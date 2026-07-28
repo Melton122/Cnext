@@ -64,11 +64,11 @@ static const char* get_cache_dir(void) {
     return registry_cache_dir;
 }
 
-static bool http_get(const char* url, char** out_body, long* out_status) {
-    if (!url || url[0] == '\0') { *out_status = 0; *out_body = NULL; return false; }
+static bool http_get(const char* url, char** out_body, long* out_status, long* out_size) {
+    if (!url || url[0] == '\0') { *out_status = 0; *out_body = NULL; if (out_size) *out_size = 0; return false; }
     if (strncmp(url, "http://", 7) == 0) {
         fprintf(stderr, "Warning: Refusing insecure HTTP download. Use HTTPS instead.\n");
-        *out_status = 0; *out_body = NULL; return false;
+        *out_status = 0; *out_body = NULL; if (out_size) *out_size = 0; return false;
     }
     char tmpfile_path[1024];
 #ifdef _WIN32
@@ -89,14 +89,15 @@ static bool http_get(const char* url, char** out_body, long* out_status) {
     if (!f) return false;
     fseek(f, 0, SEEK_END);
     long size = ftell(f);
-    if (size < 0) { fclose(f); remove(tmpfile_path); *out_body = NULL; return false; }
+    if (size < 0) { fclose(f); remove(tmpfile_path); *out_body = NULL; if (out_size) *out_size = 0; return false; }
     rewind(f);
     *out_body = (char*)checked_malloc(size + 1);
-    if (!*out_body) { fclose(f); remove(tmpfile_path); return false; }
+    if (!*out_body) { fclose(f); remove(tmpfile_path); if (out_size) *out_size = 0; return false; }
     if (fread(*out_body, 1, size, f)) { /* read ok */ }
     (*out_body)[size] = '\0';
     fclose(f);
     remove(tmpfile_path);
+    if (out_size) *out_size = size;
     return true;
 }
 
@@ -178,7 +179,7 @@ bool registry_search(const char* query, RegistryResult* result) {
 
     if (registry_url) {
         snprintf(url, sizeof(url), "%s/api/search?q=%s", registry_url, query);
-        if (http_get(url, &body, &status) && status == 200) {
+        if (http_get(url, &body, &status, NULL) && status == 200) {
             char* line = strtok(body, "\n");
             int capacity = 0;
             while (line) {
@@ -250,7 +251,7 @@ bool registry_info(const char* package_name, RegistryResult* result) {
 
         char* body = NULL;
         long status = 0;
-        if (http_get(url, &body, &status) && status == 200) {
+        if (http_get(url, &body, &status, NULL) && status == 200) {
             char* line = strtok(body, "\n");
             int capacity = 0;
             while (line) {
@@ -339,8 +340,9 @@ bool registry_resolve(const char* package_name, const VersionSpec* spec, Registr
 bool registry_download(const char* url, const char* dest_path) {
     fprintf(stderr, "Downloading %s...\n", url);
     long status = 0;
+    long body_size = 0;
     char* body = NULL;
-    if (!http_get(url, &body, &status) || status != 200) {
+    if (!http_get(url, &body, &status, &body_size) || status != 200) {
         fprintf(stderr, "Download failed (HTTP %ld).\n", status);
         free(body);
         return false;
@@ -351,7 +353,7 @@ bool registry_download(const char* url, const char* dest_path) {
         free(body);
         return false;
     }
-    fwrite(body, 1, strlen(body), f);
+    fwrite(body, 1, body_size, f);
     fclose(f);
     free(body);
     return true;
@@ -561,7 +563,7 @@ bool registry_login(const char* registry_url) {
         snprintf(url, sizeof(url), "%s/api/me", registry_url);
         char* body = NULL;
         long status = 0;
-        if (http_get(url, &body, &status)) {
+        if (http_get(url, &body, &status, NULL)) {
             free(body);
             if (status == 401 || status == 403) {
                 fprintf(stderr, "Invalid token.\n");

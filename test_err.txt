@@ -1,48 +1,0 @@
-[31m[1merror [35m[E005][0m [2m[26][0m: Expect variable name. at 'ok'
-[32m  = hint: Unexpected token. Check syntax near this location.[0m
-[2m  |     bool ok = os_mkdir("_test_os_dir")[0m
-[2m  |          [32m^~[0m
-[31m[1merror [35m[E001][0m [2m[28][0m: Expect expression. at 'ok'
-[32m  = hint: Check operator usage or variable names.[0m
-[2m  |     if ok {[0m
-[2m  |        [32m^~[0m
-[31m[1merror [35m[E005][0m [2m[2][0m: Return type syntax changed: use ':' instead of '->'. Example: func name(params): Type { } at ')'
-[32m  = hint: Unexpected token. Check syntax near this location.[0m
-[2m  | func greet(str name) -> str {[0m
-[2m  |                    [32m^[0m
-[31m[1merror [35m[E005][0m [2m[6][0m: Return type syntax changed: use ':' instead of '->'. Example: func name(params): Type { } at ')'
-[32m  = hint: Unexpected token. Check syntax near this location.[0m
-[2m  | func add(int a, int b) -> int {[0m
-[2m  |                      [32m^[0m
-[31m[1merror [35m[E005][0m [2m[10][0m: Return type syntax changed: use ':' instead of '->'. Example: func name(params): Type { } at ')'
-[32m  = hint: Unexpected token. Check syntax near this location.[0m
-[2m  | func twice(int x) -> int {[0m
-[2m  |                 [32m^[0m
-[31m[1merror [35m[E005][0m [2m[143][0m: Expect error variable name. at 'err'
-[32m  = hint: Unexpected token. Check syntax near this location.[0m
-[2m  |     } catch (str err) {[0m
-[2m  |                  [32m^~~[0m
-[31m[1merror [35m[E001][0m [2m[75][0m: Expect expression. at 'option'
-[32m  = hint: Check operator usage or variable names.[0m
-[2m  |     var opt = option(42)[0m
-[2m  |               [32m^~~~~~[0m
-[31m[1merror [35m[E001][0m [2m[76][0m: Expect expression. at 'ok'
-[32m  = hint: Check operator usage or variable names.[0m
-[2m  |     var res_ok = ok("success")[0m
-[2m  |                  [32m^~[0m
-[31m[1merror [35m[E001][0m [2m[77][0m: Expect expression. at 'err'
-[32m  = hint: Check operator usage or variable names.[0m
-[2m  |     var res_err = err("failure")[0m
-[2m  |                   [32m^~~[0m
-[31m[1merror [35m[E005][0m [2m[79][0m: Expect error variable name. at 'err'
-[32m  = hint: Unexpected token. Check syntax near this location.[0m
-[2m  |     } catch (str err) {[0m
-[2m  |                  [32m^~~[0m
-[31m[1merror [35m[E005][0m [2m[110][0m: Expect error variable name. at 'err'
-[32m  = hint: Unexpected token. Check syntax near this location.[0m
-[2m  |     } catch (str err) {[0m
-[2m  |                  [32m^~~[0m
-[31m[1merror [35m[E005][0m [2m[111][0m: Expect error variable name. at 'err'
-[32m  = hint: Unexpected token. Check syntax near this location.[0m
-[2m  |     } catch (str err) {[0m
-[2m  |                  [32m^~~[0m

@@ -139,9 +139,9 @@ static const struct {
     {"base64_encode", "cnext_base64_encode("},
     {"base64_decode", "cnext_base64_decode("},
     /* Crypto */
-    {"md5", "cnext_md5_str("},
-    {"sha1", "cnext_sha1_str("},
-    {"sha256", "cnext_sha256_str("},
+    {"hash_md5", "cnext_hash_md5_str("},
+    {"hash_sha1", "cnext_hash_sha1_str("},
+    {"hash_sha256", "cnext_hash_sha256_str("},
     {"uuid", "cnext_uuid("},
     /* Utility */
     {"debug", "cnext_debug("},
@@ -242,6 +242,475 @@ static void gen_lambda_expr(ASTNode* node) {
         out = saved_out;
         fprintf(out, "(void*)_lambda_%d", lambda_id);
         free_captures(captures);
+    }
+}
+
+static void generate_call_expr(ASTNode* node) {
+    if (node->left->type == AST_SUPER_EXPR) {
+        if (current_parent_class && current_parent_class[0] != '\0') {
+            fprintf(out, "%s_%.*s((%s*)self", current_parent_class,
+                node->left->token.length, node->left->token.start,
+                current_parent_class);
+            for (int i = 0; i < node->child_count; i++) {
+                fprintf(out, ", ");
+                generate_expression(node->children[i]);
+            }
+            fprintf(out, ")");
+        } else {
+            fprintf(out, "/* invalid super call */");
+        }
+    } else if (node->left->type == AST_MEMBER_ACCESS) {
+        if (node->left->type_name && node->left->type_name[0] != '\0') {
+            const char* dispatch_name = node->left->type_name;
+            int dispatch_name_len = (int)strlen(dispatch_name);
+            char mangled_buf[512] = {0};
+            ASTNode* obj = node->left->left;
+
+            bool is_static_method = false;
+            if (obj && obj->type == AST_IDENTIFIER && find_class_decl(program_node, node->left->type_name)) {
+                ASTNode* cdecl = find_class_decl(program_node, node->left->type_name);
+                for (int mi = 0; mi < cdecl->child_count; mi++) {
+                    ASTNode* child = cdecl->children[mi];
+                    if ((child->type == AST_FUNC_DECL) &&
+                        child->token.length == node->left->token.length &&
+                        strncmp(child->token.start, node->left->token.start, node->left->token.length) == 0 &&
+                        child->is_static) {
+                        is_static_method = true;
+                        break;
+                    }
+                }
+            }
+
+            if (obj && obj->type == AST_IDENTIFIER && find_class_decl(program_node, node->left->type_name)) {
+                ASTNode* cdecl = find_class_decl(program_node, node->left->type_name);
+                if (cdecl && cdecl->type_param_count > 0) {
+                    for (int vi = 0; vi < program_node->child_count; vi++) {
+                        ASTNode* prog_child = program_node->children[vi];
+                        if (prog_child->type == AST_MAIN && prog_child->left) {
+                            for (int si = 0; si < prog_child->left->child_count; si++) {
+                                ASTNode* stmt = prog_child->left->children[si];
+                                if (stmt->type == AST_VAR_DECL &&
+                                    stmt->token.length == obj->token.length &&
+                                    strncmp(stmt->token.start, obj->token.start, obj->token.length) == 0 &&
+                                    stmt->init && stmt->init->type == AST_NEW_EXPR &&
+                                    stmt->init->type_arg_count > 0) {
+                                    int blen = stmt->init->token.length < 200 ? stmt->init->token.length : 200;
+                                    strncpy(mangled_buf, stmt->init->token.start, blen);
+                                    mangled_buf[blen] = '\0';
+                                    for (int ai = 0; ai < stmt->init->type_arg_count; ai++) {
+                                        char arg_str[256] = {0};
+                                        ASTNode* arg = stmt->init->type_args[ai];
+                                        snprintf(arg_str, sizeof(arg_str), "_%.*s", arg->token.length, arg->token.start);
+                                        strncat(mangled_buf, arg_str, sizeof(mangled_buf) - strlen(mangled_buf) - 1);
+                                    }
+                                    dispatch_name = mangled_buf;
+                                    dispatch_name_len = (int)strlen(mangled_buf);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            fprintf(out, "%.*s_%.*s(", dispatch_name_len, dispatch_name,
+                node->left->token.length, node->left->token.start);
+            if (is_static_method) {
+                if (node->child_count > 0) {
+                    for (int i = 0; i < node->child_count; i++) {
+                        if (i > 0) fprintf(out, ", ");
+                        generate_expression(node->children[i]);
+                    }
+                }
+            } else {
+                bool is_builtin_ext = (strncmp(node->left->type_name, "str", 3) == 0 ||
+                                       strncmp(node->left->type_name, "int", 3) == 0 ||
+                                       strncmp(node->left->type_name, "float", 5) == 0 ||
+                                       strncmp(node->left->type_name, "bool", 4) == 0 ||
+                                       strncmp(node->left->type_name, "char", 4) == 0);
+                if (!is_builtin_ext && !node->left->is_pointer_access) {
+                    fprintf(out, "&");
+                }
+                generate_expression(node->left->left);
+                if (node->child_count > 0) {
+                    fprintf(out, ", ");
+                    for (int i = 0; i < node->child_count; i++) {
+                        generate_expression(node->children[i]);
+                        if (i < node->child_count - 1) fprintf(out, ", ");
+                    }
+                }
+            }
+            fprintf(out, ")");
+        } else {
+            bool is_prefixed = false;
+            if (node->left->left && node->left->left->type == AST_IDENTIFIER) {
+                static const struct { const char* name; int len; } prefixed[] = {
+                    {"json", 4}, {"math", 4}, {"os", 2}, {"time", 4},
+                    {"regex", 5}, {"crypto", 6}, {"path", 4},
+                    {"process", 7}, {"random", 6}, {NULL, 0}
+                };
+                for (int m = 0; prefixed[m].name; m++) {
+                    if (node->left->left->token.length == prefixed[m].len &&
+                        strncmp(node->left->left->token.start, prefixed[m].name, prefixed[m].len) == 0) {
+                        is_prefixed = true;
+                        fprintf(out, "%s_%.*s(", prefixed[m].name, node->left->token.length, node->left->token.start);
+                        break;
+                    }
+                }
+            }
+            if (!is_prefixed && node->left->left && node->left->left->type == AST_IDENTIFIER) {
+                const char* class_name = lookup_class_var(
+                    node->left->left->token.start, node->left->left->token.length);
+                if (class_name) {
+                    fprintf(out, "%.*s_%.*s(", (int)strlen(class_name), class_name,
+                        node->left->token.length, node->left->token.start);
+                    generate_expression(node->left->left);
+                    if (node->child_count > 0) {
+                        fprintf(out, ", ");
+                        for (int i = 0; i < node->child_count; i++) {
+                            generate_expression(node->children[i]);
+                            if (i < node->child_count - 1) fprintf(out, ", ");
+                        }
+                    }
+                    fprintf(out, ")");
+                    return;
+                }
+            }
+            if (!is_prefixed) {
+                fprintf(out, "%.*s(", node->left->token.length, node->left->token.start);
+            }
+            for (int i = 0; i < node->child_count; i++) {
+                generate_expression(node->children[i]);
+                if (i < node->child_count - 1) fprintf(out, ", ");
+            }
+            fprintf(out, ")");
+        }
+    } else if (node->left->type == AST_SAFE_ACCESS) {
+        const char* zero_val = "NULL";
+        bool got_zero = false;
+        if (node->type_name) {
+            if (strncmp(node->type_name, "str", 3) == 0 && node->type_name[3] == '\0')
+                { zero_val = "(CnextString){NULL, 0}"; got_zero = true; }
+            else if (strncmp(node->type_name, "int", 3) == 0 && node->type_name[3] == '\0')
+                { zero_val = "0"; got_zero = true; }
+            else if (strncmp(node->type_name, "float", 5) == 0 && node->type_name[5] == '\0')
+                { zero_val = "0.0f"; got_zero = true; }
+            else if (strncmp(node->type_name, "bool", 4) == 0 && node->type_name[4] == '\0')
+                { zero_val = "0"; got_zero = true; }
+        }
+        if (!got_zero && node->expr_type != TOKEN_EOF) {
+            const char* zt = type_token_to_c(node->expr_type);
+            if (node->expr_type == TOKEN_STR_TYPE) zero_val = "(CnextString){NULL, 0}";
+            else if (zt) zero_val = "0";
+            else zero_val = "0";
+        }
+        const char* class_type = NULL;
+        if (node->left->left && node->left->left->type_name) {
+            class_type = node->left->left->type_name;
+        }
+        fprintf(out, "(((");
+        generate_expression(node->left->left);
+        fprintf(out, ") != NULL) ? (");
+        if (class_type && class_type[0] != '\0') {
+            fprintf(out, "%s_%.*s(", class_type,
+                node->left->token.length, node->left->token.start);
+            generate_expression(node->left->left);
+            for (int i = 0; i < node->child_count; i++) {
+                fprintf(out, ", ");
+                generate_expression(node->children[i]);
+            }
+            fprintf(out, ")");
+        }
+        fprintf(out, ") : (%s))", zero_val);
+    } else {
+        bool is_printin = (node->left->token.length == 7 && strncmp(node->left->token.start, "printin", 7) == 0);
+        bool is_print = (node->left->token.length == 5 && strncmp(node->left->token.start, "print", 5) == 0);
+        bool is_input = (node->left->token.length == 5 && strncmp(node->left->token.start, "input", 5) == 0);
+        bool is_free = (node->left->token.length == 4 && strncmp(node->left->token.start, "free", 4) == 0);
+        bool is_len = (node->left->token.length == 3 && strncmp(node->left->token.start, "len", 3) == 0);
+        bool is_is_null = (node->left->token.length == 7 && strncmp(node->left->token.start, "is_null", 7) == 0);
+        bool is_split = (node->left->token.length == 5 && strncmp(node->left->token.start, "split", 5) == 0);
+        bool is_join = (node->left->token.length == 4 && strncmp(node->left->token.start, "join", 4) == 0);
+        bool is_unwrap = (node->left->token.length == 6 && strncmp(node->left->token.start, "unwrap", 6) == 0);
+        bool is_expect = (node->left->token.length == 6 && strncmp(node->left->token.start, "expect", 6) == 0);
+        bool is_str_to_int = (node->left->token.length == 10 && strncmp(node->left->token.start, "str_to_int", 10) == 0);
+        bool is_str_to_float = (node->left->token.length == 12 && strncmp(node->left->token.start, "str_to_float", 12) == 0);
+        bool is_panic = (node->left->token.length == 5 && strncmp(node->left->token.start, "panic", 5) == 0);
+        bool is_exit = (node->left->token.length == 4 && strncmp(node->left->token.start, "exit", 4) == 0);
+        bool is_assert = (node->left->token.length == 6 && strncmp(node->left->token.start, "assert", 6) == 0);
+        bool is_typeof = (node->left->token.length == 6 && strncmp(node->left->token.start, "typeof", 6) == 0);
+
+        if (is_printin) {
+            if (node->child_count > 1) {
+                for (int pi = 0; pi < node->child_count - 1; pi++) {
+                    fprintf(out, "print_raw(");
+                    generate_expression(node->children[pi]);
+                    fprintf(out, "); ");
+                }
+                fprintf(out, "printin(");
+                generate_expression(node->children[node->child_count - 1]);
+                fprintf(out, ")");
+            } else {
+                fprintf(out, "printin(");
+                if (node->child_count > 0) generate_expression(node->children[0]);
+                fprintf(out, ")");
+            }
+        } else if (is_print) {
+            if (node->child_count > 1) {
+                for (int pi = 0; pi < node->child_count; pi++) {
+                    fprintf(out, "print_raw(");
+                    generate_expression(node->children[pi]);
+                    fprintf(out, ")");
+                    if (pi < node->child_count - 1) fprintf(out, "; ");
+                }
+            } else {
+                fprintf(out, "print_raw(");
+                if (node->child_count > 0) generate_expression(node->children[0]);
+                fprintf(out, ")");
+            }
+        } else if (is_input) {
+            fprintf(out, "cnext_input(");
+            if (node->child_count > 0) generate_expression(node->children[0]);
+            fprintf(out, ")");
+        } else if (is_free) {
+            fprintf(out, "cnext_free(");
+            if (node->child_count > 0) generate_expression(node->children[0]);
+            fprintf(out, ")");
+        } else if (is_len) {
+            fprintf(out, "(int)(");
+            if (node->child_count > 0) generate_expression(node->children[0]);
+            fprintf(out, ".length)");
+        } else if (is_is_null) {
+            if (node->child_count > 0) {
+                ASTNode* arg = node->children[0];
+                bool is_str = (arg->type_name && strncmp(arg->type_name, "str", 3) == 0) ||
+                              (arg->type == AST_LITERAL && arg->token.type == TOKEN_STRING_LITERAL) ||
+                              (arg->expr_type == TOKEN_STR_TYPE);
+                if (is_str) {
+                    fprintf(out, "cnext_is_null_str(");
+                    generate_expression(arg);
+                    fprintf(out, ")");
+                } else {
+                    fprintf(out, "cnext_is_null_ptr((void*)(");
+                    generate_expression(arg);
+                    fprintf(out, "))");
+                }
+            } else {
+                fprintf(out, "true");
+            }
+        } else if (is_split) {
+            fprintf(out, "cnext_str_split(");
+            if (node->child_count > 0) generate_expression(node->children[0]);
+            if (node->child_count > 1) { fprintf(out, ", "); generate_expression(node->children[1]); }
+            fprintf(out, ")");
+        } else if (is_join) {
+            fprintf(out, "cnext_str_join(");
+            if (node->child_count > 0) generate_expression(node->children[0]);
+            if (node->child_count > 1) { fprintf(out, ", "); generate_expression(node->children[1]); }
+            fprintf(out, ")");
+        } else if (is_unwrap) {
+            fprintf(out, "cnext_unwrap_str(");
+            if (node->child_count > 0) generate_expression(node->children[0]);
+            fprintf(out, ", \"unwrap failed: value is null\")");
+        } else if (is_expect) {
+            fprintf(out, "cnext_expect_str(");
+            if (node->child_count > 0) generate_expression(node->children[0]);
+            fprintf(out, ", ");
+            if (node->child_count > 1) generate_expression(node->children[1]);
+            else fprintf(out, "\"expect failed: value is null\"");
+            fprintf(out, ")");
+        } else if (is_str_to_int) {
+            fprintf(out, "cnext_str_to_int(");
+            if (node->child_count > 0) generate_expression(node->children[0]);
+            fprintf(out, ")");
+        } else if (is_str_to_float) {
+            fprintf(out, "cnext_str_parse_float(");
+            if (node->child_count > 0) generate_expression(node->children[0]);
+            fprintf(out, ")");
+        } else if (is_panic) {
+            fprintf(out, "cnext_panic(");
+            if (node->child_count > 0) generate_expression(node->children[0]);
+            else fprintf(out, "(CnextString){(char*)\"panic\", 5}");
+            fprintf(out, ")");
+        } else if (is_exit) {
+            fprintf(out, "cnext_exit_fn(");
+            if (node->child_count > 0) generate_expression(node->children[0]);
+            else fprintf(out, "0");
+            fprintf(out, ")");
+        } else if (is_assert) {
+            fprintf(out, "cnext_assert_fn(");
+            if (node->child_count > 0) generate_expression(node->children[0]);
+            fprintf(out, ", ");
+            if (node->child_count > 1) generate_expression(node->children[1]);
+            else fprintf(out, "(CnextString){(char*)\"assertion failed\", 16}");
+            fprintf(out, ")");
+        } else if (is_typeof) {
+            fprintf(out, "cnext_typeof(");
+            if (node->child_count > 0) generate_expression(node->children[0]);
+            fprintf(out, ")");
+        } else {
+            bool found_builtin = false;
+            if (node->left && node->left->type == AST_IDENTIFIER) {
+                for (int b = 0; builtin_dispatch[b].name; b++) {
+                    if (node->left->token.length == (int)strlen(builtin_dispatch[b].name) &&
+                        strncmp(node->left->token.start, builtin_dispatch[b].name, node->left->token.length) == 0) {
+                        fprintf(out, "%s", builtin_dispatch[b].c_emit);
+                        for (int i = 0; i < node->child_count; i++) {
+                            generate_expression(node->children[i]);
+                            if (i < node->child_count - 1) fprintf(out, ", ");
+                        }
+                        fprintf(out, ")");
+                        found_builtin = true;
+                        break;
+                    }
+                }
+            }
+            if (!found_builtin && node->left && node->left->type == AST_IDENTIFIER && node->left->type_arg_count > 0) {
+                char fname[256];
+                int flen = node->left->token.length < 255 ? node->left->token.length : 255;
+                strncpy(fname, node->left->token.start, flen);
+                fname[flen] = '\0';
+                ASTNode* fdecl = find_func_decl(program_node, fname);
+                if (fdecl && fdecl->type_param_count > 0) {
+                    enqueue_spec_work(fdecl, node->left);
+                }
+                char* mangled = mangle_generic_name(node->left);
+                fprintf(out, "%s(", mangled);
+                free(mangled);
+            } else if (!found_builtin && node->left && node->left->type == AST_IDENTIFIER) {
+                char fname[256];
+                int flen = node->left->token.length < 255 ? node->left->token.length : 255;
+                strncpy(fname, node->left->token.start, flen);
+                fname[flen] = '\0';
+                ClosureVar* clvar = find_closure_var(fname);
+                if (clvar) {
+                    ASTNode* lambda = clvar->lambda_node;
+                    fprintf(out, "((");
+                    if (lambda->left->type != AST_BLOCK) {
+                        const char* ct = type_token_to_c(lambda->left->expr_type);
+                        fprintf(out, "%s", ct ? ct : "void");
+                    } else {
+                        for (int ri = 0; ri < lambda->left->child_count; ri++) {
+                            if (lambda->left->children[ri]->type == AST_RETURN &&
+                                lambda->left->children[ri]->left) {
+                                const char* ct = type_token_to_c(lambda->left->children[ri]->left->expr_type);
+                                fprintf(out, "%s", ct ? ct : "void");
+                                break;
+                            }
+                        }
+                    }
+                    fprintf(out, "(*)(");
+                    fprintf(out, "void*");
+                    for (int pi = 0; pi < lambda->child_count; pi++) {
+                        fprintf(out, ", ");
+                        generate_type(lambda->children[pi]->var_type, false);
+                    }
+                    fprintf(out, "))");
+                    fprintf(out, "%s.fn)(%s.env", fname, fname);
+                    for (int ai = 0; ai < node->child_count; ai++) {
+                        fprintf(out, ", ");
+                        generate_expression(node->children[ai]);
+                    }
+                    fprintf(out, ")");
+                    return;
+                }
+                if (is_func_param(fname, flen) || is_func_typed_var(fname, flen)) {
+                    fprintf(out, "((int(*)(void*, int))((CnextClosure)%s).fn)(((CnextClosure)%s).env", fname, fname);
+                    for (int ai = 0; ai < node->child_count; ai++) {
+                        fprintf(out, ", ");
+                        generate_expression(node->children[ai]);
+                    }
+                    fprintf(out, ")");
+                    return;
+                }
+                ASTNode* fdecl = find_func_decl(program_node, fname);
+                if (fdecl && fdecl->type_param_count > 0 && node->left->type_arg_count == 0) {
+                    infer_generic_type_args(node, fdecl);
+                }
+                if (node->left->type_arg_count > 0) {
+                    enqueue_spec_work(fdecl, node->left);
+                    char* mangled = mangle_generic_name(node->left);
+                    fprintf(out, "%s(", mangled);
+                    free(mangled);
+                } else if (!found_builtin) {
+                    fprintf(out, "%.*s(", node->left->token.length, node->left->token.start);
+                }
+            } else if (!found_builtin) {
+                fprintf(out, "%.*s(", node->left->token.length, node->left->token.start);
+            }
+
+            if (found_builtin) return;
+
+            ASTNode* func_decl = NULL;
+            if (node->left && node->left->type == AST_IDENTIFIER) {
+                char fname[256];
+                int flen = node->left->token.length < 255 ? node->left->token.length : 255;
+                strncpy(fname, node->left->token.start, flen);
+                fname[flen] = '\0';
+                func_decl = find_func_decl(program_node, fname);
+            }
+
+            bool first_arg = true;
+            if (func_decl && func_decl->type == AST_FUNC_DECL) {
+                bool* provided = (bool*)checked_calloc(func_decl->child_count, sizeof(bool));
+                ASTNode** named_args = (ASTNode**)checked_calloc(node->child_count, sizeof(ASTNode*));
+                int named_count = 0;
+
+                for (int i = 0; i < node->child_count; i++) {
+                    if (node->children[i]->type == AST_NAMED_ARG) {
+                        named_args[named_count++] = node->children[i];
+                    }
+                }
+
+                int pos_idx = 0;
+                for (int i = 0; i < node->child_count; i++) {
+                    if (node->children[i]->type == AST_NAMED_ARG) continue;
+                    if (!first_arg) fprintf(out, ", ");
+                    generate_expression(node->children[i]);
+                    first_arg = false;
+                    if (pos_idx < func_decl->child_count) {
+                        provided[pos_idx] = true;
+                    }
+                    pos_idx++;
+                }
+
+                for (int i = 0; i < func_decl->child_count; i++) {
+                    if (provided[i]) continue;
+
+                    bool found_named = false;
+                    for (int j = 0; j < named_count; j++) {
+                        if (named_args[j]->named_arg_name.length == func_decl->children[i]->token.length &&
+                            strncmp(named_args[j]->named_arg_name.start, func_decl->children[i]->token.start,
+                                   func_decl->children[i]->token.length) == 0) {
+                            if (!first_arg) fprintf(out, ", ");
+                            generate_expression(named_args[j]->right);
+                            first_arg = false;
+                            found_named = true;
+                            break;
+                        }
+                    }
+
+                    if (!found_named && func_decl->children[i]->default_value) {
+                        if (!first_arg) fprintf(out, ", ");
+                        generate_expression(func_decl->children[i]->default_value);
+                        first_arg = false;
+                    }
+                }
+
+                free(provided);
+                free(named_args);
+            } else {
+                for (int i = 0; i < node->child_count; i++) {
+                    if (!first_arg) fprintf(out, ", ");
+                    if (node->children[i]->type == AST_NAMED_ARG) {
+                        generate_expression(node->children[i]->right);
+                    } else {
+                        generate_expression(node->children[i]);
+                    }
+                    first_arg = false;
+                }
+            }
+            fprintf(out, ")");
+        }
     }
 }
 
@@ -378,480 +847,9 @@ void generate_expression(ASTNode* node) {
             generate_expression(node->left);
             fprintf(out, "%.*s", node->token.length, node->token.start);
             break;
-        case AST_CALL: {
-            if (node->left->type == AST_SUPER_EXPR) {
-                if (current_parent_class && current_parent_class[0] != '\0') {
-                    fprintf(out, "%s_%.*s((%s*)self", current_parent_class,
-                        node->left->token.length, node->left->token.start,
-                        current_parent_class);
-                    for (int i = 0; i < node->child_count; i++) {
-                        fprintf(out, ", ");
-                        generate_expression(node->children[i]);
-                    }
-                    fprintf(out, ")");
-                } else {
-                    fprintf(out, "/* invalid super call */");
-                }
-            } else if (node->left->type == AST_MEMBER_ACCESS) {
-                if (node->left->type_name && node->left->type_name[0] != '\0') {
-                    const char* dispatch_name = node->left->type_name;
-                    int dispatch_name_len = (int)strlen(dispatch_name);
-                    char mangled_buf[512] = {0};
-                    ASTNode* obj = node->left->left;
-
-                    // Check if this is a static method call
-                    bool is_static_method = false;
-                    if (obj && obj->type == AST_IDENTIFIER && find_class_decl(program_node, node->left->type_name)) {
-                        ASTNode* cdecl = find_class_decl(program_node, node->left->type_name);
-                        for (int mi = 0; mi < cdecl->child_count; mi++) {
-                            ASTNode* child = cdecl->children[mi];
-                            if ((child->type == AST_FUNC_DECL) &&
-                                child->token.length == node->left->token.length &&
-                                strncmp(child->token.start, node->left->token.start, node->left->token.length) == 0 &&
-                                child->is_static) {
-                                is_static_method = true;
-                                break;
-                            }
-                        }
-                    }
-
-                    if (obj && obj->type == AST_IDENTIFIER && find_class_decl(program_node, node->left->type_name)) {
-                        ASTNode* cdecl = find_class_decl(program_node, node->left->type_name);
-                        if (cdecl && cdecl->type_param_count > 0) {
-                            for (int vi = 0; vi < program_node->child_count; vi++) {
-                                ASTNode* prog_child = program_node->children[vi];
-                                if (prog_child->type == AST_MAIN && prog_child->left) {
-                                    for (int si = 0; si < prog_child->left->child_count; si++) {
-                                        ASTNode* stmt = prog_child->left->children[si];
-                                        if (stmt->type == AST_VAR_DECL &&
-                                            stmt->token.length == obj->token.length &&
-                                            strncmp(stmt->token.start, obj->token.start, obj->token.length) == 0 &&
-                                            stmt->init && stmt->init->type == AST_NEW_EXPR &&
-                                            stmt->init->type_arg_count > 0) {
-                                            int blen = stmt->init->token.length < 200 ? stmt->init->token.length : 200;
-                                            strncpy(mangled_buf, stmt->init->token.start, blen);
-                                            mangled_buf[blen] = '\0';
-                                            for (int ai = 0; ai < stmt->init->type_arg_count; ai++) {
-                                                char arg_str[256] = {0};
-                                                ASTNode* arg = stmt->init->type_args[ai];
-                                                snprintf(arg_str, sizeof(arg_str), "_%.*s", arg->token.length, arg->token.start);
-                                                strncat(mangled_buf, arg_str, sizeof(mangled_buf) - strlen(mangled_buf) - 1);
-                                            }
-                                            dispatch_name = mangled_buf;
-                                            dispatch_name_len = (int)strlen(mangled_buf);
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    fprintf(out, "%.*s_%.*s(", dispatch_name_len, dispatch_name,
-                        node->left->token.length, node->left->token.start);
-                    if (is_static_method) {
-                        // Static methods: no self argument, just pass regular args
-                        if (node->child_count > 0) {
-                            for (int i = 0; i < node->child_count; i++) {
-                                if (i > 0) fprintf(out, ", ");
-                                generate_expression(node->children[i]);
-                            }
-                        }
-                    } else {
-                        bool is_builtin_ext = (strncmp(node->left->type_name, "str", 3) == 0 ||
-                                               strncmp(node->left->type_name, "int", 3) == 0 ||
-                                               strncmp(node->left->type_name, "float", 5) == 0 ||
-                                               strncmp(node->left->type_name, "bool", 4) == 0 ||
-                                               strncmp(node->left->type_name, "char", 4) == 0);
-                        if (!is_builtin_ext && !node->left->is_pointer_access) {
-                            fprintf(out, "&");
-                        }
-                        generate_expression(node->left->left);
-                        if (node->child_count > 0) {
-                            fprintf(out, ", ");
-                            for (int i = 0; i < node->child_count; i++) {
-                                generate_expression(node->children[i]);
-                                if (i < node->child_count - 1) fprintf(out, ", ");
-                            }
-                        }
-                    }
-                    fprintf(out, ")");
-                } else {
-                    bool is_prefixed = false;
-                    if (node->left->left && node->left->left->type == AST_IDENTIFIER) {
-                        static const struct { const char* name; int len; } prefixed[] = {
-                            {"json", 4}, {"math", 4}, {"os", 2}, {"time", 4},
-                            {"regex", 5}, {"crypto", 6}, {"path", 4},
-                            {"process", 7}, {"random", 6}, {NULL, 0}
-                        };
-                        for (int m = 0; prefixed[m].name; m++) {
-                            if (node->left->left->token.length == prefixed[m].len &&
-                                strncmp(node->left->left->token.start, prefixed[m].name, prefixed[m].len) == 0) {
-                                is_prefixed = true;
-                                fprintf(out, "%s_%.*s(", prefixed[m].name, node->left->token.length, node->left->token.start);
-                                break;
-                            }
-                        }
-                    }
-                    if (!is_prefixed && node->left->left && node->left->left->type == AST_IDENTIFIER) {
-                        const char* class_name = lookup_class_var(
-                            node->left->left->token.start, node->left->left->token.length);
-                        if (class_name) {
-                            fprintf(out, "%.*s_%.*s(", (int)strlen(class_name), class_name,
-                                node->left->token.length, node->left->token.start);
-                            generate_expression(node->left->left);
-                            if (node->child_count > 0) {
-                                fprintf(out, ", ");
-                                for (int i = 0; i < node->child_count; i++) {
-                                    generate_expression(node->children[i]);
-                                    if (i < node->child_count - 1) fprintf(out, ", ");
-                                }
-                            }
-                            fprintf(out, ")");
-                            break;
-                        }
-                    }
-                    if (!is_prefixed) {
-                        fprintf(out, "%.*s(", node->left->token.length, node->left->token.start);
-                    }
-                    for (int i = 0; i < node->child_count; i++) {
-                        generate_expression(node->children[i]);
-                        if (i < node->child_count - 1) fprintf(out, ", ");
-                    }
-                    fprintf(out, ")");
-                }
-            } else if (node->left->type == AST_SAFE_ACCESS) {
-                const char* zero_val = "NULL";
-                bool got_zero = false;
-                if (node->type_name) {
-                    if (strncmp(node->type_name, "str", 3) == 0 && node->type_name[3] == '\0')
-                        { zero_val = "(CnextString){NULL, 0}"; got_zero = true; }
-                    else if (strncmp(node->type_name, "int", 3) == 0 && node->type_name[3] == '\0')
-                        { zero_val = "0"; got_zero = true; }
-                    else if (strncmp(node->type_name, "float", 5) == 0 && node->type_name[5] == '\0')
-                        { zero_val = "0.0f"; got_zero = true; }
-                    else if (strncmp(node->type_name, "bool", 4) == 0 && node->type_name[4] == '\0')
-                        { zero_val = "0"; got_zero = true; }
-                }
-                if (!got_zero && node->expr_type != TOKEN_EOF) {
-                    const char* zt = type_token_to_c(node->expr_type);
-                    if (node->expr_type == TOKEN_STR_TYPE) zero_val = "(CnextString){NULL, 0}";
-                    else if (zt) zero_val = "0";
-                    else zero_val = "0";
-                }
-                const char* class_type = NULL;
-                if (node->left->left && node->left->left->type_name) {
-                    class_type = node->left->left->type_name;
-                }
-                fprintf(out, "(((");
-                generate_expression(node->left->left);
-                fprintf(out, ") != NULL) ? (");
-                if (class_type && class_type[0] != '\0') {
-                    fprintf(out, "%s_%.*s(", class_type,
-                        node->left->token.length, node->left->token.start);
-                    generate_expression(node->left->left);
-                    for (int i = 0; i < node->child_count; i++) {
-                        fprintf(out, ", ");
-                        generate_expression(node->children[i]);
-                    }
-                    fprintf(out, ")");
-                }
-                fprintf(out, ") : (%s))", zero_val);
-            } else {
-                bool is_printin = (node->left->token.length == 7 && strncmp(node->left->token.start, "printin", 7) == 0);
-                bool is_print = (node->left->token.length == 5 && strncmp(node->left->token.start, "print", 5) == 0);
-                bool is_input = (node->left->token.length == 5 && strncmp(node->left->token.start, "input", 5) == 0);
-                bool is_free = (node->left->token.length == 4 && strncmp(node->left->token.start, "free", 4) == 0);
-                bool is_len = (node->left->token.length == 3 && strncmp(node->left->token.start, "len", 3) == 0);
-                bool is_is_null = (node->left->token.length == 7 && strncmp(node->left->token.start, "is_null", 7) == 0);
-                bool is_split = (node->left->token.length == 5 && strncmp(node->left->token.start, "split", 5) == 0);
-                bool is_join = (node->left->token.length == 4 && strncmp(node->left->token.start, "join", 4) == 0);
-                bool is_unwrap = (node->left->token.length == 6 && strncmp(node->left->token.start, "unwrap", 6) == 0);
-                bool is_expect = (node->left->token.length == 6 && strncmp(node->left->token.start, "expect", 6) == 0);
-                bool is_str_to_int = (node->left->token.length == 10 && strncmp(node->left->token.start, "str_to_int", 10) == 0);
-                bool is_str_to_float = (node->left->token.length == 12 && strncmp(node->left->token.start, "str_to_float", 12) == 0);
-                bool is_panic = (node->left->token.length == 5 && strncmp(node->left->token.start, "panic", 5) == 0);
-                bool is_exit = (node->left->token.length == 4 && strncmp(node->left->token.start, "exit", 4) == 0);
-                bool is_assert = (node->left->token.length == 6 && strncmp(node->left->token.start, "assert", 6) == 0);
-                bool is_typeof = (node->left->token.length == 6 && strncmp(node->left->token.start, "typeof", 6) == 0);
-
-                if (is_printin) {
-                    if (node->child_count > 1) {
-                        for (int pi = 0; pi < node->child_count - 1; pi++) {
-                            fprintf(out, "print_raw(");
-                            generate_expression(node->children[pi]);
-                            fprintf(out, "); ");
-                        }
-                        fprintf(out, "printin(");
-                        generate_expression(node->children[node->child_count - 1]);
-                        fprintf(out, ")");
-                    } else {
-                        fprintf(out, "printin(");
-                        if (node->child_count > 0) generate_expression(node->children[0]);
-                        fprintf(out, ")");
-                    }
-                } else if (is_print) {
-                    if (node->child_count > 1) {
-                        for (int pi = 0; pi < node->child_count; pi++) {
-                            fprintf(out, "print_raw(");
-                            generate_expression(node->children[pi]);
-                            fprintf(out, ")");
-                            if (pi < node->child_count - 1) fprintf(out, "; ");
-                        }
-                    } else {
-                        fprintf(out, "print_raw(");
-                        if (node->child_count > 0) generate_expression(node->children[0]);
-                        fprintf(out, ")");
-                    }
-                } else if (is_input) {
-                    fprintf(out, "cnext_input(");
-                    if (node->child_count > 0) generate_expression(node->children[0]);
-                    fprintf(out, ")");
-                } else if (is_free) {
-                    fprintf(out, "cnext_free(");
-                    if (node->child_count > 0) generate_expression(node->children[0]);
-                    fprintf(out, ")");
-                } else if (is_len) {
-                    fprintf(out, "(int)(");
-                    if (node->child_count > 0) generate_expression(node->children[0]);
-                    fprintf(out, ".length)");
-                } else if (is_is_null) {
-                    if (node->child_count > 0) {
-                        ASTNode* arg = node->children[0];
-                        bool is_str = (arg->type_name && strncmp(arg->type_name, "str", 3) == 0) ||
-                                      (arg->type == AST_LITERAL && arg->token.type == TOKEN_STRING_LITERAL) ||
-                                      (arg->expr_type == TOKEN_STR_TYPE);
-                        if (is_str) {
-                            fprintf(out, "cnext_is_null_str(");
-                            generate_expression(arg);
-                            fprintf(out, ")");
-                        } else {
-                            fprintf(out, "cnext_is_null_ptr((void*)(");
-                            generate_expression(arg);
-                            fprintf(out, "))");
-                        }
-                    } else {
-                        fprintf(out, "true");
-                    }
-                } else if (is_split) {
-                    fprintf(out, "cnext_str_split(");
-                    if (node->child_count > 0) generate_expression(node->children[0]);
-                    if (node->child_count > 1) { fprintf(out, ", "); generate_expression(node->children[1]); }
-                    fprintf(out, ")");
-                } else if (is_join) {
-                    fprintf(out, "cnext_str_join(");
-                    if (node->child_count > 0) generate_expression(node->children[0]);
-                    if (node->child_count > 1) { fprintf(out, ", "); generate_expression(node->children[1]); }
-                    fprintf(out, ")");
-                } else if (is_unwrap) {
-                    fprintf(out, "cnext_unwrap_str(");
-                    if (node->child_count > 0) generate_expression(node->children[0]);
-                    fprintf(out, ", \"unwrap failed: value is null\")");
-                } else if (is_expect) {
-                    fprintf(out, "cnext_expect_str(");
-                    if (node->child_count > 0) generate_expression(node->children[0]);
-                    fprintf(out, ", ");
-                    if (node->child_count > 1) generate_expression(node->children[1]);
-                    else fprintf(out, "\"expect failed: value is null\"");
-                    fprintf(out, ")");
-                } else if (is_str_to_int) {
-                    fprintf(out, "cnext_str_to_int(");
-                    if (node->child_count > 0) generate_expression(node->children[0]);
-                    fprintf(out, ")");
-                } else if (is_str_to_float) {
-                    fprintf(out, "cnext_str_parse_float(");
-                    if (node->child_count > 0) generate_expression(node->children[0]);
-                    fprintf(out, ")");
-                } else if (is_panic) {
-                    fprintf(out, "cnext_panic(");
-                    if (node->child_count > 0) generate_expression(node->children[0]);
-                    else fprintf(out, "(CnextString){(char*)\"panic\", 5}");
-                    fprintf(out, ")");
-                } else if (is_exit) {
-                    fprintf(out, "cnext_exit_fn(");
-                    if (node->child_count > 0) generate_expression(node->children[0]);
-                    else fprintf(out, "0");
-                    fprintf(out, ")");
-                } else if (is_assert) {
-                    fprintf(out, "cnext_assert_fn(");
-                    if (node->child_count > 0) generate_expression(node->children[0]);
-                    fprintf(out, ", ");
-                    if (node->child_count > 1) generate_expression(node->children[1]);
-                    else fprintf(out, "(CnextString){(char*)\"assertion failed\", 16}");
-                    fprintf(out, ")");
-                } else if (is_typeof) {
-                    fprintf(out, "cnext_typeof(");
-                    if (node->child_count > 0) generate_expression(node->children[0]);
-                    fprintf(out, ")");
-                } else {
-                    /* Table-driven dispatch for all other built-in functions */
-                    bool found_builtin = false;
-                    if (node->left && node->left->type == AST_IDENTIFIER) {
-                        for (int b = 0; builtin_dispatch[b].name; b++) {
-                            if (node->left->token.length == (int)strlen(builtin_dispatch[b].name) &&
-                                strncmp(node->left->token.start, builtin_dispatch[b].name, node->left->token.length) == 0) {
-                                fprintf(out, "%s", builtin_dispatch[b].c_emit);
-                                for (int i = 0; i < node->child_count; i++) {
-                                    generate_expression(node->children[i]);
-                                    if (i < node->child_count - 1) fprintf(out, ", ");
-                                }
-                                fprintf(out, ")");
-                                found_builtin = true;
-                                break;
-                            }
-                        }
-                    }
-                    if (!found_builtin && node->left && node->left->type == AST_IDENTIFIER && node->left->type_arg_count > 0) {
-                        char fname[256];
-                        int flen = node->left->token.length < 255 ? node->left->token.length : 255;
-                        strncpy(fname, node->left->token.start, flen);
-                        fname[flen] = '\0';
-                        ASTNode* fdecl = find_func_decl(program_node, fname);
-                        if (fdecl && fdecl->type_param_count > 0) {
-                            enqueue_spec_work(fdecl, node->left);
-                        }
-                        char* mangled = mangle_generic_name(node->left);
-                        fprintf(out, "%s(", mangled);
-                        free(mangled);
-                    } else if (!found_builtin && node->left && node->left->type == AST_IDENTIFIER) {
-                        char fname[256];
-                        int flen = node->left->token.length < 255 ? node->left->token.length : 255;
-                        strncpy(fname, node->left->token.start, flen);
-                        fname[flen] = '\0';
-                        ClosureVar* clvar = find_closure_var(fname);
-                        if (clvar) {
-                            ASTNode* lambda = clvar->lambda_node;
-                            fprintf(out, "((");
-                            if (lambda->left->type != AST_BLOCK) {
-                                const char* ct = type_token_to_c(lambda->left->expr_type);
-                                fprintf(out, "%s", ct ? ct : "void");
-                            } else {
-                                for (int ri = 0; ri < lambda->left->child_count; ri++) {
-                                    if (lambda->left->children[ri]->type == AST_RETURN &&
-                                        lambda->left->children[ri]->left) {
-                                        const char* ct = type_token_to_c(lambda->left->children[ri]->left->expr_type);
-                                        fprintf(out, "%s", ct ? ct : "void");
-                                        break;
-                                    }
-                                }
-                            }
-                            fprintf(out, "(*)(");
-                            fprintf(out, "void*");
-                            for (int pi = 0; pi < lambda->child_count; pi++) {
-                                fprintf(out, ", ");
-                                generate_type(lambda->children[pi]->var_type, false);
-                            }
-                            fprintf(out, "))");
-                            fprintf(out, "%s.fn)(%s.env", fname, fname);
-                            for (int ai = 0; ai < node->child_count; ai++) {
-                                fprintf(out, ", ");
-                                generate_expression(node->children[ai]);
-                            }
-                            fprintf(out, ")");
-                            goto call_done;
-                        }
-                        if (is_func_param(fname, flen) || is_func_typed_var(fname, flen)) {
-                            fprintf(out, "((int(*)(void*, int))((CnextClosure)%s).fn)(((CnextClosure)%s).env", fname, fname);
-                            for (int ai = 0; ai < node->child_count; ai++) {
-                                fprintf(out, ", ");
-                                generate_expression(node->children[ai]);
-                            }
-                            fprintf(out, ")");
-                            goto call_done;
-                        }
-                        ASTNode* fdecl = find_func_decl(program_node, fname);
-                        if (fdecl && fdecl->type_param_count > 0 && node->left->type_arg_count == 0) {
-                            infer_generic_type_args(node, fdecl);
-                        }
-                        if (node->left->type_arg_count > 0) {
-                            enqueue_spec_work(fdecl, node->left);
-                            char* mangled = mangle_generic_name(node->left);
-                            fprintf(out, "%s(", mangled);
-                            free(mangled);
-                        } else if (!found_builtin) {
-                            fprintf(out, "%.*s(", node->left->token.length, node->left->token.start);
-                        }
-                    } else if (!found_builtin) {
-                        fprintf(out, "%.*s(", node->left->token.length, node->left->token.start);
-                    }
-
-                    /* Skip argument handling for table-dispatched builtins (args already emitted) */
-                    if (found_builtin) goto call_done;
-
-                    ASTNode* func_decl = NULL;
-                    if (node->left && node->left->type == AST_IDENTIFIER) {
-                        char fname[256];
-                        int flen = node->left->token.length < 255 ? node->left->token.length : 255;
-                        strncpy(fname, node->left->token.start, flen);
-                        fname[flen] = '\0';
-                        func_decl = find_func_decl(program_node, fname);
-                    }
-                    
-                    bool first_arg = true;
-                    if (func_decl && func_decl->type == AST_FUNC_DECL) {
-                        bool* provided = (bool*)checked_calloc(func_decl->child_count, sizeof(bool));
-                        ASTNode** named_args = (ASTNode**)checked_calloc(node->child_count, sizeof(ASTNode*));
-                        int named_count = 0;
-                        
-                        for (int i = 0; i < node->child_count; i++) {
-                            if (node->children[i]->type == AST_NAMED_ARG) {
-                                named_args[named_count++] = node->children[i];
-                            }
-                        }
-                        
-                        int pos_idx = 0;
-                        for (int i = 0; i < node->child_count; i++) {
-                            if (node->children[i]->type == AST_NAMED_ARG) continue;
-                            if (!first_arg) fprintf(out, ", ");
-                            generate_expression(node->children[i]);
-                            first_arg = false;
-                            if (pos_idx < func_decl->child_count) {
-                                provided[pos_idx] = true;
-                            }
-                            pos_idx++;
-                        }
-                        
-                        for (int i = 0; i < func_decl->child_count; i++) {
-                            if (provided[i]) continue;
-                            
-                            bool found_named = false;
-                            for (int j = 0; j < named_count; j++) {
-                                if (named_args[j]->named_arg_name.length == func_decl->children[i]->token.length &&
-                                    strncmp(named_args[j]->named_arg_name.start, func_decl->children[i]->token.start, 
-                                           func_decl->children[i]->token.length) == 0) {
-                                    if (!first_arg) fprintf(out, ", ");
-                                    generate_expression(named_args[j]->right);
-                                    first_arg = false;
-                                    found_named = true;
-                                    break;
-                                }
-                            }
-                            
-                            if (!found_named && func_decl->children[i]->default_value) {
-                                if (!first_arg) fprintf(out, ", ");
-                                generate_expression(func_decl->children[i]->default_value);
-                                first_arg = false;
-                            }
-                        }
-                        
-                        free(provided);
-                        free(named_args);
-                    } else {
-                        for (int i = 0; i < node->child_count; i++) {
-                            if (!first_arg) fprintf(out, ", ");
-                            if (node->children[i]->type == AST_NAMED_ARG) {
-                                generate_expression(node->children[i]->right);
-                            } else {
-                                generate_expression(node->children[i]);
-                            }
-                            first_arg = false;
-                        }
-                    }
-                    fprintf(out, ")");
-                }
-            }
-            call_done:
+        case AST_CALL:
+            generate_call_expr(node);
             break;
-        }
         case AST_UNARY:
             fprintf(out, "%.*s", node->token.length, node->token.start);
             generate_expression(node->right);

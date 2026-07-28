@@ -156,8 +156,7 @@ void analyze_node(ASTNode* node) {
             // Check trait/interface conformance
             if (node->implements_names) {
                 char names_copy[1024];
-                strncpy(names_copy, node->implements_names, sizeof(names_copy) - 1);
-                names_copy[sizeof(names_copy) - 1] = '\0';
+                snprintf(names_copy, sizeof(names_copy), "%s", node->implements_names);
                 char* name = names_copy;
                 while (name && *name) {
                     char* comma = strchr(name, ',');

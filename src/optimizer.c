@@ -108,6 +108,28 @@ static ASTNode* const_table_find(const char* name) {
     return NULL;
 }
 
+static void const_table_pop_scope(void) {
+    while (const_table && const_table->name == NULL) {
+        ConstEntry* e = const_table;
+        const_table = e->next;
+        free(e);
+    }
+    if (const_table && const_table->name != NULL) {
+        ConstEntry* e = const_table;
+        const_table = e->next;
+        free(e->name);
+        free(e);
+    }
+}
+
+static void const_table_push_scope(void) {
+    ConstEntry* e = (ConstEntry*)checked_malloc(sizeof(ConstEntry));
+    e->name = NULL;
+    e->value = NULL;
+    e->next = const_table;
+    const_table = e;
+}
+
 static void const_table_clear(void) {
     while (const_table) {
         ConstEntry* e = const_table;
@@ -119,6 +141,16 @@ static void const_table_clear(void) {
 
 static void propagate_constants(ASTNode* node) {
     if (!node) return;
+
+    // Push scope on entering blocks
+    bool pushed_scope = false;
+    if (node->type == AST_BLOCK || node->type == AST_FUNC_DECL ||
+        node->type == AST_MAIN || node->type == AST_IF ||
+        node->type == AST_WHILE || node->type == AST_FOR ||
+        node->type == AST_FOR_IN) {
+        const_table_push_scope();
+        pushed_scope = true;
+    }
 
     // Recurse into children first
     for (int i = 0; i < node->child_count; i++) {
@@ -155,6 +187,11 @@ static void propagate_constants(ASTNode* node) {
             // Don't free const_val - it's still in the table
             opt_count++;
         }
+    }
+
+    // Pop scope on leaving blocks
+    if (pushed_scope) {
+        const_table_pop_scope();
     }
 }
 
@@ -194,6 +231,29 @@ static const char* copy_table_find(const char* name) {
     return NULL;
 }
 
+static void copy_table_pop_scope(void) {
+    while (copy_table && copy_table->dest == NULL) {
+        CopyEntry* e = copy_table;
+        copy_table = e->next;
+        free(e);
+    }
+    if (copy_table && copy_table->dest != NULL) {
+        CopyEntry* e = copy_table;
+        copy_table = e->next;
+        free(e->dest);
+        free(e->src);
+        free(e);
+    }
+}
+
+static void copy_table_push_scope(void) {
+    CopyEntry* e = (CopyEntry*)checked_malloc(sizeof(CopyEntry));
+    e->dest = NULL;
+    e->src = NULL;
+    e->next = copy_table;
+    copy_table = e;
+}
+
 static void copy_table_clear(void) {
     while (copy_table) {
         CopyEntry* e = copy_table;
@@ -206,6 +266,16 @@ static void copy_table_clear(void) {
 
 static void propagate_copies(ASTNode* node) {
     if (!node) return;
+
+    // Push scope on entering blocks
+    bool pushed_scope = false;
+    if (node->type == AST_BLOCK || node->type == AST_FUNC_DECL ||
+        node->type == AST_MAIN || node->type == AST_IF ||
+        node->type == AST_WHILE || node->type == AST_FOR ||
+        node->type == AST_FOR_IN) {
+        copy_table_push_scope();
+        pushed_scope = true;
+    }
 
     // Track assignments: y = x (where x is a simple identifier)
     if (node->type == AST_ASSIGN && node->left && node->right) {
@@ -244,6 +314,11 @@ static void propagate_copies(ASTNode* node) {
     propagate_copies(node->condition);
     propagate_copies(node->init);
     propagate_copies(node->increment);
+
+    // Pop scope on leaving blocks
+    if (pushed_scope) {
+        copy_table_pop_scope();
+    }
 }
 
 // ========================================================================

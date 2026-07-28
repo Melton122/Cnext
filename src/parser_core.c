@@ -99,7 +99,7 @@ bool match_token(CnextTokenType type) {
 }
 
 void optionally_consume_semicolon(void) {
-    match_token(TOKEN_SEMICOLON);
+    consume(TOKEN_SEMICOLON, "Expect ';' after statement.");
 }
 
 bool check_identifier_text(const char* text, int len) {

@@ -9,6 +9,7 @@ typedef struct {
     const char* current;
     int line;
     int column;
+    int start_column;
     bool unterminated_comment;
 } Lexer;
 
@@ -54,7 +55,7 @@ static Token make_token(CnextTokenType type) {
     token.start = lexer.start;
     token.length = (int)(lexer.current - lexer.start);
     token.line = lexer.line;
-    token.column = lexer.column;
+    token.column = lexer.start_column;
     return token;
 }
 
@@ -79,7 +80,7 @@ static void skip_whitespace(void) {
                 break;
             case '\n':
                 lexer.line++;
-                lexer.column = 1;
+                lexer.column = 0;
                 advance();
                 break;
             case '/':
@@ -88,7 +89,7 @@ static void skip_whitespace(void) {
                 } else if (peek_next() == '*') {
                     advance(); advance();
                     while (!is_at_end() && !(peek() == '*' && peek_next() == '/')) {
-                        if (peek() == '\n') { lexer.line++; lexer.column = 1; }
+                        if (peek() == '\n') { lexer.line++; lexer.column = 0; }
                         advance();
                     }
                     if (!is_at_end()) {
@@ -239,7 +240,7 @@ static Token string(void) {
             if (is_at_end()) break;
             advance();
         } else {
-            if (peek() == '\n') { lexer.line++; lexer.column = 1; }
+            if (peek() == '\n') { lexer.line++; lexer.column = 0; }
             advance();
         }
     }
@@ -251,7 +252,7 @@ static Token string(void) {
 static Token raw_string(void) {
     // Already consumed 'r' and '"'; now read until closing '"'
     while (peek() != '"' && !is_at_end()) {
-        if (peek() == '\n') { lexer.line++; lexer.column = 1; }
+        if (peek() == '\n') { lexer.line++; lexer.column = 0; }
         advance();
     }
     if (is_at_end()) return error_token("Unterminated raw string.");
@@ -266,6 +267,7 @@ Token next_token(void) {
         return error_token("Unterminated block comment.");
     }
     lexer.start = lexer.current;
+    lexer.start_column = lexer.column;
     if (is_at_end()) return make_token(TOKEN_EOF);
 
     char c = advance();

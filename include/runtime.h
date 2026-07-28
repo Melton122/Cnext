@@ -71,6 +71,8 @@ static void _cnext_free_all() {
     }
 }
 
+#include "json.h"
+
 /* --- Arena Allocator --- */
 // Fast bulk allocation: allocate from a pre-allocated block, free all at once.
 #define CNEXT_ARENA_BLOCK_SIZE (64 * 1024)  // 64KB blocks
@@ -676,11 +678,11 @@ static inline CnextStringArray cnext_str_split(CnextString s, CnextString delim)
             }
         }
         if (found >= 0) {
-            if (count >= cap) { cap *= 2; items = (CnextString*)realloc(items, sizeof(CnextString) * cap); }
+            if (count >= cap) { cap *= 2; _cnext_untrack(items); items = (CnextString*)realloc(items, sizeof(CnextString) * cap); _cnext_track(items); }
             items[count++] = (CnextString){s.data + pos, (size_t)found};
             pos += found + delim.length;
         } else {
-            if (count >= cap) { cap *= 2; items = (CnextString*)realloc(items, sizeof(CnextString) * cap); }
+            if (count >= cap) { cap *= 2; _cnext_untrack(items); items = (CnextString*)realloc(items, sizeof(CnextString) * cap); _cnext_track(items); }
             items[count++] = (CnextString){s.data + pos, s.length - pos};
             break;
         }
@@ -1603,10 +1605,25 @@ static inline CnextString cnext_shell(CnextString cmd) {
     return (CnextString){result, total};
 }
 
-/* --- JSON Builtins (simplified) --- */
+/* --- JSON Builtins --- */
 
-static inline CnextString cnext_json_stringify(CnextString s) { return s; }
-static inline CnextString cnext_json_parse(CnextString s) { return s; }
+static inline CnextString cnext_json_parse(CnextString s) {
+    if (!s.data) return (CnextString){NULL, 0};
+    void* root = json_parse(s);
+    if (!root) return (CnextString){NULL, 0};
+    CnextString result = json_stringify(root);
+    json_free(root);
+    return result;
+}
+
+static inline CnextString cnext_json_stringify(CnextString s) {
+    if (!s.data) return (CnextString){NULL, 0};
+    void* root = json_parse(s);
+    if (!root) return s;
+    CnextString result = json_stringify(root);
+    json_free(root);
+    return result;
+}
 
 /* --- Encoding Builtins (placeholder) --- */
 
@@ -1668,7 +1685,7 @@ static inline CnextString cnext_base64_decode(CnextString s) {
 
 /* --- Crypto Builtins (simple hash) --- */
 
-static inline CnextString cnext_md5_str(CnextString s) {
+static inline CnextString cnext_hash_md5_str(CnextString s) {
     unsigned int h = 5381;
     for (size_t i = 0; i < s.length; i++) h = ((h << 5) + h) + (unsigned char)s.data[i];
     char* buf = (char*)malloc(9);
@@ -1678,7 +1695,7 @@ static inline CnextString cnext_md5_str(CnextString s) {
     return (CnextString){buf, 8};
 }
 
-static inline CnextString cnext_sha1_str(CnextString s) {
+static inline CnextString cnext_hash_sha1_str(CnextString s) {
     unsigned int h = 0x67452301;
     for (size_t i = 0; i < s.length; i++) {
         h = (h << 5) + h + (unsigned char)s.data[i];
@@ -1691,7 +1708,7 @@ static inline CnextString cnext_sha1_str(CnextString s) {
     return (CnextString){buf, 8};
 }
 
-static inline CnextString cnext_sha256_str(CnextString s) {
+static inline CnextString cnext_hash_sha256_str(CnextString s) {
     unsigned int h = 0x6a09e667;
     for (size_t i = 0; i < s.length; i++) {
         h = (h << 5) + h + (unsigned char)s.data[i];

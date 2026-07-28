@@ -28,5 +28,9 @@ ASTNode* parse_program(const char* source) {
         }
         if (parser.panic_mode) synchronize();
     }
-    return parser.had_error ? NULL : program;
+    if (parser.had_error) {
+        free_ast(program);
+        return NULL;
+    }
+    return program;
 }

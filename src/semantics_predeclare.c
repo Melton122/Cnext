@@ -1,4 +1,5 @@
 #include "semantics_internal.h"
+#include "parser_internal.h"
 
 void predeclare_global(ASTNode* node) {
     if (!node) return;
@@ -62,7 +63,7 @@ void predeclare_global(ASTNode* node) {
                         ASTNode** new_children = (ASTNode**)checked_malloc(sizeof(ASTNode*) * new_count);
                         int idx = 0;
                         for (int i = 0; i < parent_node->child_count; i++) {
-                            if (parent_node->children[i]->type == AST_VAR_DECL) new_children[idx++] = parent_node->children[i];
+                            if (parent_node->children[i]->type == AST_VAR_DECL) new_children[idx++] = deep_copy_ast(parent_node->children[i]);
                         }
                         for (int i = 0; i < old_count; i++) {
                             if (node->children[i]->type == AST_VAR_DECL) new_children[idx++] = node->children[i];
@@ -78,7 +79,7 @@ void predeclare_global(ASTNode* node) {
                                         break;
                                     }
                                 }
-                                if (!overridden) new_children[idx++] = parent_node->children[i];
+                                if (!overridden) new_children[idx++] = deep_copy_ast(parent_node->children[i]);
                             }
                         }
                         for (int i = 0; i < old_count; i++) {
@@ -94,8 +95,7 @@ void predeclare_global(ASTNode* node) {
             // Inherit default methods from implemented traits
             if (node->implements_names) {
                 char names_copy[1024];
-                strncpy(names_copy, node->implements_names, sizeof(names_copy) - 1);
-                names_copy[sizeof(names_copy) - 1] = '\0';
+                snprintf(names_copy, sizeof(names_copy), "%s", node->implements_names);
                 char* name = names_copy;
                 while (name && *name) {
                     char* comma = strchr(name, ',');
@@ -143,7 +143,7 @@ void predeclare_global(ASTNode* node) {
                                             }
                                         }
                                         if (!overridden) {
-                                            new_children[idx++] = tchild;
+                                            new_children[idx++] = deep_copy_ast(tchild);
                                         }
                                     }
                                 }
