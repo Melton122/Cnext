@@ -59,7 +59,28 @@ bool is_name_token(CnextTokenType type);
 void consume_name(const char* message);
 bool is_type(void);
 ASTNode* parse_type(void);
+ASTNode* parse_type_union(void);
 bool is_generic_call_lookahead(void);
+
+// Helper: propagate union type info from typeNode to a declaration node
+static inline void assign_type_from_node(ASTNode* dest, ASTNode* typeNode) {
+    if (typeNode->is_union_type) {
+        dest->is_union_type = true;
+        // Override var_type to emit CnextVariant in C codegen
+        dest->var_type = (Token){TOKEN_IDENTIFIER, "CnextVariant", 12, typeNode->token.line};
+    } else {
+        dest->var_type = typeNode->token;
+        dest->is_array = typeNode->is_array;
+    }
+}
+
+static inline void assign_return_type_from_node(ASTNode* dest, ASTNode* typeNode) {
+    if (typeNode->is_union_type) {
+        dest->return_type = (Token){TOKEN_IDENTIFIER, "CnextVariant", 12, typeNode->token.line};
+    } else {
+        dest->return_type = typeNode->token;
+    }
+}
 
 /* --- Expression Parsing (parser_expr.c) --- */
 ASTNode* expression(void);

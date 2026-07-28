@@ -11,21 +11,48 @@
 #include <stdbool.h>
 
 /* --- Shared State (defined in codegen.c) --- */
-extern FILE* out;
-extern FILE* spec_out;
-extern FILE* closure_defs_out;
-extern int indent_level;
-extern const char* current_parent_class;
-extern int lambda_counter;
-extern bool codegen_test_mode;
-extern bool codegen_in_test;
-extern int codegen_test_count;
-extern ASTNode* program_node;
-extern int generator_counter;
-extern bool codegen_profile_mode;
-extern SourceMap* codegen_sourcemap;
-extern int codegen_gen_line;
-extern int codegen_last_src_line;
+/* All codegen state is centralized in a single struct for clarity.
+ * The global instance `g_codegen` is the sole owner of this state.
+ * Existing code uses the short names via macros below. */
+typedef struct CodeGenContext {
+    FILE* out;
+    FILE* spec_out;
+    FILE* closure_defs_out;
+    int indent_level;
+    const char* current_parent_class;
+    int lambda_counter;
+    bool test_mode;
+    bool in_test;
+    int test_count;
+    ASTNode* program_node;
+    int generator_counter;
+    bool profile_mode;
+    SourceMap* sourcemap;
+    int gen_line;
+    int last_src_line;
+} CodeGenContext;
+
+extern CodeGenContext g_codegen;
+
+/* Backward-compatible macros — map old global names to struct fields.
+ * codegen.c defines CODEGEN_DEFINING_CONTEXT to use g_codegen directly. */
+#ifndef CODEGEN_DEFINING_CONTEXT
+#define out                     g_codegen.out
+#define spec_out                g_codegen.spec_out
+#define closure_defs_out        g_codegen.closure_defs_out
+#define indent_level            g_codegen.indent_level
+#define current_parent_class    g_codegen.current_parent_class
+#define lambda_counter          g_codegen.lambda_counter
+#define codegen_test_mode       g_codegen.test_mode
+#define codegen_in_test         g_codegen.in_test
+#define codegen_test_count      g_codegen.test_count
+#define program_node            g_codegen.program_node
+#define generator_counter       g_codegen.generator_counter
+#define codegen_profile_mode    g_codegen.profile_mode
+#define codegen_sourcemap       g_codegen.sourcemap
+#define codegen_gen_line        g_codegen.gen_line
+#define codegen_last_src_line   g_codegen.last_src_line
+#endif
 
 /* --- Counters (defined in codegen_node.c) --- */
 extern int bench_counter;

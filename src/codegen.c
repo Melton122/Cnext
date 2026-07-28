@@ -1,21 +1,8 @@
 #include "codegen_internal.h"
 
-// Global shared state definitions (declared extern in codegen_internal.h)
-FILE* out = NULL;
-FILE* spec_out = NULL;
-FILE* closure_defs_out = NULL;
-int indent_level = 0;
-const char* current_parent_class = NULL;
-int lambda_counter = 0;
-bool codegen_test_mode = false;
-bool codegen_in_test = false;
-int codegen_test_count = 0;
-ASTNode* program_node = NULL;
-int generator_counter = 0;
-bool codegen_profile_mode = false;
-SourceMap* codegen_sourcemap = NULL;
-int codegen_gen_line = 1;
-int codegen_last_src_line = -1;
+// Single global codegen context (all state in one place)
+// Zero-initialized by default; gen_line starts at 1.
+CodeGenContext g_codegen;
 
 // Closure state (managed in codegen_closure.c, defined here)
 ClosureInfo* closure_list = NULL;
@@ -122,12 +109,10 @@ bool generate_c_code(ASTNode* program, const char* output_filename, bool test_mo
     }
     int test_count = codegen_test_count;
 
-    const char* body_temp_name = "_cnext_body.tmp";
-    const char* spec_temp_name = "_cnext_specs.tmp";
-    const char* closure_temp_name = "_cnext_closures.tmp";
-    FILE* body_temp = fopen(body_temp_name, "w");
-    spec_out = fopen(spec_temp_name, "w");
-    closure_defs_out = fopen(closure_temp_name, "w");
+    // Use tmpfile() for auto-cleaning temporary storage
+    FILE* body_temp = tmpfile();
+    spec_out = tmpfile();
+    closure_defs_out = tmpfile();
     if (!body_temp || !spec_out || !closure_defs_out) {
         fprintf(stderr, "Could not create temporary files.\n");
         if (body_temp) fclose(body_temp);
@@ -243,8 +228,10 @@ bool generate_c_code(ASTNode* program, const char* output_filename, bool test_mo
             if (program->children[i]->type == AST_MAIN) { has_main = true; break; }
         }
         if (!has_main) {
-            fprintf(out, "int main(void) {\n");
+            fprintf(out, "int main(int argc, char** argv) {\n");
             indent_level++;
+            write_indent();
+            fprintf(out, "cnext_init_args(argc, argv);\n");
             write_indent();
             fprintf(out, "int _cnext_tp = 0, _cnext_tf = 0;\n");
             for (int i = 0; i < test_count; i++) {
@@ -268,12 +255,10 @@ bool generate_c_code(ASTNode* program, const char* output_filename, bool test_mo
     free(test_descriptions);
     
     bool ok = !ferror(body_temp);
-    if (fclose(body_temp) != 0) ok = false;
     
-    if (closure_defs_out) {
-        if (fclose(closure_defs_out) != 0) ok = false;
-        closure_defs_out = NULL;
-    }
+    // Flush streams before reading back — don't close yet
+    fflush(spec_out);
+    fflush(closure_defs_out);
     
     out = spec_out;
     indent_level = 0;
@@ -285,24 +270,21 @@ bool generate_c_code(ASTNode* program, const char* output_filename, bool test_mo
     free_gen_specs();
     out = NULL;
     
-    if (fclose(spec_out) != 0) ok = false;
-    spec_out = NULL;
-    
     if (!ok) {
         fprintf(stderr, "Error writing temporary files.\n");
-        remove(body_temp_name);
-        remove(spec_temp_name);
-        remove(closure_temp_name);
+        fclose(body_temp);
+        fclose(spec_out);
+        fclose(closure_defs_out);
         return false;
     }
     
-    // Combine final output
+    // Combine final output from temporary streams
     out = fopen(output_filename, "w");
     if (!out) {
         fprintf(stderr, "Could not open output file \"%s\".\n", output_filename);
-        remove(body_temp_name);
-        remove(spec_temp_name);
-        remove(closure_temp_name);
+        if (body_temp) fclose(body_temp);
+        if (spec_out) fclose(spec_out);
+        if (closure_defs_out) fclose(closure_defs_out);
         return false;
     }
     
@@ -312,38 +294,32 @@ bool generate_c_code(ASTNode* program, const char* output_filename, bool test_mo
     }
     if (test_count > 0) fprintf(out, "\n");
     
-    {
-        FILE* sf = fopen(spec_temp_name, "r");
-        if (sf) {
-            char line[4096];
-            while (fgets(line, sizeof(line), sf)) {
-                fprintf(out, "%s", line);
-            }
-            fclose(sf);
+    // Copy spec temp to output
+    if (spec_out) {
+        rewind(spec_out);
+        char line[4096];
+        while (fgets(line, sizeof(line), spec_out)) {
+            fprintf(out, "%s", line);
         }
         if (test_count > 0 || program->child_count > 0) fprintf(out, "\n");
     }
     
-    {
-        FILE* cf = fopen(closure_temp_name, "r");
-        if (cf) {
-            char line[4096];
-            while (fgets(line, sizeof(line), cf)) {
-                fprintf(out, "%s", line);
-            }
-            fclose(cf);
+    // Copy closure temp to output
+    if (closure_defs_out) {
+        rewind(closure_defs_out);
+        char line[4096];
+        while (fgets(line, sizeof(line), closure_defs_out)) {
+            fprintf(out, "%s", line);
         }
         if (test_count > 0 || program->child_count > 0) fprintf(out, "\n");
     }
     
-    {
-        FILE* bf = fopen(body_temp_name, "r");
-        if (bf) {
-            char line[4096];
-            while (fgets(line, sizeof(line), bf)) {
-                fprintf(out, "%s", line);
-            }
-            fclose(bf);
+    // Copy body temp to output
+    if (body_temp) {
+        rewind(body_temp);
+        char line[4096];
+        while (fgets(line, sizeof(line), body_temp)) {
+            fprintf(out, "%s", line);
         }
     }
     
@@ -353,9 +329,12 @@ bool generate_c_code(ASTNode* program, const char* output_filename, bool test_mo
         fprintf(stderr, "Could not write output file \"%s\".\n", output_filename);
     }
     
-    remove(body_temp_name);
-    remove(spec_temp_name);
-    remove(closure_temp_name);
+    // tmpfile() handles auto-cleanup on close
+    if (body_temp) fclose(body_temp);
+    if (spec_out) fclose(spec_out);
+    if (closure_defs_out) fclose(closure_defs_out);
     out = NULL;
+    spec_out = NULL;
+    closure_defs_out = NULL;
     return ok;
 }

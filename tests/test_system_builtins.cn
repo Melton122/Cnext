@@ -1,0 +1,20 @@
+// EXPECT: 1
+// EXPECT: 1
+// EXPECT: 1
+// EXPECT: hello_env_val
+main {
+    // platform returns a non-empty string
+    str p = platform()
+    printin(len(p) > 0)
+
+    // cwd returns a non-empty string
+    str d = cwd()
+    printin(len(d) > 0)
+
+    // setenv / getenv round-trip
+    setenv("CNEXT_BUILTIN_TEST", "hello_env_val")
+    str val = getenv("CNEXT_BUILTIN_TEST")
+    printin(val)
+
+    printin(val == "hello_env_val")
+}

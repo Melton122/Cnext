@@ -8,7 +8,7 @@ CnextTokenType analyze_expression(ASTNode* node) {
         case AST_LITERAL:
             if (node->token.type == TOKEN_NUMBER) type = TOKEN_INT_TYPE;
             else if (node->token.type == TOKEN_FLOAT_LITERAL) type = TOKEN_FLOAT_TYPE;
-            else if (node->token.type == TOKEN_STRING_LITERAL) type = TOKEN_STR_TYPE;
+            else if (node->token.type == TOKEN_STRING_LITERAL || node->token.type == TOKEN_RAW_STRING) type = TOKEN_STR_TYPE;
             else if (node->token.type == TOKEN_CHAR_LITERAL) type = TOKEN_CHAR_TYPE;
             else if (node->token.type == TOKEN_TRUE || node->token.type == TOKEN_FALSE) type = TOKEN_BOOL_TYPE;
             break;
@@ -20,7 +20,7 @@ CnextTokenType analyze_expression(ASTNode* node) {
         case AST_IDENTIFIER: {
             Symbol* sym = resolve_symbol(node->token);
             if (!sym) {
-                report_token_error(node->token, "Undeclared identifier:");
+                report_token_error(ERR_SEM_UNDECLARED, node->token, "Undeclared identifier:");
             } else {
                 if (sym->type_name) {
                     free(node->type_name);
@@ -40,7 +40,7 @@ CnextTokenType analyze_expression(ASTNode* node) {
         case AST_TYPE_PARAM: {
             Symbol* sym = resolve_symbol(node->token);
             if (!sym) {
-                report_token_error(node->token, "Undeclared type parameter:");
+                report_token_error(ERR_SEM_UNDECLARED, node->token, "Undeclared type parameter:");
             } else {
                 type = TOKEN_IDENTIFIER;
             }
@@ -121,6 +121,7 @@ CnextTokenType analyze_expression(ASTNode* node) {
             type = analyze_expression(node->right);
             break;
         case AST_RANGE:
+        case AST_RANGE_INCLUSIVE:
             analyze_expression(node->left);
             analyze_expression(node->right);
             type = TOKEN_INT_TYPE;
@@ -131,7 +132,7 @@ CnextTokenType analyze_expression(ASTNode* node) {
         case AST_CALL: {
             CnextTokenType callee_type = analyze_expression(node->left);
             if (node->left && node->left->type == AST_IDENTIFIER && callee_type != TOKEN_FUNC) {
-                report_token_error(node->left->token, "Cannot call non-function:");
+                report_token_error(ERR_SEM_CANT_CALL, node->left->token, "Cannot call non-function:");
             }
             for (int i = 0; i < node->child_count; i++) {
                 analyze_expression(node->children[i]);
@@ -251,7 +252,7 @@ CnextTokenType analyze_expression(ASTNode* node) {
                 // Try to resolve the actual field type from the class/struct declaration
                 bool resolved_field = false;
                 int cn_len = (int)strlen(node->left->type_name);
-                Token class_token = {TOKEN_IDENTIFIER, node->left->type_name, cn_len, node->token.line};
+                Token class_token = {TOKEN_IDENTIFIER, node->left->type_name, cn_len, node->token.line, 0};
                 Symbol* class_sym = resolve_symbol(class_token);
                 if (class_sym && class_sym->decl_node) {
                     ASTNode* class_node = class_sym->decl_node;
@@ -295,7 +296,11 @@ CnextTokenType analyze_expression(ASTNode* node) {
             // Validate class name exists
             Symbol* sym = resolve_symbol(node->token);
             if (!sym || !is_named_type_symbol(sym->type)) {
-                report_token_error(node->token, "Unknown class in 'new':");
+                report_token_error(ERR_SEM_UNKNOWN_CLASS, node->token, "Unknown class in 'new':");
+            }
+            // Cannot instantiate abstract classes
+            if (sym && sym->decl_node && sym->decl_node->is_abstract) {
+                report_token_error(ERR_SEM_ABSTRACT_INST, node->token, "Cannot instantiate abstract class:");
             }
             for (int i = 0; i < node->child_count; i++) {
                 analyze_expression(node->children[i]);
@@ -304,8 +309,22 @@ CnextTokenType analyze_expression(ASTNode* node) {
             break;
         }
         case AST_SUPER_EXPR:
-            // Just validate we're inside a class method (simplified check)
+            // super.expr — validated structurally by parser (must be inside class with extends)
+            // Full validation would require tracking current class context
             break;
+        case AST_WHEN: {
+            for (int i = 0; i < node->child_count; i++) {
+                ASTNode* arm = node->children[i];
+                if (arm->condition) {
+                    analyze_expression(arm->condition);
+                }
+                if (arm->left) {
+                    analyze_expression(arm->left);
+                }
+            }
+            type = TOKEN_STR_TYPE;
+            break;
+        }
         case AST_TYPEOF: {
             analyze_expression(node->left);
             type = TOKEN_STR_TYPE;
@@ -351,13 +370,26 @@ CnextTokenType analyze_expression(ASTNode* node) {
             }
             break;
         }
+        case AST_TERNARY: {
+            analyze_expression(node->condition);
+            CnextTokenType true_type = analyze_expression(node->left);
+            CnextTokenType false_type = analyze_expression(node->right);
+            (void)false_type;
+            // Result type is the type of the true branch
+            type = true_type;
+            if (node->left && node->left->type_name) {
+                free(node->type_name);
+                node->type_name = copy_cstring(node->left->type_name);
+            }
+            break;
+        }
         case AST_SAFE_ACCESS: {
             analyze_expression(node->left);
             // Same analysis as AST_MEMBER_ACCESS: resolve field type
             if (node->left && node->left->type_name) {
                 bool resolved_field = false;
                 int cn_len = (int)strlen(node->left->type_name);
-                Token class_token = {TOKEN_IDENTIFIER, node->left->type_name, cn_len, node->token.line};
+                Token class_token = {TOKEN_IDENTIFIER, node->left->type_name, cn_len, node->token.line, 0};
                 Symbol* class_sym = resolve_symbol(class_token);
                 if (class_sym && class_sym->decl_node) {
                     ASTNode* class_node = class_sym->decl_node;
@@ -388,6 +420,12 @@ CnextTokenType analyze_expression(ASTNode* node) {
                     }
                 }
             }
+            break;
+        }
+        case AST_AWAIT_EXPR: {
+            // await expr — type is the return type of the inner expression (int for now)
+            type = TOKEN_INT_TYPE;
+            node->expr_type = type;
             break;
         }
         default:

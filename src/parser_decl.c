@@ -15,9 +15,18 @@ static ASTNode* extend_declaration(void);
 static ASTNode* extern_declaration(void);
 
 static ASTNode* class_declaration() {
+    // Check for abstract/final modifiers
+    bool is_abstract = match_token(TOKEN_ABSTRACT);
+    bool is_final = match_token(TOKEN_FINAL);
+    if (!is_abstract && !is_final) {
+        // No modifier — that's fine
+    }
+    
     consume(TOKEN_IDENTIFIER, "Expect class name.");
     Token class_name_token = parser.previous;
     ASTNode* node = create_node(AST_CLASS_DECL, class_name_token);
+    node->is_abstract = is_abstract;
+    node->is_final = is_final;
     
     // Generic type parameters: class Box<T>
     if (match_token(TOKEN_LESS)) {
@@ -64,6 +73,21 @@ static ASTNode* class_declaration() {
     
     consume(TOKEN_LBRACE, "Expect '{' before class body.");
     while (!check(TOKEN_RBRACE) && !check(TOKEN_EOF)) {
+        // Check for static/abstract modifiers before func
+        bool method_is_static = match_token(TOKEN_STATIC);
+        bool method_is_abstract = match_token(TOKEN_ABSTRACT);
+        if (method_is_abstract) {
+            // abstract func requires no body
+            consume(TOKEN_FUNC, "Expect 'func' after 'abstract'.");
+            ASTNode* method = function_declaration(false); // no body
+            if (method) {
+                method->is_abstract = true;
+                add_child(node, method);
+            }
+            if (parser.panic_mode) synchronize();
+            continue;
+        }
+        
         if (match_token(TOKEN_FUNC)) {
             // Check for constructor: func new(...)
             if (check(TOKEN_NEW)) {
@@ -76,8 +100,7 @@ static ASTNode* class_declaration() {
                         if (!typeNode) break;
                         consume(TOKEN_IDENTIFIER, "Expect parameter name.");
                         ASTNode* param = create_node(AST_VAR_DECL, parser.previous);
-                        param->var_type = typeNode->token;
-                        param->is_array = typeNode->is_array;
+                        assign_type_from_node(param, typeNode);
                         free_ast(typeNode);
                         add_child(ctor, param);
                     } while (match_token(TOKEN_COMMA));
@@ -86,7 +109,7 @@ static ASTNode* class_declaration() {
                 ctor->left = block();
                 add_child(node, ctor);
             } else if (check(TOKEN_OPERATOR)) {
-                // func operator+(Type other) -> ReturnType { body }
+                // func operator+(Type other): ReturnType { body }
                 ASTNode* method = operator_declaration();
                 if (method) {
                     // Set self parameter type and pointer status
@@ -121,23 +144,29 @@ static ASTNode* class_declaration() {
                 // Parse method declaration
                 ASTNode* method = function_declaration(true);
                 if (method) {
-                    // Add implicit 'self' parameter as first argument
-                    Token self_token = {TOKEN_IDENTIFIER, "self", 4, class_name_token.line};
-                    ASTNode* self_param = create_node(AST_VAR_DECL, self_token);
-                    self_param->var_type = class_name_token;
-                    self_param->is_pointer = true;
-                    // Prepend self to parameters
-                    ASTNode** old_children = method->children;
-                    int old_count = method->child_count;
-                    method->children = NULL;
-                    method->child_count = 0;
-                    method->child_capacity = 0;
-                    add_child(method, self_param);
-                    for (int i = 0; i < old_count; i++) {
-                        add_child(method, old_children[i]);
+                    if (method_is_static) {
+                        // Static methods don't get a self parameter
+                        method->is_static = true;
+                        add_child(node, method);
+                    } else {
+                        // Add implicit 'self' parameter as first argument
+                        Token self_token = {TOKEN_IDENTIFIER, "self", 4, class_name_token.line};
+                        ASTNode* self_param = create_node(AST_VAR_DECL, self_token);
+                        self_param->var_type = class_name_token;
+                        self_param->is_pointer = true;
+                        // Prepend self to parameters
+                        ASTNode** old_children = method->children;
+                        int old_count = method->child_count;
+                        method->children = NULL;
+                        method->child_count = 0;
+                        method->child_capacity = 0;
+                        add_child(method, self_param);
+                        for (int i = 0; i < old_count; i++) {
+                            add_child(method, old_children[i]);
+                        }
+                        free(old_children);
+                        add_child(node, method);
                     }
-                    free(old_children);
-                    add_child(node, method);
                 }
             }
         } else if (match_token(TOKEN_OVERRIDE)) {
@@ -233,15 +262,46 @@ static ASTNode* struct_declaration() {
 static ASTNode* enum_declaration() {
     consume(TOKEN_IDENTIFIER, "Expect enum name.");
     ASTNode* node = create_node(AST_ENUM_DECL, parser.previous);
+    
+    // Parse optional generic type parameters: enum Result<T, E>
+    if (match_token(TOKEN_LESS)) {
+        do {
+            consume(TOKEN_IDENTIFIER, "Expect type parameter name.");
+            ASTNode* tp = create_node(AST_IDENTIFIER, parser.previous);
+            add_type_param(node, tp);
+        } while (match_token(TOKEN_COMMA));
+        consume(TOKEN_GREATER, "Expect '>' after type parameters.");
+    }
+    
     consume(TOKEN_LBRACE, "Expect '{' before enum body.");
     while (!check(TOKEN_RBRACE) && !check(TOKEN_EOF)) {
         if (match_token(TOKEN_IDENTIFIER)) {
-            ASTNode* member = create_node(AST_IDENTIFIER, parser.previous);
-            // Support enum values: RED = 0xFF0000 or RED = 5
-            if (match_token(TOKEN_EQUAL)) {
-                member->left = expression();
+            Token member_token = parser.previous;
+            
+            // Check for variant with payload: case Name(Type)
+            if (check(TOKEN_LPAREN)) {
+                advance_token(); // consume '('
+                ASTNode* variant = create_node(AST_VARIANT, member_token);
+                
+                // Parse comma-separated payload types
+                if (!check(TOKEN_RPAREN)) {
+                    do {
+                        ASTNode* payload_type = parse_type();
+                        if (payload_type) {
+                            add_child(variant, payload_type);
+                        }
+                    } while (match_token(TOKEN_COMMA));
+                }
+                consume(TOKEN_RPAREN, "Expect ')' after variant payload types.");
+                add_child(node, variant);
+            } else {
+                // Plain enum member: case Name or case Name = value
+                ASTNode* member = create_node(AST_IDENTIFIER, member_token);
+                if (match_token(TOKEN_EQUAL)) {
+                    member->left = expression();
+                }
+                add_child(node, member);
             }
-            add_child(node, member);
             match_token(TOKEN_COMMA);
         } else {
             error_at_current("Expect enum member name.");
@@ -278,8 +338,7 @@ ASTNode* function_declaration(bool require_body) {
                 return node;
             }
             ASTNode* param = create_node(AST_VAR_DECL, parser.previous);
-            param->var_type = typeNode->token;
-            param->is_array = typeNode->is_array;
+            assign_type_from_node(param, typeNode);
             param->is_variadic = variadic;
             free_ast(typeNode);
             // Check for default value: name = expr
@@ -290,10 +349,14 @@ ASTNode* function_declaration(bool require_body) {
         } while (match_token(TOKEN_COMMA));
     }
     consume(TOKEN_RPAREN, "Expect ')' after parameters.");
-    if (match_token(TOKEN_ARROW)) {
+    if (check(TOKEN_ARROW)) {
+        error("Return type syntax changed: use ':' instead of '->'. Example: func name(params): Type { }");
+        advance_token();
+    }
+    if (match_token(TOKEN_COLON)) {
         ASTNode* typeNode = parse_type();
         if (!typeNode) return node;
-        node->return_type = typeNode->token;
+        assign_return_type_from_node(node, typeNode);
         free_ast(typeNode);
     }
     if (require_body) {
@@ -329,8 +392,7 @@ static ASTNode* constexpr_declaration() {
     if (!typeNode) return NULL;
     consume(TOKEN_IDENTIFIER, "Expect constant name after type.");
     ASTNode* node = create_node(AST_CONSTEXPR_DECL, parser.previous);
-    node->var_type = typeNode->token;
-    node->is_array = typeNode->is_array;
+    assign_type_from_node(node, typeNode);
     free_ast(typeNode);
     consume(TOKEN_EQUAL, "Expect '=' after constexpr name.");
     node->left = expression();
@@ -353,7 +415,7 @@ ASTNode* assert_statement() {
 }
 
 static ASTNode* coroutine_declaration() {
-    // Parse: coroutine func name(params) -> ReturnType { body }
+    // Parse: coroutine func name(params): ReturnType { body }
     consume(TOKEN_FUNC, "Expect 'func' after 'coroutine'.");
     ASTNode* node = function_declaration(true);
     if (node) {
@@ -364,12 +426,12 @@ static ASTNode* coroutine_declaration() {
 }
 
 static ASTNode* async_func_declaration() {
-    // Parse: async func name(params) -> ReturnType { body }
+    // Parse: async func name(params): ReturnType { body }
     consume(TOKEN_FUNC, "Expect 'func' after 'async'.");
     ASTNode* node = function_declaration(true);
     if (node) {
         node->type = AST_ASYNC_FUNC_DECL;
-        // Async functions are regular functions in synchronous cooperative model
+        node->is_generator = true;
     }
     return node;
 }
@@ -394,7 +456,7 @@ static ASTNode* import_declaration() {
 }
 
 ASTNode* operator_declaration() {
-    // Parse: func operator+(Type other) -> ReturnType { body }
+    // Parse: func operator+(Type other): ReturnType { body }
     consume(TOKEN_OPERATOR, "Expect 'operator' keyword.");
     
     // Parse operator token
@@ -429,21 +491,24 @@ ASTNode* operator_declaration() {
                 return node;
             }
             ASTNode* param = create_node(AST_VAR_DECL, parser.previous);
-            param->var_type = typeNode->token;
-            param->is_array = typeNode->is_array;
+            assign_type_from_node(param, typeNode);
             free_ast(typeNode);
             add_child(node, param);
         } while (match_token(TOKEN_COMMA));
     }
     consume(TOKEN_RPAREN, "Expect ')' after parameters.");
     
-    if (match_token(TOKEN_ARROW)) {
+    if (check(TOKEN_ARROW)) {
+        error("Return type syntax changed: use ':' instead of '->'. Example: func name(params): Type { }");
+        advance_token();
+    }
+    if (match_token(TOKEN_COLON)) {
         ASTNode* typeNode = parse_type();
         if (!typeNode) return node;
-        node->return_type = typeNode->token;
+        assign_return_type_from_node(node, typeNode);
         // Set self parameter type to match return type
         if (node->child_count > 0) {
-            node->children[0]->var_type = typeNode->token;
+            assign_type_from_node(node->children[0], typeNode);
         }
         free_ast(typeNode);
     }
@@ -568,8 +633,7 @@ static ASTNode* extern_declaration() {
                     consume(TOKEN_IDENTIFIER, "Expect parameter name.");
                     ASTNode* param = create_node(AST_VAR_DECL, parser.previous);
                     if (typeNode) {
-                        param->var_type = typeNode->token;
-                        param->is_array = typeNode->is_array;
+                        assign_type_from_node(param, typeNode);
                         free_ast(typeNode);
                     }
                     param->is_variadic = variadic;
@@ -580,7 +644,7 @@ static ASTNode* extern_declaration() {
             if (match_token(TOKEN_COLON)) {
                 ASTNode* typeNode = parse_type();
                 if (typeNode) {
-                    func->return_type = typeNode->token;
+                    assign_return_type_from_node(func, typeNode);
                     free_ast(typeNode);
                 }
             }

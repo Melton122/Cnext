@@ -2,7 +2,7 @@
 
 trait Drawable {
     func draw()
-    func area() -> int
+    func area(): int
 }
 
 trait Resizable {
@@ -20,7 +20,7 @@ class Circle implements Drawable, Resizable {
         printin("Drawing circle with radius " + self.radius)
     }
 
-    override func area() -> int {
+    override func area(): int {
         return 3 * self.radius * self.radius
     }
 
@@ -42,7 +42,7 @@ class Rectangle implements Drawable, Resizable {
         printin("Drawing rectangle " + self.width + "x" + self.height)
     }
 
-    override func area() -> int {
+    override func area(): int {
         return self.width * self.height
     }
 

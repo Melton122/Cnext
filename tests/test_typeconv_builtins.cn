@@ -1,0 +1,40 @@
+// EXPECT: 42
+// EXPECT: 3
+// EXPECT: 3.000000
+// EXPECT: 1
+// EXPECT: 1
+// EXPECT: true
+// EXPECT: false
+// EXPECT: A
+// EXPECT: 65
+main {
+    // to_int from string
+    int i = to_int("42")
+    printin(i)
+
+    // to_int from float (truncation)
+    int from_f = to_int(3.9)
+    printin(from_f)
+
+    // to_float from int
+    float fl = to_float(3)
+    printin(fl)
+
+    // to_int from bool
+    int from_t = to_int(true)
+    int from_f2 = to_int(false)
+    printin(from_t)
+    printin(from_f2 == 0)
+
+    // to_bool
+    bool b1 = to_bool(1)
+    bool b2 = to_bool(0)
+    printin(b1)
+    printin(b2)
+
+    // ord
+    str ch = "A"
+    int code = ord(ch)
+    printin(ch)
+    printin(code)
+}

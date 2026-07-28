@@ -54,6 +54,7 @@ int run_process_captured(const char* program, char* const args[], char* output_b
 const char* executable_command(const char* output_exe, char* buffer, size_t buffer_size);
 int make_dir(const char* path);
 int join_path(char* out, size_t out_size, const char* base, const char* name);
+bool is_safe_path_component(const char* name);
 
 #define MAX_EXPECT_LINES 64
 #define EXPECT_LINE_MAX 1024

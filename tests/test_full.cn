@@ -23,7 +23,7 @@ struct Rect {
     int height
 }
 
-func area(Rect r) -> int {
+func area(Rect r): int {
     return r.width * r.height
 }
 

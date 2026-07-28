@@ -81,6 +81,7 @@ typedef enum {
     AST_RESULT_ERR,
     // v3.1: Null safety
     AST_NULL_COALESCE,  // a ?? b
+    AST_TERNARY,        // a ? b : c
     AST_SAFE_ACCESS,    // a?.b
     // v3.5: Iterators
     AST_YIELD,          // yield expr
@@ -104,8 +105,18 @@ typedef enum {
     // v8.0: Type aliases
     AST_TYPE_ALIAS,     // type MyType = OtherType
     // v10.0: New features
-    AST_DEFER,          // defer expr
-    AST_RANGE           // a..b range expression
+    AST_DEFER,          // defer expr / defer { ... }
+    AST_RANGE,          // a..b range expression
+    // v11.0: New features
+    AST_UNION_TYPE,     // Type1 | Type2 union type
+    AST_STATIC_METHOD, // static func (no self)
+    AST_ABSTRACT_METHOD, // abstract func (no body)
+    AST_VARIANT,        // enum case with payload: case Name(Type)
+    AST_TRY_EXPR,        // expr? — propagate None/Err
+    // v12.0: New features
+    AST_RANGE_INCLUSIVE, // a..=b inclusive range expression
+    AST_WHEN,            // when { ... } multi-branch conditional
+    AST_WHEN_ARM         // when arm: condition => expression
 } ASTNodeType;
 
 typedef struct ASTNode {
@@ -158,6 +169,14 @@ typedef struct ASTNode {
     Token operator_token;
     // v3.5: Generator function flag
     bool is_generator;
+    // Tail-call optimization marker (NOT the same as is_generator)
+    bool is_tail_call_optimized;
+    // v11.0: Class modifiers
+    bool is_static;     // static method (no self parameter)
+    bool is_abstract;   // abstract class/method (no body)
+    bool is_final;      // final class (cannot be extended)
+    // Union type flag: var_type is a union (Type1 | Type2)
+    bool is_union_type;
 } ASTNode;
 
 ASTNode* create_node(ASTNodeType type, Token token);

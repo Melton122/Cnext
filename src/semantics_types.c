@@ -46,7 +46,15 @@ bool assignment_types_compatible(Token expected, CnextTokenType actual) {
 
     if (expected.type == TOKEN_IDENTIFIER) {
         Symbol* type_symbol = resolve_symbol(expected);
-        return type_symbol && type_symbol->type == TOKEN_ENUM && actual == TOKEN_INT_TYPE;
+        if (!type_symbol) return false;
+        // Resolve type aliases: follow to the underlying type
+        if (type_symbol->decl_node && type_symbol->decl_node->type == AST_TYPE_ALIAS &&
+            type_symbol->decl_node->left) {
+            Token underlying = type_symbol->decl_node->left->token;
+            return assignment_types_compatible(underlying, actual);
+        }
+        if (type_symbol->type == TOKEN_ENUM && actual == TOKEN_INT_TYPE) return true;
+        return false;
     }
 
     return false;
@@ -54,7 +62,7 @@ bool assignment_types_compatible(Token expected, CnextTokenType actual) {
 
 void validate_var_initializer(ASTNode* node) {
     if (node->var_type.type == TOKEN_VAR && !node->init) {
-        report_error(node->token.line, "Variables declared with 'var' must have an initializer:", NULL);
+        report_error(ERR_SEM_MISSING_INIT, node->token.line, "Variables declared with 'var' must have an initializer:", NULL);
         return;
     }
 
@@ -66,7 +74,7 @@ void validate_var_initializer(ASTNode* node) {
         node->init->type_name = type_name_from_token(node->var_type);
     }
     if (!assignment_types_compatible(node->var_type, init_type)) {
-        report_token_error(node->token, "Initializer type does not match variable type:");
+        report_token_error(ERR_SEM_TYPE_MISMATCH, node->token, "Initializer type does not match variable type:");
     }
 }
 
@@ -90,7 +98,12 @@ void analyze_var_declaration(ASTNode* node) {
     if (node->var_type.type == TOKEN_IDENTIFIER) {
         Symbol* type_sym = resolve_symbol(node->var_type);
         if (type_sym && type_sym->type == TOKEN_CLASS) {
-            node->is_class = true;
+            // Resolve type aliases: check if it's actually a class or a typedef
+            if (type_sym->decl_node && type_sym->decl_node->type == AST_TYPE_ALIAS) {
+                // Type alias — not a class, don't set is_class
+            } else {
+                node->is_class = true;
+            }
         }
     }
 
@@ -102,7 +115,7 @@ void analyze_var_declaration(ASTNode* node) {
 void analyze_field_declaration(ASTNode* node) {
     validate_type_token(node->var_type);
     if (node->init) {
-        report_token_error(node->token, "Fields cannot have initializers:");
+        report_token_error(ERR_SEM_FIELD_INIT, node->token, "Fields cannot have initializers:");
         analyze_expression(node->init);
     }
 }
@@ -405,5 +418,86 @@ void register_import(Token module) {
             Token t = {TOKEN_IDENTIFIER, math_funcs[i].name, math_funcs[i].len, module.line};
             define_symbol_if_missing(t, TOKEN_FUNC, true, NULL);
         }
+    }
+}
+
+/* Register ALL built-in functions as global symbols (no import required) */
+void register_all_builtins(Token module) {
+    static const struct { const char* name; int len; } builtins[] = {
+        /* Core */
+        {"print", 5}, {"printin", 7}, {"input", 5}, {"len", 3},
+        {"typeof", 6}, {"assert", 6}, {"panic", 5}, {"exit", 4},
+        {"clone", 5}, {"swap_values", 11}, {"free", 4},
+        /* Type Conversion */
+        {"to_int", 6}, {"to_float", 8}, {"to_str", 6}, {"to_bool", 7},
+        {"to_char", 7}, {"parse_int", 9}, {"parse_float", 11},
+        {"char", 4}, {"ord", 3}, {"bytes", 5},
+        /* String */
+        {"str_upper", 9}, {"str_lower", 9}, {"str_trim", 8},
+        {"str_split", 9}, {"str_join", 8}, {"str_replace", 11},
+        {"str_contains", 12}, {"str_starts_with", 15},
+        {"str_ends_with", 13}, {"str_substring", 13},
+        {"str_index_of", 12}, {"str_last_index_of", 17},
+        {"str_reverse", 11}, {"str_repeat", 10},
+        {"str_capitalize", 14}, {"str_title", 9},
+        {"str_pad_left", 12}, {"str_pad_right", 13},
+        {"str_remove", 10}, {"str_insert", 10},
+        {"str_to_int", 10}, {"str_to_float", 12},
+        {"str_count", 9}, {"str_is_empty", 12},
+        {"str_char_at", 11}, {"str_find", 8},
+        {"str_to_upper", 12}, {"str_to_lower", 12},
+        /* Math */
+        {"math_abs", 8}, {"math_min", 8}, {"math_max", 8},
+        {"math_clamp", 10}, {"math_round", 10},
+        {"math_floor", 10}, {"math_ceil", 9},
+        {"math_sqrt", 9}, {"math_pow", 8},
+        {"math_log", 8}, {"math_exp", 8},
+        {"math_sin", 8}, {"math_cos", 8}, {"math_tan", 8},
+        {"math_random", 11}, {"math_random_range", 17},
+        {"math_gcd", 8}, {"math_lcm", 8},
+        {"math_factorial", 14}, {"math_fibonacci", 14},
+        /* Time */
+        {"time_now", 8}, {"time_sleep", 10},
+        {"time_timestamp", 14}, {"time_date", 9},
+        {"time_time", 9}, {"time_stopwatch_start", 20},
+        {"time_stopwatch_stop", 19}, {"time_format_time", 16},
+        /* File */
+        {"read_file", 9}, {"write_file", 10},
+        {"append_file", 11}, {"delete_file", 11},
+        {"copy_file", 9}, {"move_file", 9},
+        {"file_exists", 11}, {"file_size", 9},
+        /* System */
+        {"cwd", 3}, {"chdir", 5}, {"platform", 8},
+        {"sys_args", 8}, {"sys_args_count", 14}, {"sys_arg_at", 10},
+        {"getenv", 6}, {"setenv", 6},
+        {"hostname", 8}, {"username", 8},
+        {"cpu_count", 9}, {"memory_usage", 12},
+        {"disk_usage", 10}, {"temp_dir", 8},
+        {"home_dir", 8}, {"sys_exec", 8},
+        {"sys_shell", 9},
+        /* JSON */
+        {"json_parse", 10}, {"json_stringify", 14},
+        /* Encoding */
+        {"base64_encode", 13}, {"base64_decode", 13},
+        /* Crypto */
+        {"md5", 3}, {"sha1", 4}, {"sha256", 6}, {"uuid", 4},
+        /* Collections */
+        {"push", 4}, {"pop", 3}, {"shift", 5}, {"unshift", 7},
+        {"insert_at", 9}, {"remove_at", 9}, {"clear", 5},
+        {"sort", 4}, {"reverse_array", 13},
+        {"contains_item", 13}, {"array_index", 11},
+        {"array_last", 10}, {"array_first", 11},
+        {"array_slice", 11}, {"array_unique", 12},
+        {"array_shuffle", 13},
+        {"array_map", 9}, {"array_filter", 12},
+        {"array_reduce", 12}, {"array_find", 9},
+        /* Utility */
+        {"benchmark", 9}, {"debug", 5},
+        {"stacktrace", 10}, {"gc", 2},
+        {NULL, 0}
+    };
+    for (int i = 0; builtins[i].name; i++) {
+        Token t = {TOKEN_IDENTIFIER, builtins[i].name, builtins[i].len, module.line};
+        define_symbol_if_missing(t, TOKEN_FUNC, true, NULL);
     }
 }

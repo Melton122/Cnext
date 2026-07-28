@@ -23,16 +23,16 @@ class Person {
         self.age = a
     }
 
-    func greet() -> str {
+    func greet(): str {
         return "Hello, I am " + self.name
     }
 }
 
-func get_name(Person p) -> str {
+func get_name(Person p): str {
     return p?.name ?? "Unknown"
 }
 
-func get_age(Person p) -> int {
+func get_age(Person p): int {
     return p?.age ?? 0
 }
 

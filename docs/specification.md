@@ -65,15 +65,42 @@ for int i = 0; i < 10; i += 1 {
 ```
 
 ## Functions
-Functions are declared using the `func` keyword. Return types are indicated with `->`.
+Functions are declared using the `func` keyword. Return types are indicated with `:`.
 ```cnext
 func greet(str name) {
     printin("Hello, " + name)
 }
 
-func add(int a, int b) -> int {
+func add(int a, int b): int {
     return a + b
 }
+```
+
+## Built-in Functions
+Cnext provides many built-in functions globally available without imports:
+```cnext
+// String operations
+str upper = str_upper("hello")
+str lower = str_lower("HELLO")
+bool has = str_contains("hello", "ell")
+
+// Math operations
+int abs_val = math_abs(-5)
+int min_val = math_min(5, 3)
+long fact = math_factorial(5)
+
+// Type conversion
+int n = to_int(3.14)
+float f = to_float(42)
+str s = to_str(42)
+
+// File operations
+write_file("test.txt", "hello")
+str content = read_file("test.txt")
+
+// System info
+str os = platform()
+int cpus = cpu_count()
 ```
 
 ## Arrays

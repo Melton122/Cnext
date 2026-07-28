@@ -1,0 +1,42 @@
+// EXPECT: 1
+// EXPECT: 0
+// EXPECT: yes
+// EXPECT: no
+// EXPECT: 20
+// EXPECT: 5
+// EXPECT: big
+// EXPECT: greater
+// EXPECT: 0
+
+main {
+    var x = true ? 1 : 0
+    printin(x)
+
+    var y = false ? 1 : 0
+    printin(y)
+
+    var s = true ? "yes" : "no"
+    printin(s)
+
+    var s2 = false ? "yes" : "no"
+    printin(s2)
+
+    var a = 10
+    var b = 20
+    var max = a > b ? a : b
+    printin(max)
+
+    var abs_val = -5
+    var result = abs_val < 0 ? -abs_val : abs_val
+    printin(result)
+
+    var msg = 42 > 10 ? "big" : "small"
+    printin(msg)
+
+    var x2 = 5
+    printin(x2 > 3 ? "greater" : "lesser")
+
+    var found = false
+    var val = found ? 42 : 0
+    printin(val)
+}

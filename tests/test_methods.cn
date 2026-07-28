@@ -8,7 +8,7 @@ class Point {
         self.y = y_val
     }
 
-    func distance(Point other) -> int {
+    func distance(Point other): int {
         int dx = self.x - other.x
         int dy = self.y - other.y
         return dx * dx + dy * dy

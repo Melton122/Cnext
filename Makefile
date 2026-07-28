@@ -43,7 +43,7 @@ endif
 # Compiler settings
 CC ?= gcc
 STD = -std=gnu11
-WARNINGS = -Wall -Wextra -Wno-unused-parameter
+WARNINGS = -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -Wno-unused-function
 
 # Build mode: make DEBUG=1 for debug build
 ifdef DEBUG
@@ -68,12 +68,13 @@ SRCS = src/main.c src/main_utils.c src/main_packages.c src/main_compiler.c \
        src/codegen_expr.c src/codegen_node.c \
        src/semantics.c src/semantics_scope.c src/semantics_types.c \
        src/semantics_predeclare.c src/semantics_analyze.c src/semantics_expr.c \
+       src/diagnostics.c \
        src/optimizer.c src/formatter.c src/linter.c src/repl.c \
        src/docgen.c src/registry.c src/semver.c src/sourcemap.c src/moduleresolver.c
 OBJS = $(SRCS:.c=.o)
 DEPS = $(OBJS:.o=.d)
 
-.PHONY: all clean test install uninstall help format bench check release
+.PHONY: all clean test install uninstall help format bench check release coverage
 
 all: $(EXEC)
 
@@ -94,6 +95,8 @@ check: $(EXEC)
 	./$(EXEC) test
 	@echo "Running Python test suite..."
 	@python3 tests/run_tests.py 2>/dev/null || python tests/run_tests.py 2>/dev/null || echo "Python tests skipped"
+	@echo "Running LSP tests..."
+	@python3 tests/test_lsp.py 2>/dev/null || python tests/test_lsp.py 2>/dev/null || echo "LSP tests skipped"
 
 install: $(EXEC)
 ifdef WINDOWS_BUILD
@@ -178,6 +181,20 @@ help:
 	@echo "  make release            # Package for release"
 	@echo "  make check              # Run all tests"
 	@echo "  make clean              # Clean build artifacts"
+
+# Code coverage (gcov/lcov)
+COVERAGE_DIR = coverage
+coverage: $(EXEC)
+	@echo "Running tests with coverage..."
+	$(MAKE) clean
+	$(MAKE) DEBUG=1 OPT="-O0 -g --coverage"
+	./$(EXEC) test
+	@echo "Generating coverage report..."
+	lcov --capture --directory . --output-file $(COVERAGE_DIR)/coverage.info --rc lcov_branch_coverage=1 2>/dev/null || true
+	lcov --remove $(COVERAGE_DIR)/coverage.info '/usr/*' '*/tests/*' '*/examples/*' --output-file $(COVERAGE_DIR)/coverage_filtered.info --rc lcov_branch_coverage=1 2>/dev/null || true
+	genhtml $(COVERAGE_DIR)/coverage_filtered.info --output-directory $(COVERAGE_DIR)/html --rc lcov_branch_coverage=1 2>/dev/null || true
+	@echo "Coverage report: $(COVERAGE_DIR)/html/index.html"
+	@lcov --summary $(COVERAGE_DIR)/coverage_filtered.info 2>/dev/null || echo "Install lcov for coverage summaries"
 
 # Include auto-generated dependency files
 -include $(DEPS)

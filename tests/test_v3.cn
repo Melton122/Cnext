@@ -109,7 +109,7 @@ enum Color {
     BLUE
 }
 
-func color_name(Color c) -> str {
+func color_name(Color c): str {
     match c {
         RED => {
             return "red"
@@ -160,7 +160,7 @@ class Point {
         self.y = y_val
     }
 
-    func magnitude() -> int {
+    func magnitude(): int {
         return self.x * self.x + self.y * self.y
     }
 }
@@ -194,7 +194,7 @@ class Cat extends Animal {
         printin("meow")
     }
 
-    func get_name() -> str {
+    func get_name(): str {
         return self.name
     }
 }

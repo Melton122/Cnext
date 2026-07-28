@@ -1,0 +1,5 @@
+main {
+    int a = math_abs(-5)
+    str u = str_upper("hello")
+    printin(u)
+}

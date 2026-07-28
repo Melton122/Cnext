@@ -143,7 +143,7 @@ main {
         mutex_unlock(m)
     }
 
-    func get_items() -> str[] {
+    func get_items(): str[] {
         mutex_lock(m)
         var items = shared_list
         mutex_unlock(m)

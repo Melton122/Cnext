@@ -1,0 +1,62 @@
+// Example: Type Conversion with Built-in Functions
+// Demonstrates type conversion operations without imports
+
+main {
+    // Integer conversion
+    float pi = 3.14159
+    int int_pi = to_int(pi)
+    printin("int(3.14159) = " + to_str(int_pi))
+
+    // Float conversion
+    int forty_two = 42
+    float float_42 = to_float(forty_two)
+    printin("float(42) = " + to_str(float_42))
+
+    // Boolean conversion
+    int zero = 0
+    int one = 1
+    int negative = -5
+    bool b1 = to_bool(zero)
+    bool b2 = to_bool(one)
+    bool b3 = to_bool(negative)
+    printin("bool(0) = " + to_str(b1))
+    printin("bool(1) = " + to_str(b2))
+    printin("bool(-5) = " + to_str(b3))
+
+    // String conversion
+    str num_str = to_str(42)
+    str float_str = to_str(3.14)
+    str bool_str = to_str(true)
+    printin("str(42) = " + num_str)
+    printin("str(3.14) = " + float_str)
+    printin("str(true) = " + bool_str)
+
+    // Character operations
+    int ascii_a = ord("A")
+    int ascii_z = ord("Z")
+    printin("ord('A') = " + to_str(ascii_a))
+    printin("ord('Z') = " + to_str(ascii_z))
+
+    // Chained conversions
+    str result = to_str(to_int(3.14))
+    printin("str(int(3.14)) = " + result)
+
+    // Practical examples
+    // Calculate percentage
+    int part = 3
+    int total = 10
+    float percentage = to_float(part) / to_float(total) * 100.0
+    printin("3/10 = " + to_str(percentage) + "%")
+
+    // Format a number
+    int year = 2024
+    str year_str = to_str(year)
+    printin("Year: " + year_str)
+
+    // Parse and convert
+    str input = "123"
+    int parsed = str_to_int(input)
+    float as_float = to_float(parsed)
+    printin("Parsed 123: " + to_str(parsed))
+    printin("As float: " + to_str(as_float))
+}

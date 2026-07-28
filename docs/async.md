@@ -5,7 +5,7 @@
 Functions that can be paused and resumed:
 
 ```cnext
-async func fetch_data(str url) -> str {
+async func fetch_data(str url): str {
     // Simulate async work
     return "data from " + url
 }
@@ -29,11 +29,11 @@ main {
 ## Multiple Awaits
 
 ```cnext
-async func step1() -> str {
+async func step1(): str {
     return "step1"
 }
 
-async func step2() -> str {
+async func step2(): str {
     return "step2"
 }
 
@@ -47,7 +47,7 @@ async func workflow() {
 ## Async with Parameters
 
 ```cnext
-async func compute(int x) -> int {
+async func compute(int x): int {
     return x * 2
 }
 
@@ -60,11 +60,11 @@ async func main_async() {
 ## Nested Async Calls
 
 ```cnext
-async func inner(int x) -> int {
+async func inner(int x): int {
     return x + 1
 }
 
-async func outer(int x) -> int {
+async func outer(int x): int {
     var temp = await inner(x)
     var result = await inner(temp)
     return result
@@ -79,7 +79,7 @@ async func main_async() {
 ## Async Error Handling
 
 ```cnext
-async func risky_operation() -> int {
+async func risky_operation(): int {
     throw "Something went wrong"
 }
 
@@ -106,7 +106,7 @@ async func process_items(int[] items) {
 ## Async with Closures
 
 ```cnext
-async func apply_async(func f, int x) -> int {
+async func apply_async(func f, int x): int {
     return await f(x)
 }
 
@@ -120,7 +120,7 @@ async func main_async() {
 ## Async Generators
 
 ```cnext
-async func fetch_all(str[] urls) -> iter<str> {
+async func fetch_all(str[] urls): iter<str> {
     for var url in urls {
         var data = await fetch(url)
         yield data
@@ -146,7 +146,7 @@ Cnext uses a synchronous cooperative model:
 ## Example: Data Processing
 
 ```cnext
-async func read_file(str path) -> str {
+async func read_file(str path): str {
     // Simulate file reading
     return "contents of " + path
 }

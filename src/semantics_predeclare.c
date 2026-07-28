@@ -33,6 +33,10 @@ void predeclare_global(ASTNode* node) {
                 Token parent_tok = {TOKEN_IDENTIFIER, node->parent_name, (int)strlen(node->parent_name), node->token.line};
                 Symbol* parent_sym = resolve_symbol(parent_tok);
                 if (parent_sym && parent_sym->decl_node) {
+                    // Cannot extend final classes
+                    if (parent_sym->decl_node->is_final) {
+                        report_token_error(ERR_SEM_CANT_EXTEND, node->token, "Cannot extend final class:");
+                    }
                     ASTNode* parent_node = parent_sym->decl_node;
                     int to_add_count = 0;
                     for (int i = 0; i < parent_node->child_count; i++) {
@@ -165,6 +169,9 @@ void predeclare_global(ASTNode* node) {
             for (int i = 0; i < node->child_count; i++) {
                 define_symbol(node->children[i]->token, TOKEN_INT_TYPE, true, NULL, node->children[i]);
             }
+            break;
+        case AST_TYPE_ALIAS:
+            define_type_symbol(node, TOKEN_CLASS);
             break;
         default:
             break;

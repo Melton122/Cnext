@@ -1,0 +1,33 @@
+main {
+    // 1. Raw strings
+    str raw = r"C:\Users\name\file.txt"
+    printin(raw)
+
+    // 2. Inclusive range in for-in loop
+    str result = ""
+    for var i in 1..=5 {
+        result = result + to_str(i)
+    }
+    printin(result)
+
+    // 3. Match guard with wildcard
+    func check(int x): str {
+        match x {
+            0 => "zero"
+            _ if x > 5 => "big"
+            _ => "small"
+        }
+    }
+    printin(check(0))
+    printin(check(10))
+    printin(check(3))
+
+    // 4. When expression
+    int y = 3
+    str desc = when {
+        y > 0 => "positive"
+        y < 0 => "negative"
+        else => "zero"
+    }
+    printin(desc)
+}

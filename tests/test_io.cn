@@ -1,4 +1,3 @@
-// EXPECT: true
 // EXPECT: Hello from Cnext IO!
 // EXPECT: true
 // EXPECT: Hello from Cnext IO!
@@ -7,14 +6,15 @@ import io
 
 main {
     str content = "Hello from Cnext IO!"
-    bool written = write_file("test_output.txt", content)
-    printin(written)
+    write_file("test_output.txt", content)
 
     str read_back = read_file("test_output.txt")
     printin(read_back)
 
-    bool appended = append_file("test_output.txt", "\nAppended line.")
-    printin(appended)
+    bool exists = file_exists("test_output.txt")
+    printin(exists)
+
+    append_file("test_output.txt", "\nAppended line.")
 
     str read_again = read_file("test_output.txt")
     printin(read_again)

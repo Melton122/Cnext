@@ -1,19 +1,19 @@
 // Calculator Example
 // Demonstrates basic arithmetic operations
 
-func add(double a, double b) -> double {
+func add(double a, double b): double {
     return a + b
 }
 
-func subtract(double a, double b) -> double {
+func subtract(double a, double b): double {
     return a - b
 }
 
-func multiply(double a, double b) -> double {
+func multiply(double a, double b): double {
     return a * b
 }
 
-func divide(double a, double b) -> double {
+func divide(double a, double b): double {
     if b == 0.0 {
         printin("Error: Division by zero")
         return 0.0
@@ -21,7 +21,7 @@ func divide(double a, double b) -> double {
     return a / b
 }
 
-func to_str(double val) -> str {
+func to_str(double val): str {
     var int_part = val as int
     var frac = val - int_part as double
     if frac < 0.001 && frac > -0.001 {

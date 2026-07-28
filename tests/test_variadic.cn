@@ -8,12 +8,12 @@
 // EXPECT: 1
 // EXPECT: === All variadic tests passed ===
 
-func sum(int first, int... rest) -> int {
+func sum(int first, int... rest): int {
     int total = first
     return total
 }
 
-func avg(float first, float... rest) -> float {
+func avg(float first, float... rest): float {
     return first
 }
 

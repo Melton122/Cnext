@@ -1,0 +1,40 @@
+// EXPECT: 1
+// EXPECT: Hello, File!
+// EXPECT: 12
+// EXPECT: true
+// EXPECT: 1
+// EXPECT: true
+// EXPECT: true
+main {
+    // write file
+    write_file("_test_builtin_file.txt", "Hello, File!")
+    printin(1)
+
+    // read file
+    str content = read_file("_test_builtin_file.txt")
+    printin(content)
+
+    // file_size
+    long sz = file_size("_test_builtin_file.txt")
+    printin(sz)
+
+    // file_exists
+    printin(file_exists("_test_builtin_file.txt"))
+
+    // append file
+    append_file("_test_builtin_file.txt", " World")
+    str appended = read_file("_test_builtin_file.txt")
+    printin(len(appended) > 12)
+
+    // copy file
+    copy_file("_test_builtin_file.txt", "_test_builtin_file_copy.txt")
+    printin(file_exists("_test_builtin_file_copy.txt"))
+
+    // move file
+    move_file("_test_builtin_file_copy.txt", "_test_builtin_file_moved.txt")
+    printin(file_exists("_test_builtin_file_moved.txt"))
+
+    // cleanup
+    delete_file("_test_builtin_file.txt")
+    delete_file("_test_builtin_file_moved.txt")
+}

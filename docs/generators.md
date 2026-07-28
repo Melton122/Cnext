@@ -5,7 +5,7 @@
 Functions that yield values lazily:
 
 ```cnext
-func count_to(int n) -> iter<int> {
+func count_to(int n): iter<int> {
     var i = 1
     while i <= n {
         yield i
@@ -21,7 +21,7 @@ for var x in count_to(5) {
 ## Fibonacci Sequence
 
 ```cnext
-func fibonacci() -> iter<int> {
+func fibonacci(): iter<int> {
     var a = 0, b = 1
     while true {
         yield a
@@ -42,7 +42,7 @@ printin(sum)  // Sum of fibonacci numbers <= 100
 ## Single Yield
 
 ```cnext
-func always_42() -> iter<int> {
+func always_42(): iter<int> {
     yield 42
 }
 
@@ -54,7 +54,7 @@ for var x in always_42() {
 ## Conditional Yield
 
 ```cnext
-func positive_only(int a, int b) -> iter<int> {
+func positive_only(int a, int b): iter<int> {
     if a > 0 {
         yield a
     }
@@ -71,7 +71,7 @@ for var x in positive_only(5, -1) {
 ## Generator with Parameters
 
 ```cnext
-func range_gen(int start, int end) -> iter<int> {
+func range_gen(int start, int end): iter<int> {
     var i = start
     while i < end {
         yield i
@@ -87,7 +87,7 @@ for var x in range_gen(3, 7) {
 ## Multiple Local Variables
 
 ```cnext
-func fibonacci_gen(int count) -> iter<int> {
+func fibonacci_gen(int count): iter<int> {
     var a = 0, b = 1
     var i = 0
     while i < count {
@@ -107,12 +107,12 @@ for var x in fibonacci_gen(8) {
 ## Nested Generators
 
 ```cnext
-func inner() -> iter<int> {
+func inner(): iter<int> {
     yield 1
     yield 2
 }
 
-func outer() -> iter<int> {
+func outer(): iter<int> {
     for var x in inner() {
         yield x
     }
@@ -142,7 +142,7 @@ for var x in nums {
 Generators maintain their state between yields:
 
 ```cnext
-func counter() -> iter<int> {
+func counter(): iter<int> {
     var i = 0
     while true {
         yield i
@@ -161,7 +161,7 @@ printin(gen.next())  // 2
 Generators are memory efficient - they don't store all values:
 
 ```cnext
-func infinite() -> iter<int> {
+func infinite(): iter<int> {
     var i = 0
     while true {
         yield i
@@ -178,7 +178,7 @@ for var x in infinite() {
 ## Combining Generators
 
 ```cnext
-func concat<T>(iter<T> a, iter<T> b) -> iter<T> {
+func concat<T>(iter<T> a, iter<T> b): iter<T> {
     for var x in a {
         yield x
     }

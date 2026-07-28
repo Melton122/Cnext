@@ -11,7 +11,7 @@
   "Function": {
     "prefix": "func",
     "body": [
-      "func ${1:name}(${2:params}) -> ${3:type} {",
+      "func ${1:name}(${2:params}): ${3:type} {",
       "\t$0",
       "}"
     ],
@@ -20,7 +20,7 @@
   "Arrow Function": {
     "prefix": "func =>",
     "body": [
-      "func ${1:name}(${2:params}) -> ${3:type} => ${4:expression}"
+      "func ${1:name}(${2:params}): ${3:type} => ${4:expression}"
     ],
     "description": "Arrow function"
   },
@@ -63,7 +63,7 @@
     "prefix": "trait",
     "body": [
       "trait ${1:Name} {",
-      "\tfunc ${2:method}(${3:params}) -> ${4:type}",
+      "\tfunc ${2:method}(${3:params}): ${4:type}",
       "\t$0",
       "}"
     ],
@@ -73,7 +73,7 @@
     "prefix": "interface",
     "body": [
       "interface ${1:Name} {",
-      "\tfunc ${2:method}(${3:params}) -> ${4:type}",
+      "\tfunc ${2:method}(${3:params}): ${4:type}",
       "\t$0",
       "}"
     ],
@@ -198,7 +198,7 @@
   "Generator": {
     "prefix": "generator",
     "body": [
-      "func ${1:name}(${2:params}) -> iter<${3:type}> {",
+      "func ${1:name}(${2:params}): iter<${3:type}> {",
       "\tvar ${4:i} = ${5:0}",
       "\twhile ${6:condition} {",
       "\t\tyield ${4:i}",
@@ -211,7 +211,7 @@
   "Coroutine": {
     "prefix": "coroutine",
     "body": [
-      "coroutine func ${1:name}(${2:params}) -> iter<${3:type}> {",
+      "coroutine func ${1:name}(${2:params}): iter<${3:type}> {",
       "\t$0",
       "}"
     ],
@@ -220,7 +220,7 @@
   "Async Function": {
     "prefix": "async",
     "body": [
-      "async func ${1:name}(${2:params}) -> ${3:type} {",
+      "async func ${1:name}(${2:params}): ${3:type} {",
       "\t$0",
       "}"
     ],

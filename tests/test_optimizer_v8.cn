@@ -32,7 +32,7 @@ main {
     
     // Test dead code elimination
     // The optimizer should remove code after return
-    func dead_code_test() -> int {
+    func dead_code_test(): int {
         return 42
         // This code should be eliminated
         int unreachable = 100

@@ -18,6 +18,8 @@ import re
 from typing import Optional, Dict, List, Any
 
 # LSP protocol helpers
+MAX_CONTENT_LENGTH = 10 * 1024 * 1024  # 10MB limit
+
 def read_message():
     """Read a JSON-RPC message from stdin."""
     content_length = None
@@ -27,12 +29,19 @@ def read_message():
             return None
         line = line.decode('utf-8').strip()
         if line.startswith('Content-Length:'):
-            content_length = int(line.split(':')[1].strip())
+            try:
+                content_length = int(line.split(':')[1].strip())
+            except (ValueError, IndexError):
+                content_length = None
+            if content_length is not None and (content_length < 0 or content_length > MAX_CONTENT_LENGTH):
+                content_length = None
         elif line == '':
             break
     if content_length is None:
         return None
     body = sys.stdin.buffer.read(content_length)
+    if len(body) != content_length:
+        return None
     return json.loads(body.decode('utf-8'))
 
 def send_message(msg):
@@ -262,10 +271,10 @@ class CnextLSP:
     def handle_formatting(self, id, params):
         uri = params['textDocument']['uri']
         text = self.documents.get(uri, '')
+        tmp_path = None
 
         if self.cnext_path:
             try:
-                # Write temp file, format, read back
                 import tempfile
                 with tempfile.NamedTemporaryFile(mode='w', suffix='.cn', delete=False) as f:
                     f.write(text)
@@ -273,7 +282,6 @@ class CnextLSP:
                 subprocess.run([self.cnext_path, 'fmt', tmp_path], timeout=10)
                 with open(tmp_path, 'r') as f:
                     formatted = f.read()
-                os.unlink(tmp_path)
                 if formatted != text:
                     send_response(id, [{
                         'range': {
@@ -283,8 +291,14 @@ class CnextLSP:
                         'newText': formatted
                     }])
                     return
-            except Exception:
-                pass
+            except (subprocess.TimeoutExpired, OSError, IOError) as e:
+                sys.stderr.write(f'Formatting error: {e}\n')
+            finally:
+                if tmp_path:
+                    try:
+                        os.unlink(tmp_path)
+                    except OSError:
+                        pass
 
         send_response(id, [])
 
@@ -316,6 +330,10 @@ class CnextLSP:
             'diagnostics': diagnostics
         })
 
+    def handle_did_close(self, params):
+        uri = params['textDocument']['uri']
+        self.documents.pop(uri, None)
+
     def run(self):
         while True:
             msg = read_message()
@@ -326,29 +344,39 @@ class CnextLSP:
             id = msg.get('id')
             params = msg.get('params', {})
 
-            if method == 'initialize':
-                self.handle_initialize(id, params)
-            elif method == 'initialized':
-                pass  # Notification, no response needed
-            elif method == 'shutdown':
-                send_response(id, None)
-                break
-            elif method == 'exit':
-                break
-            elif method == 'textDocument/didOpen':
-                self.handle_did_open(params)
-            elif method == 'textDocument/didChange':
-                self.handle_did_change(params)
-            elif method == 'textDocument/completion':
-                self.handle_completion(id, params)
-            elif method == 'textDocument/hover':
-                self.handle_hover(id, params)
-            elif method == 'textDocument/definition':
-                self.handle_definition(id, params)
-            elif method == 'textDocument/formatting':
-                self.handle_formatting(id, params)
-            elif id is not None:
-                send_response(id, None)
+            try:
+                if method == 'initialize':
+                    self.handle_initialize(id, params)
+                elif method == 'initialized':
+                    pass  # Notification, no response needed
+                elif method == 'shutdown':
+                    send_response(id, None)
+                    break
+                elif method == 'exit':
+                    break
+                elif method == 'textDocument/didOpen':
+                    self.handle_did_open(params)
+                elif method == 'textDocument/didChange':
+                    self.handle_did_change(params)
+                elif method == 'textDocument/didClose':
+                    self.handle_did_close(params)
+                elif method == 'textDocument/completion':
+                    self.handle_completion(id, params)
+                elif method == 'textDocument/hover':
+                    self.handle_hover(id, params)
+                elif method == 'textDocument/definition':
+                    self.handle_definition(id, params)
+                elif method == 'textDocument/formatting':
+                    self.handle_formatting(id, params)
+                elif id is not None:
+                    send_response(id, None)
+            except Exception as e:
+                sys.stderr.write(f'Error handling {method}: {e}\n')
+                if id is not None:
+                    try:
+                        send_response(id, None)
+                    except Exception:
+                        pass
 
 if __name__ == '__main__':
     server = CnextLSP()

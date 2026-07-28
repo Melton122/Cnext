@@ -13,7 +13,7 @@ greet("World")
 ## Return Values
 
 ```cnext
-func add(int a, int b) -> int {
+func add(int a, int b): int {
     return a + b
 }
 
@@ -26,8 +26,8 @@ printin(result)  // 8
 For single-expression functions:
 
 ```cnext
-func multiply(int a, int b) -> int => a * b
-func square(int x) -> int => x * x
+func multiply(int a, int b): int => a * b
+func square(int x): int => x * x
 ```
 
 ## Default Arguments
@@ -57,7 +57,7 @@ create_person(age = 30, name = "Charlie")
 Accept any number of arguments:
 
 ```cnext
-func sum(int... args) -> int {
+func sum(int... args): int {
     var total = 0
     for var n in args {
         total = total + n
@@ -74,12 +74,12 @@ printin(sum(1, 2, 3, 4, 5))  // 15
 Functions can be passed as arguments:
 
 ```cnext
-func apply(int x, func f) -> int {
+func apply(int x, func f): int {
     return f(x)
 }
 
-func double(int x) -> int => x * 2
-func triple(int x) -> int => x * 3
+func double(int x): int => x * 2
+func triple(int x): int => x * 3
 
 printin(apply(5, double))  // 10
 printin(apply(5, triple))  // 15
@@ -100,7 +100,7 @@ printin(add_x(5))  // 15
 Functions that yield values:
 
 ```cnext
-func fibonacci() -> iter<int> {
+func fibonacci(): iter<int> {
     var a = 0, b = 1
     while true {
         yield a
@@ -121,7 +121,7 @@ for var x in fibonacci() {
 Functions that can be resumed:
 
 ```cnext
-coroutine func counter() -> iter<int> {
+coroutine func counter(): iter<int> {
     var i = 0
     while true {
         yield i
@@ -135,7 +135,7 @@ coroutine func counter() -> iter<int> {
 Asynchronous functions:
 
 ```cnext
-async func fetch_data(str url) -> str {
+async func fetch_data(str url): str {
     // Async operations
     return "data from " + url
 }
@@ -152,7 +152,7 @@ Add methods to existing types:
 
 ```cnext
 extend str {
-    func shout() -> str {
+    func shout(): str {
         return self + "!!!"
     }
 }
@@ -175,7 +175,7 @@ class Vec2 {
         self.y = y_val
     }
 
-    func operator+(Vec2 other) -> Vec2 {
+    func operator+(Vec2 other): Vec2 {
         return new Vec2(self.x + other.x, self.y + other.y)
     }
 }

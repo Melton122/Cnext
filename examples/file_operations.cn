@@ -1,0 +1,48 @@
+// Example: File Operations with Built-in Functions
+// Demonstrates file operations without imports
+
+main {
+    // Create and write a file
+    printin("Creating file...")
+    write_file("example.txt", "Hello, World!\nThis is a Cnext file.\nLine 3.")
+
+    // Read the file
+    str content = read_file("example.txt")
+    printin("File content:")
+    printin(content)
+
+    // Check file properties
+    bool exists = file_exists("example.txt")
+    long size = file_size("example.txt")
+    printin("File exists: " + to_str(exists))
+    printin("File size: " + to_str(size) + " bytes")
+
+    // Append to file
+    printin("\nAppending to file...")
+    append_file("example.txt", "\nAppended line.")
+    str updated = read_file("example.txt")
+    printin("Updated content:")
+    printin(updated)
+
+    // Copy the file
+    printin("\nCopying file...")
+    copy_file("example.txt", "example_copy.txt")
+    str copied = read_file("example_copy.txt")
+    printin("Copy content:")
+    printin(copied)
+
+    // Move the file
+    printin("\nMoving file...")
+    move_file("example_copy.txt", "example_moved.txt")
+    bool copy_exists = file_exists("example_copy.txt")
+    bool moved_exists = file_exists("example_moved.txt")
+    printin("Copy exists: " + to_str(copy_exists))
+    printin("Moved exists: " + to_str(moved_exists))
+
+    // Clean up
+    printin("\nCleaning up...")
+    delete_file("example.txt")
+    delete_file("example_moved.txt")
+    bool cleaned = file_exists("example.txt")
+    printin("Original exists after cleanup: " + to_str(cleaned))
+}

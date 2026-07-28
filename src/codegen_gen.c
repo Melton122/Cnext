@@ -157,6 +157,19 @@ static void generate_gen_body_node(ASTNode* node, GenLocal* all_vars) {
             }
             break;
         }
+        case AST_EXPR_STMT: {
+            write_indent();
+            generate_node(node);
+            break;
+        }
+        case AST_RETURN: {
+            write_indent();
+            fprintf(out, "f->current = (");
+            if (node->left) generate_expression(node->left);
+            else fprintf(out, "0");
+            fprintf(out, ");\n");
+            break;
+        }
         default: {
             write_indent();
             generate_node(node);
@@ -213,6 +226,7 @@ void generate_generator_code(ASTNode* node, const char* func_name) {
     fprintf(out, "    int current;\n");
     fprintf(out, "    bool done;\n");
     fprintf(out, "    int _received;\n");
+    fprintf(out, "    bool (*_next)(void*);\n");
     for (GenLocal* gl = params; gl; gl = gl->next) {
         fprintf(out, "    ");
         const char* ct = type_token_to_c(gl->type);
@@ -229,6 +243,7 @@ void generate_generator_code(ASTNode* node, const char* func_name) {
     }
     fprintf(out, "} _gen_%s_frame;\n\n", func_name);
     
+    fprintf(out, "bool _gen_%s_next(_gen_%s_frame* f);\n", func_name, func_name);
     fprintf(out, "bool _gen_%s_next(_gen_%s_frame* f) {\n", func_name, func_name);
     fprintf(out, "    switch (f->_pc) {\n");
     
@@ -249,6 +264,10 @@ void generate_generator_code(ASTNode* node, const char* func_name) {
     fprintf(out, "    return false;\n");
     fprintf(out, "}\n\n");
     
+    fprintf(out, "static bool _gen_%s_next_v(void* _p) {\n", func_name);
+    fprintf(out, "    return _gen_%s_next((_gen_%s_frame*)_p);\n", func_name, func_name);
+    fprintf(out, "}\n\n");
+    
     fprintf(out, "_gen_%s_frame* %s(", func_name, func_name);
     bool first = true;
     for (GenLocal* gl = params; gl; gl = gl->next) {
@@ -260,13 +279,15 @@ void generate_generator_code(ASTNode* node, const char* func_name) {
         first = false;
     }
     fprintf(out, ") {\n");
-    fprintf(out, "    _gen_%s_frame* f = (_gen_%s_frame*)malloc(sizeof(_gen_%s_frame));\n", 
+    fprintf(out, "    _gen_%s_frame* f = (_gen_%s_frame*)malloc(sizeof(_gen_%s_frame));\n",
             func_name, func_name, func_name);
+    fprintf(out, "    if (!f) { fprintf(stderr, \"Cnext runtime: out of memory.\\n\"); exit(70); }\n");
     fprintf(out, "    _cnext_track(f);\n");
     fprintf(out, "    f->_pc = 0;\n");
     fprintf(out, "    f->done = false;\n");
     fprintf(out, "    f->current = 0;\n");
     fprintf(out, "    f->_received = 0;\n");
+    fprintf(out, "    f->_next = _gen_%s_next_v;\n", func_name);
     for (GenLocal* gl = params; gl; gl = gl->next) {
         fprintf(out, "    f->%.*s = %.*s;\n", gl->name_len, gl->name, gl->name_len, gl->name);
     }

@@ -13,7 +13,7 @@ class Animal {
         printin("...")
     }
 
-    func info() -> str {
+    func info(): str {
         return self.name + " (age " + self.age + ")"
     }
 }

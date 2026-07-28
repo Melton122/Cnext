@@ -1,0 +1,29 @@
+// EXPECT: int
+// EXPECT: str
+// EXPECT: float
+// EXPECT: bool
+// EXPECT: 42
+// EXPECT: 11
+main {
+    // typeof
+    int x = 42
+    printin(typeof(x))
+
+    str s = "hello"
+    printin(typeof(s))
+
+    float f = 3.14
+    printin(typeof(f))
+
+    bool b = true
+    printin(typeof(b))
+
+    // clone
+    int orig = 42
+    int cloned = clone(orig)
+    printin(cloned)
+
+    // len
+    str msg = "hello world"
+    printin(len(msg))
+}

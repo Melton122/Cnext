@@ -71,16 +71,55 @@ var greeting = "Hi"      // str
 ### Functions
 
 ```cnext
-func add(int a, int b) -> int {
+func add(int a, int b): int {
     return a + b
 }
 
 // Arrow syntax for simple functions
-func multiply(int a, int b) -> int => a * b
+func multiply(int a, int b): int => a * b
 
 // Call functions
 var result = add(5, 3)
 printin(result)  // 8
+```
+
+### Built-in Functions
+
+Cnext provides many built-in functions that are globally available without any imports:
+
+```cnext
+main {
+    // String operations
+    str upper = str_upper("hello")           // HELLO
+    str lower = str_lower("HELLO")           // hello
+    str trimmed = str_trim("  hi  ")         // hi
+    bool has = str_contains("hello", "ell")  // true
+    int len_val = len("hello")               // 5
+
+    // Math operations
+    int abs_val = math_abs(-5)               // 5
+    int min_val = math_min(5, 3)             // 3
+    int max_val = math_max(5, 3)             // 5
+    long fact = math_factorial(5)            // 120
+    int fib = math_fibonacci(10)             // 55
+
+    // Type conversion
+    int n = to_int(3.14)                     // 3
+    float f = to_float(42)                   // 42.0
+    str s = to_str(42)                       // "42"
+
+    // File operations
+    write_file("test.txt", "hello")
+    str content = read_file("test.txt")
+
+    // System info
+    str os = platform()                      // "windows"
+    int cpus = cpu_count()                   // 8
+
+    // Encoding
+    str encoded = base64_encode("hello")
+    str id = uuid()                          // UUID string
+}
 ```
 
 ### Control Flow
@@ -140,7 +179,7 @@ class Point {
         self.y = y_val
     }
 
-    func distance() -> int {
+    func distance(): int {
         return self.x * self.x + self.y * self.y
     }
 }
@@ -152,7 +191,7 @@ printin(p.distance())  // 25
 ### Error Handling
 
 ```cnext
-func divide(int a, int b) -> int {
+func divide(int a, int b): int {
     if b == 0 {
         throw "Division by zero"
     }

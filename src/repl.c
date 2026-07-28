@@ -83,7 +83,7 @@ static bool compile_and_run(const char* c_code) {
     fwrite(c_code, 1, strlen(c_code), f);
     fclose(f);
 
-    char* gcc_args[] = {"gcc", "-std=gnu11", "-o", CNEXT_TEMP_REPL_EXE, CNEXT_TEMP_REPL_C, NULL};
+    char* gcc_args[] = {"gcc", "-std=gnu11", "-iquote", "include", "-o", CNEXT_TEMP_REPL_EXE, CNEXT_TEMP_REPL_C, NULL};
     int compile_status = run_process_repl("gcc", gcc_args);
     if (compile_status != 0) {
         fprintf(stderr, "Compilation failed.\n");
@@ -141,13 +141,13 @@ bool run_repl(void) {
             continue;
         }
 
-        // Wrap bare expressions in a main() with println
+        // Wrap bare expressions in a main() with printin
         char expr_buf[8192];
         if (line[0] != '{' && strstr(line, "func ") != line &&
             strstr(line, "class ") == NULL && strstr(line, "struct ") == NULL &&
             strstr(line, "enum ") == NULL) {
             snprintf(expr_buf, sizeof(expr_buf),
-                "import \"io\"\n\nfunc main() {\n    println(%s);\n}\n", line);
+                "main {\n    printin(%s);\n}\n", line);
         } else {
             snprintf(expr_buf, sizeof(expr_buf), "%s\n", line);
         }

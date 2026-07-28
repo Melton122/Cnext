@@ -11,17 +11,17 @@ class Player {
         self.attack_power = ap
     }
 
-    func attack(Player enemy) -> int {
+    func attack(Player enemy): int {
         var damage = self.attack_power
         enemy.health = enemy.health - damage
         return damage
     }
 
-    func is_alive() -> bool {
+    func is_alive(): bool {
         return self.health > 0
     }
 
-    func info() -> str {
+    func info(): str {
         return self.name + " (HP: " + self.health + ")"
     }
 }
@@ -37,13 +37,13 @@ class Monster {
         self.attack_power = ap
     }
 
-    func attack(Player player) -> int {
+    func attack(Player player): int {
         var damage = self.attack_power
         player.health = player.health - damage
         return damage
     }
 
-    func is_alive() -> bool {
+    func is_alive(): bool {
         return self.health > 0
     }
 }

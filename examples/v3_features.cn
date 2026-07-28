@@ -5,7 +5,7 @@ import math
 
 //  Interfaces 
 interface Shape {
-    func area() -> float
+    func area(): float
     func describe()
 }
 
@@ -19,7 +19,7 @@ class Rectangle implements Shape {
         self.height = h
     }
 
-    func area() -> float {
+    func area(): float {
         return self.width * self.height
     }
 
@@ -35,7 +35,7 @@ class Circle implements Shape {
         self.radius = r
     }
 
-    func area() -> float {
+    func area(): float {
         const float pi = 3.14159
         return pi * self.radius * self.radius
     }

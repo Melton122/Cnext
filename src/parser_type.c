@@ -128,10 +128,47 @@ ASTNode* parse_type() {
         if (match_token(TOKEN_QUESTION)) {
             node->is_pointer = true; // Reuse is_pointer flag for nullable
         }
+        // Handle union types: Type1 | Type2 | Type3
+        if (match_token(TOKEN_PIPE)) {
+            ASTNode* union_node = create_node(AST_UNION_TYPE, typeToken);
+            union_node->is_union_type = true;
+            add_child(union_node, node);
+            do {
+                ASTNode* next_type = parse_type();
+                if (!next_type) {
+                    free_ast(union_node);
+                    return NULL;
+                }
+                add_child(union_node, next_type);
+            } while (match_token(TOKEN_PIPE));
+            return union_node;
+        }
         return node;
     }
     error_at_current("Expect type.");
     return NULL;
+}
+
+ASTNode* parse_type_union(void) {
+    ASTNode* left = parse_type();
+    if (!left) return NULL;
+    
+    // Handle union types: Type1 | Type2 | Type3
+    if (match_token(TOKEN_PIPE)) {
+        ASTNode* union_node = create_node(AST_UNION_TYPE, left->token);
+        union_node->is_union_type = true;
+        add_child(union_node, left);
+        do {
+            ASTNode* next_type = parse_type();
+            if (!next_type) {
+                free_ast(union_node);
+                return NULL;
+            }
+            add_child(union_node, next_type);
+        } while (match_token(TOKEN_PIPE));
+        return union_node;
+    }
+    return left;
 }
 
 bool is_generic_call_lookahead(void) {

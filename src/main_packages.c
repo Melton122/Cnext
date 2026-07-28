@@ -81,34 +81,33 @@ bool download_package(const char* name, const char* url) {
         return false;
     }
 
-    char command[CNEXT_PATH_MAX * 3 + 1024];
-    int written = snprintf(command, sizeof(command), "curl -fsSL \"%s\" -o \"%s\"", url, out_path);
-    if (written < 0 || (size_t)written >= sizeof(command)) {
-        fprintf(stderr, "Download command is too long for package '%s'.\n", name);
-        return false;
-    }
     printf("Downloading %s...\n", name);
-    int res = system(command);
-    if (res == 0) return true;
 
-    written = snprintf(command, sizeof(command), "wget -q \"%s\" -O \"%s\"", url, out_path);
-    if (written < 0 || (size_t)written >= sizeof(command)) {
-        fprintf(stderr, "Download command is too long for package '%s'.\n", name);
-        return false;
+    // Try curl with safe argument array (no shell injection)
+    {
+        char* curl_args[] = {"curl", "-fsSL", url, "-o", out_path, NULL};
+        int res = run_process("curl", curl_args);
+        if (res == 0) return true;
     }
-    res = system(command);
-    if (res == 0) return true;
+
+    // Try wget
+    {
+        char* wget_args[] = {"wget", "-q", url, "-O", out_path, NULL};
+        int res = run_process("wget", wget_args);
+        if (res == 0) return true;
+    }
 
 #ifdef _WIN32
-    written = snprintf(command, sizeof(command),
-        "powershell -Command \"try { Invoke-WebRequest -Uri '%s' -OutFile '%s' } catch { exit 1 }\"",
-        url, out_path);
-    if (written < 0 || (size_t)written >= sizeof(command)) {
-        fprintf(stderr, "Download command is too long for package '%s'.\n", name);
-        return false;
+    // Try PowerShell Invoke-WebRequest
+    {
+        char ps_uri[2048];
+        char ps_out[2048];
+        snprintf(ps_uri, sizeof(ps_uri), "Invoke-WebRequest -Uri '%s'", url);
+        snprintf(ps_out, sizeof(ps_out), "-OutFile '%s'", out_path);
+        char* ps_args[] = {"powershell", "-Command", ps_uri, ps_out, NULL};
+        int res = run_process("powershell", ps_args);
+        if (res == 0) return true;
     }
-    res = system(command);
-    if (res == 0) return true;
 #endif
 
     fprintf(stderr, "Failed to download %s from %s\n", name, url);
@@ -241,7 +240,7 @@ char* build_source_with_packages(const char* source, const char* project_dir) {
                 char name[64] = {0};
                 memcpy(name, name_start, name_len);
 
-                if (!is_standard_module(name)) {
+                if (!is_standard_module(name) && is_safe_path_component(name)) {
                     bool already_loaded = false;
                     for (int i = 0; i < visited_count; i++) {
                         if (strcmp(visited[i], name) == 0) { already_loaded = true; break; }

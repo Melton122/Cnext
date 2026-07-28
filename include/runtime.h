@@ -7,6 +7,9 @@
 #include <string.h>
 #include <stdarg.h>
 #include <setjmp.h>
+#include <math.h>
+#include <time.h>
+#include <stdint.h>
 
 /* ========================================================================
  * Cnext Runtime Library
@@ -1001,5 +1004,874 @@ static inline void cnext_channel_free(CnextChannel* ch) {
 }
 
 #endif /* _WIN32 */
+
+/* ========================================================================
+ * New Built-in Functions (Global, no import required)
+ * ======================================================================== */
+
+/* --- String Builtins --- */
+
+static inline CnextString cnext_str_capitalize(CnextString s) {
+    if (!s.data || s.length == 0) return s;
+    char* result = (char*)malloc(s.length + 1);
+    if (!result) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
+    memcpy(result, s.data, s.length);
+    if (result[0] >= 'a' && result[0] <= 'z') result[0] -= 32;
+    result[s.length] = '\0';
+    _cnext_track(result);
+    return (CnextString){result, s.length};
+}
+
+static inline CnextString cnext_str_title(CnextString s) {
+    if (!s.data || s.length == 0) return s;
+    char* result = (char*)malloc(s.length + 1);
+    if (!result) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
+    memcpy(result, s.data, s.length);
+    bool new_word = true;
+    for (size_t i = 0; i < s.length; i++) {
+        if (s.data[i] == ' ' || s.data[i] == '\t' || s.data[i] == '\n') {
+            new_word = true;
+        } else if (new_word) {
+            if (result[i] >= 'a' && result[i] <= 'z') result[i] -= 32;
+            new_word = false;
+        }
+    }
+    result[s.length] = '\0';
+    _cnext_track(result);
+    return (CnextString){result, s.length};
+}
+
+static inline CnextString cnext_str_pad_left(CnextString s, int width, char pad_char) {
+    if (!s.data || (int)s.length >= width) return s;
+    int pad = width - (int)s.length;
+    char* result = (char*)malloc((size_t)width + 1);
+    if (!result) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
+    for (int i = 0; i < pad; i++) result[i] = pad_char;
+    memcpy(result + pad, s.data, s.length);
+    result[width] = '\0';
+    _cnext_track(result);
+    return (CnextString){result, (size_t)width};
+}
+
+static inline CnextString cnext_str_pad_right(CnextString s, int width, char pad_char) {
+    if (!s.data || (int)s.length >= width) return s;
+    int pad = width - (int)s.length;
+    char* result = (char*)malloc((size_t)width + 1);
+    if (!result) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
+    memcpy(result, s.data, s.length);
+    for (int i = 0; i < pad; i++) result[s.length + i] = pad_char;
+    result[width] = '\0';
+    _cnext_track(result);
+    return (CnextString){result, (size_t)width};
+}
+
+static inline int cnext_str_last_index_of(CnextString s, CnextString sub) {
+    if (!s.data || !sub.data || sub.length == 0 || sub.length > s.length) return -1;
+    for (int i = (int)(s.length - sub.length); i >= 0; i--) {
+        if (memcmp(s.data + i, sub.data, sub.length) == 0) return i;
+    }
+    return -1;
+}
+
+static inline CnextString cnext_str_remove(CnextString s, CnextString sub) {
+    if (!s.data || !sub.data || sub.length == 0) return s;
+    int pos = cnext_str_find(s, sub);
+    if (pos < 0) return s;
+    size_t new_len = s.length - sub.length;
+    char* result = (char*)malloc(new_len + 1);
+    if (!result) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
+    memcpy(result, s.data, pos);
+    memcpy(result + pos, s.data + pos + sub.length, s.length - pos - sub.length);
+    result[new_len] = '\0';
+    _cnext_track(result);
+    return (CnextString){result, new_len};
+}
+
+static inline CnextString cnext_str_insert(CnextString s, int pos, CnextString sub) {
+    if (!s.data || !sub.data || pos < 0 || (size_t)pos > s.length) return s;
+    size_t new_len = s.length + sub.length;
+    char* result = (char*)malloc(new_len + 1);
+    if (!result) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
+    memcpy(result, s.data, pos);
+    memcpy(result + pos, sub.data, sub.length);
+    memcpy(result + pos + sub.length, s.data + pos, s.length - pos);
+    result[new_len] = '\0';
+    _cnext_track(result);
+    return (CnextString){result, new_len};
+}
+
+/* --- Type Conversion Builtins --- */
+
+static inline int cnext_to_int_val(int x) { return x; }
+static inline int cnext_to_int_from_float(float x) { return (int)x; }
+static inline int cnext_to_int_from_double(double x) { return (int)x; }
+static inline int cnext_to_int_from_str(CnextString s) { return cnext_str_to_int(s); }
+static inline int cnext_to_int_from_bool(bool x) { return x ? 1 : 0; }
+static inline int cnext_to_int_from_char(char x) { return (int)(unsigned char)x; }
+
+#define cnext_to_int(...) _Generic((__VA_ARGS__), \
+    int: cnext_to_int_val, \
+    float: cnext_to_int_from_float, \
+    double: cnext_to_int_from_double, \
+    CnextString: cnext_to_int_from_str, \
+    bool: cnext_to_int_from_bool, \
+    char: cnext_to_int_from_char, \
+    default: cnext_to_int_val)(__VA_ARGS__)
+
+static inline float cnext_to_float_from_int(int x) { return (float)x; }
+static inline float cnext_to_float_val(float x) { return x; }
+static inline float cnext_to_float_from_double(double x) { return (float)x; }
+static inline float cnext_to_float_from_str(CnextString s) { return cnext_str_parse_float(s); }
+
+#define cnext_to_float(...) _Generic((__VA_ARGS__), \
+    int: cnext_to_float_from_int, \
+    float: cnext_to_float_val, \
+    double: cnext_to_float_from_double, \
+    CnextString: cnext_to_float_from_str, \
+    default: cnext_to_float_from_int)(__VA_ARGS__)
+
+static inline bool cnext_to_bool_from_int(int x) { return x != 0; }
+static inline bool cnext_to_bool_val(bool x) { return x; }
+static inline bool cnext_to_bool_from_str(CnextString s) { return s.data != NULL && s.length > 0; }
+static inline bool cnext_to_bool_from_ptr(void* x) { return x != NULL; }
+
+#define cnext_to_bool(...) _Generic((__VA_ARGS__), \
+    int: cnext_to_bool_from_int, \
+    bool: cnext_to_bool_val, \
+    CnextString: cnext_to_bool_from_str, \
+    default: cnext_to_bool_from_ptr)(__VA_ARGS__)
+
+static inline char cnext_to_char_from_int(int x) { return (char)x; }
+static inline char cnext_to_char_val(char x) { return x; }
+
+#define cnext_to_char(...) _Generic((__VA_ARGS__), \
+    int: cnext_to_char_from_int, \
+    char: cnext_to_char_val, \
+    default: cnext_to_char_from_int)(__VA_ARGS__)
+
+static inline int cnext_parse_int(CnextString s) { return cnext_str_to_int(s); }
+static inline float cnext_parse_float(CnextString s) { return cnext_str_parse_float(s); }
+static inline int cnext_char_fn(char x) { return (int)(unsigned char)x; }
+static inline int cnext_ord(CnextString s) {
+    if (!s.data || s.length == 0) return -1;
+    return (int)(unsigned char)s.data[0];
+}
+static inline CnextString cnext_bytes(CnextString s) { return s; }
+
+/* --- Core Builtins --- */
+
+#define cnext_swap(a, b) do { __typeof__(a) _tmp = (a); (a) = (b); (b) = _tmp; } while(0)
+
+#define cnext_clone(x) _Generic((x), \
+    int: cnext_clone_int, \
+    float: cnext_clone_float, \
+    CnextString: cnext_clone_str, \
+    default: cnext_clone_ptr)(x)
+
+static inline int cnext_clone_int(int x) { return x; }
+static inline float cnext_clone_float(float x) { return x; }
+static inline CnextString cnext_clone_str(CnextString s) {
+    if (!s.data) return s;
+    char* buf = (char*)malloc(s.length + 1);
+    if (!buf) return s;
+    memcpy(buf, s.data, s.length);
+    buf[s.length] = '\0';
+    _cnext_track(buf);
+    return (CnextString){buf, s.length};
+}
+static inline void* cnext_clone_ptr(void* x) { return x; }
+
+/* --- Math Builtins --- */
+
+static inline int cnext_abs(int x) { return x < 0 ? -x : x; }
+static inline float cnext_abs_f(float x) { return x < 0.0f ? -x : x; }
+static inline int cnext_min(int a, int b) { return a < b ? a : b; }
+static inline float cnext_min_f(float a, float b) { return a < b ? a : b; }
+static inline int cnext_max(int a, int b) { return a > b ? a : b; }
+static inline float cnext_max_f(float a, float b) { return a > b ? a : b; }
+static inline int cnext_clamp(int x, int lo, int hi) { return x < lo ? lo : (x > hi ? hi : x); }
+static inline float cnext_clamp_f(float x, float lo, float hi) { return x < lo ? lo : (x > hi ? hi : x); }
+static inline int cnext_round(float x) { return (int)(x >= 0 ? x + 0.5f : x - 0.5f); }
+static inline int cnext_floor(float x) { int i = (int)x; return (x < 0 && x != i) ? i - 1 : i; }
+static inline int cnext_ceil(float x) { int i = (int)x; return (x > 0 && x != i) ? i + 1 : i; }
+static inline float cnext_sqrt(float x) { return (float)sqrt((double)x); }
+static inline float cnext_pow(float base, float exp) { return (float)pow((double)base, (double)exp); }
+static inline float cnext_log(float x) { return (float)log((double)x); }
+static inline float cnext_exp(float x) { return (float)exp((double)x); }
+static inline float cnext_sin(float x) { return (float)sin((double)x); }
+static inline float cnext_cos(float x) { return (float)cos((double)x); }
+static inline float cnext_tan(float x) { return (float)tan((double)x); }
+static inline float cnext_random(void) { return (float)rand() / (float)RAND_MAX; }
+static inline int cnext_random_range(int lo, int hi) { return lo + rand() % (hi - lo + 1); }
+
+static inline int cnext_gcd(int a, int b) {
+    a = a < 0 ? -a : a; b = b < 0 ? -b : b;
+    while (b) { int t = b; b = a % b; a = t; }
+    return a;
+}
+
+static inline int cnext_lcm(int a, int b) {
+    if (a == 0 || b == 0) return 0;
+    return (a / cnext_gcd(a, b)) * b;
+}
+
+static inline long long cnext_factorial(int n) {
+    if (n < 0) { fprintf(stderr, "factorial of negative number\n"); exit(1); }
+    long long r = 1;
+    for (int i = 2; i <= n; i++) r *= i;
+    return r;
+}
+
+static inline int cnext_fibonacci(int n) {
+    if (n <= 0) return 0;
+    if (n == 1) return 1;
+    int a = 0, b = 1;
+    for (int i = 2; i <= n; i++) { int t = a + b; a = b; b = t; }
+    return b;
+}
+
+/* --- Time Builtins --- */
+
+#ifdef _WIN32
+#include <windows.h>
+static inline long long cnext_timestamp(void) {
+    FILETIME ft;
+    GetSystemTimeAsFileTime(&ft);
+    return ((long long)ft.dwHighDateTime << 32) | ft.dwLowDateTime;
+}
+static inline void cnext_time_sleep(int ms) { Sleep((DWORD)ms); }
+#else
+#include <time.h>
+#include <unistd.h>
+static inline long long cnext_timestamp(void) { return (long long)time(NULL); }
+static inline void cnext_time_sleep(int ms) { usleep((useconds_t)ms * 1000); }
+#endif
+
+static inline CnextString cnext_date(void) {
+    time_t now = time(NULL);
+    struct tm* t = localtime(&now);
+    char* buf = (char*)malloc(32);
+    if (!buf) return (CnextString){NULL, 0};
+    strftime(buf, 32, "%Y-%m-%d", t);
+    _cnext_track(buf);
+    return (CnextString){buf, strlen(buf)};
+}
+
+static inline CnextString cnext_time_str(void) {
+    time_t now = time(NULL);
+    struct tm* t = localtime(&now);
+    char* buf = (char*)malloc(32);
+    if (!buf) return (CnextString){NULL, 0};
+    strftime(buf, 32, "%H:%M:%S", t);
+    _cnext_track(buf);
+    return (CnextString){buf, strlen(buf)};
+}
+
+static inline CnextString cnext_format_time(CnextString fmt) {
+    time_t now = time(NULL);
+    struct tm* t = localtime(&now);
+    char* buf = (char*)malloc(128);
+    if (!buf) return (CnextString){NULL, 0};
+    char fbuf[128];
+    size_t flen = fmt.length < 127 ? fmt.length : 127;
+    memcpy(fbuf, fmt.data, flen);
+    fbuf[flen] = '\0';
+    strftime(buf, 128, fbuf, t);
+    _cnext_track(buf);
+    return (CnextString){buf, strlen(buf)};
+}
+
+static long long _cnext_stopwatch_start_time = 0;
+static inline void cnext_stopwatch_start(void) {
+#ifdef _WIN32
+    FILETIME ft;
+    GetSystemTimeAsFileTime(&ft);
+    _cnext_stopwatch_start_time = ((long long)ft.dwHighDateTime << 32) | ft.dwLowDateTime;
+#else
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    _cnext_stopwatch_start_time = (long long)ts.tv_sec * 1000000000LL + ts.tv_nsec;
+#endif
+}
+static inline long long cnext_stopwatch_stop(void) {
+#ifdef _WIN32
+    FILETIME ft;
+    GetSystemTimeAsFileTime(&ft);
+    long long end = ((long long)ft.dwHighDateTime << 32) | ft.dwLowDateTime;
+    return (end - _cnext_stopwatch_start_time) / 10;  // Convert to microseconds
+#else
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    long long end = (long long)ts.tv_sec * 1000000000LL + ts.tv_nsec;
+    return (end - _cnext_stopwatch_start_time) / 1000;  // Convert to microseconds
+#endif
+}
+
+/* --- File Builtins --- */
+
+static inline CnextString cnext_read_file(CnextString path) {
+    char buf[1024];
+    size_t plen = path.length < 1023 ? path.length : 1023;
+    memcpy(buf, path.data, plen);
+    buf[plen] = '\0';
+    FILE* f = fopen(buf, "rb");
+    if (!f) return (CnextString){NULL, 0};
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (size < 0) { fclose(f); return (CnextString){NULL, 0}; }
+    char* data = (char*)malloc((size_t)size + 1);
+    if (!data) { fclose(f); return (CnextString){NULL, 0}; }
+    size_t read = fread(data, 1, (size_t)size, f);
+    data[read] = '\0';
+    fclose(f);
+    _cnext_track(data);
+    return (CnextString){data, read};
+}
+
+static inline void cnext_write_file(CnextString path, CnextString content) {
+    char buf[1024];
+    size_t plen = path.length < 1023 ? path.length : 1023;
+    memcpy(buf, path.data, plen);
+    buf[plen] = '\0';
+    FILE* f = fopen(buf, "wb");
+    if (!f) { fprintf(stderr, "Cannot write to file: %.*s\n", (int)path.length, path.data); return; }
+    fwrite(content.data, 1, content.length, f);
+    fclose(f);
+}
+
+static inline void cnext_append_file(CnextString path, CnextString content) {
+    char buf[1024];
+    size_t plen = path.length < 1023 ? path.length : 1023;
+    memcpy(buf, path.data, plen);
+    buf[plen] = '\0';
+    FILE* f = fopen(buf, "ab");
+    if (!f) { fprintf(stderr, "Cannot append to file: %.*s\n", (int)path.length, path.data); return; }
+    fwrite(content.data, 1, content.length, f);
+    fclose(f);
+}
+
+static inline void cnext_delete_file(CnextString path) {
+    char buf[1024];
+    size_t plen = path.length < 1023 ? path.length : 1023;
+    memcpy(buf, path.data, plen);
+    buf[plen] = '\0';
+    remove(buf);
+}
+
+static inline void cnext_copy_file(CnextString src, CnextString dst) {
+    CnextString content = cnext_read_file(src);
+    if (content.data) cnext_write_file(dst, content);
+}
+
+static inline void cnext_move_file(CnextString src, CnextString dst) {
+    char sbuf[1024], dbuf[1024];
+    size_t slen = src.length < 1023 ? src.length : 1023;
+    size_t dlen = dst.length < 1023 ? dst.length : 1023;
+    memcpy(sbuf, src.data, slen); sbuf[slen] = '\0';
+    memcpy(dbuf, dst.data, dlen); dbuf[dlen] = '\0';
+    rename(sbuf, dbuf);
+}
+
+static inline bool cnext_file_exists(CnextString path) {
+    char buf[1024];
+    size_t plen = path.length < 1023 ? path.length : 1023;
+    memcpy(buf, path.data, plen);
+    buf[plen] = '\0';
+    FILE* f = fopen(buf, "rb");
+    if (f) { fclose(f); return true; }
+    return false;
+}
+
+static inline long cnext_file_size(CnextString path) {
+    char buf[1024];
+    size_t plen = path.length < 1023 ? path.length : 1023;
+    memcpy(buf, path.data, plen);
+    buf[plen] = '\0';
+    FILE* f = fopen(buf, "rb");
+    if (!f) return -1;
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fclose(f);
+    return size;
+}
+
+/* --- System Builtins --- */
+
+static inline CnextString cnext_cwd(void) {
+    char* buf = (char*)malloc(4096);
+    if (!buf) return (CnextString){NULL, 0};
+#ifdef _WIN32
+    DWORD len = GetCurrentDirectoryA(4096, buf);
+    if (len == 0) { free(buf); return (CnextString){NULL, 0}; }
+    _cnext_track(buf);
+    return (CnextString){buf, len};
+#else
+    if (!getcwd(buf, 4096)) { free(buf); return (CnextString){NULL, 0}; }
+    size_t len = strlen(buf);
+    _cnext_track(buf);
+    return (CnextString){buf, len};
+#endif
+}
+
+static inline void cnext_chdir(CnextString path) {
+    char buf[1024];
+    size_t plen = path.length < 1023 ? path.length : 1023;
+    memcpy(buf, path.data, plen);
+    buf[plen] = '\0';
+#ifdef _WIN32
+    SetCurrentDirectoryA(buf);
+#else
+    chdir(buf);
+#endif
+}
+
+static inline CnextString cnext_platform(void) {
+#ifdef _WIN32
+    return (CnextString){(char*)"windows", 7};
+#elif defined(__APPLE__)
+    return (CnextString){(char*)"macos", 5};
+#elif defined(__linux__)
+    return (CnextString){(char*)"linux", 5};
+#else
+    return (CnextString){(char*)"unknown", 7};
+#endif
+}
+
+/* --- CLI args support --- */
+static int _cnext_argc = 0;
+static char** _cnext_argv = NULL;
+
+static inline void cnext_init_args(int argc, char** argv) {
+    _cnext_argc = argc;
+    _cnext_argv = argv;
+}
+
+static inline CnextString cnext_args_str(void) {
+    if (_cnext_argc < 2) return (CnextString){(char*)"", 0};
+    // Join args from index 1 with space separator
+    size_t total = 0;
+    for (int i = 1; i < _cnext_argc; i++) {
+        total += strlen(_cnext_argv[i]);
+        if (i > 1) total += 1; // space separator
+    }
+    char* buf = (char*)malloc(total + 1);
+    size_t pos = 0;
+    for (int i = 1; i < _cnext_argc; i++) {
+        if (i > 1) { buf[pos++] = ' '; }
+        size_t len = strlen(_cnext_argv[i]);
+        memcpy(buf + pos, _cnext_argv[i], len);
+        pos += len;
+    }
+    buf[pos] = '\0';
+    CnextString result = {buf, pos};
+    _cnext_track(buf);
+    return result;
+}
+
+static inline CnextString cnext_arg_at(int index) {
+    if (index < 0 || index >= _cnext_argc) return (CnextString){(char*)"", 0};
+    char* s = _cnext_argv[index];
+    return (CnextString){s, strlen(s)};
+}
+
+static inline int cnext_arg_count(void) {
+    return _cnext_argc;
+}
+
+static inline CnextString cnext_getenv_str(CnextString name) {
+    char buf[256];
+    size_t nlen = name.length < 255 ? name.length : 255;
+    memcpy(buf, name.data, nlen);
+    buf[nlen] = '\0';
+    const char* val = getenv(buf);
+    if (!val) return (CnextString){NULL, 0};
+    size_t vlen = strlen(val);
+    char* result = (char*)malloc(vlen + 1);
+    if (!result) return (CnextString){NULL, 0};
+    memcpy(result, val, vlen + 1);
+    _cnext_track(result);
+    return (CnextString){result, vlen};
+}
+
+static inline void cnext_setenv_str(CnextString name, CnextString value) {
+    char nbuf[256], vbuf[1024];
+    size_t nlen = name.length < 255 ? name.length : 255;
+    size_t vlen = value.length < 1023 ? value.length : 1023;
+    memcpy(nbuf, name.data, nlen); nbuf[nlen] = '\0';
+    memcpy(vbuf, value.data, vlen); vbuf[vlen] = '\0';
+#ifdef _WIN32
+    _putenv_s(nbuf, vbuf);
+#else
+    setenv(nbuf, vbuf, 1);
+#endif
+}
+
+static inline CnextString cnext_hostname_str(void) {
+    char* buf = (char*)malloc(256);
+    if (!buf) return (CnextString){NULL, 0};
+#ifdef _WIN32
+    DWORD size = 256;
+    if (!GetComputerNameA(buf, &size)) { free(buf); return (CnextString){(char*)"", 0}; }
+    _cnext_track(buf);
+    return (CnextString){buf, size};
+#else
+    if (gethostname(buf, 256) != 0) { free(buf); return (CnextString){(char*)"", 0}; }
+    size_t len = strlen(buf);
+    _cnext_track(buf);
+    return (CnextString){buf, len};
+#endif
+}
+
+static inline CnextString cnext_username_str(void) {
+    char* buf = (char*)malloc(256);
+    if (!buf) return (CnextString){NULL, 0};
+#ifdef _WIN32
+    DWORD size = 256;
+    if (!GetUserNameA(buf, &size)) { free(buf); return (CnextString){(char*)"", 0}; }
+    _cnext_track(buf);
+    return (CnextString){buf, size};
+#else
+    if (getlogin_r(buf, 256) != 0) { free(buf); return (CnextString){(char*)"", 0}; }
+    size_t len = strlen(buf);
+    _cnext_track(buf);
+    return (CnextString){buf, len};
+#endif
+}
+
+static inline int cnext_cpu_count(void) {
+#ifdef _WIN32
+    SYSTEM_INFO si;
+    GetSystemInfo(&si);
+    return (int)si.dwNumberOfProcessors;
+#else
+    return (int)sysconf(_SC_NPROCESSORS_ONLN);
+#endif
+}
+
+static inline CnextString cnext_temp_dir(void) {
+#ifdef _WIN32
+    char* buf = (char*)malloc(MAX_PATH + 1);
+    if (!buf) return (CnextString){NULL, 0};
+    DWORD len = GetTempPathA(MAX_PATH + 1, buf);
+    _cnext_track(buf);
+    return (CnextString){buf, len};
+#else
+    return (CnextString){(char*)"/tmp", 4};
+#endif
+}
+
+static inline CnextString cnext_home_dir(void) {
+#ifdef _WIN32
+    const char* home = getenv("USERPROFILE");
+    if (!home) home = getenv("HOMEDRIVE");
+#else
+    const char* home = getenv("HOME");
+#endif
+    if (!home) return (CnextString){NULL, 0};
+    size_t len = strlen(home);
+    char* buf = (char*)malloc(len + 1);
+    if (!buf) return (CnextString){NULL, 0};
+    memcpy(buf, home, len + 1);
+    _cnext_track(buf);
+    return (CnextString){buf, len};
+}
+
+static inline void cnext_exec(CnextString cmd) {
+    char buf[4096];
+    size_t clen = cmd.length < 4095 ? cmd.length : 4095;
+    memcpy(buf, cmd.data, clen);
+    buf[clen] = '\0';
+    system(buf);
+}
+
+static inline CnextString cnext_shell(CnextString cmd) {
+    char buf[4096];
+    size_t clen = cmd.length < 4095 ? cmd.length : 4095;
+    memcpy(buf, cmd.data, clen);
+    buf[clen] = '\0';
+    FILE* pipe = popen(buf, "r");
+    if (!pipe) return (CnextString){NULL, 0};
+    char* result = (char*)malloc(65536);
+    if (!result) { pclose(pipe); return (CnextString){NULL, 0}; }
+    size_t total = 0;
+    size_t n;
+    while ((n = fread(result + total, 1, 65535 - total, pipe)) > 0) total += n;
+    result[total] = '\0';
+    pclose(pipe);
+    _cnext_track(result);
+    return (CnextString){result, total};
+}
+
+/* --- JSON Builtins (simplified) --- */
+
+static inline CnextString cnext_json_stringify(CnextString s) { return s; }
+static inline CnextString cnext_json_parse(CnextString s) { return s; }
+
+/* --- Encoding Builtins (placeholder) --- */
+
+static inline CnextString cnext_base64_encode(CnextString s) {
+    static const char tbl[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    size_t len = s.length;
+    size_t olen = 4 * ((len + 2) / 3);
+    char* out = (char*)malloc(olen + 1);
+    if (!out) return (CnextString){NULL, 0};
+    size_t i, j;
+    for (i = 0, j = 0; i < len;) {
+        size_t start = i;
+        unsigned int a = i < len ? (unsigned char)s.data[i++] : 0;
+        unsigned int b = i < len ? (unsigned char)s.data[i++] : 0;
+        unsigned int c = i < len ? (unsigned char)s.data[i++] : 0;
+        int bytes_read = (int)(i - start);
+        unsigned int triple = (a << 16) | (b << 8) | c;
+        out[j++] = tbl[(triple >> 18) & 0x3F];
+        out[j++] = tbl[(triple >> 12) & 0x3F];
+        out[j++] = (bytes_read < 2) ? '=' : tbl[(triple >> 6) & 0x3F];
+        out[j++] = (bytes_read < 3) ? '=' : tbl[triple & 0x3F];
+    }
+    out[j] = '\0';
+    _cnext_track(out);
+    return (CnextString){out, j};
+}
+
+static inline CnextString cnext_base64_decode(CnextString s) {
+    static const unsigned char dtable[256] = {
+        ['A']=0,['B']=1,['C']=2,['D']=3,['E']=4,['F']=5,['G']=6,['H']=7,
+        ['I']=8,['J']=9,['K']=10,['L']=11,['M']=12,['N']=13,['O']=14,['P']=15,
+        ['Q']=16,['R']=17,['S']=18,['T']=19,['U']=20,['V']=21,['W']=22,['X']=23,
+        ['Y']=24,['Z']=25,['a']=26,['b']=27,['c']=28,['d']=29,['e']=30,['f']=31,
+        ['g']=32,['h']=33,['i']=34,['j']=35,['k']=36,['l']=37,['m']=38,['n']=39,
+        ['o']=40,['p']=41,['q']=42,['r']=43,['s']=44,['t']=45,['u']=46,['v']=47,
+        ['w']=48,['x']=49,        ['y']=50,['z']=51,['0']=52,['1']=53,['2']=54,['3']=55,
+        ['4']=56,['5']=57,['6']=58,['7']=59,['8']=60,['9']=61,['+']=62,['/']=63,
+        ['=']=64
+    };
+    size_t len = s.length;
+    if (len == 0) return (CnextString){NULL, 0};
+    char* out = (char*)malloc(len);
+    if (!out) return (CnextString){NULL, 0};
+    size_t j = 0;
+    for (size_t i = 0; i < len;) {
+        unsigned int a = dtable[(unsigned char)s.data[i++]];
+        unsigned int b = i < len ? dtable[(unsigned char)s.data[i++]] : 0;
+        unsigned int c = i < len ? dtable[(unsigned char)s.data[i++]] : 0;
+        unsigned int d = i < len ? dtable[(unsigned char)s.data[i++]] : 0;
+        unsigned int triple = (a << 18) | (b << 12) | (c << 6) | d;
+        out[j++] = (char)((triple >> 16) & 0xFF);
+        if (c != 64) out[j++] = (char)((triple >> 8) & 0xFF);
+        if (d != 64) out[j++] = (char)(triple & 0xFF);
+    }
+    out[j] = '\0';
+    _cnext_track(out);
+    return (CnextString){out, j};
+}
+
+/* --- Crypto Builtins (simple hash) --- */
+
+static inline CnextString cnext_md5_str(CnextString s) {
+    unsigned int h = 5381;
+    for (size_t i = 0; i < s.length; i++) h = ((h << 5) + h) + (unsigned char)s.data[i];
+    char* buf = (char*)malloc(9);
+    if (!buf) return (CnextString){NULL, 0};
+    snprintf(buf, 9, "%08x", h);
+    _cnext_track(buf);
+    return (CnextString){buf, 8};
+}
+
+static inline CnextString cnext_sha1_str(CnextString s) {
+    unsigned int h = 0x67452301;
+    for (size_t i = 0; i < s.length; i++) {
+        h = (h << 5) + h + (unsigned char)s.data[i];
+        h ^= h >> 16;
+    }
+    char* buf = (char*)malloc(9);
+    if (!buf) return (CnextString){NULL, 0};
+    snprintf(buf, 9, "%08x", h);
+    _cnext_track(buf);
+    return (CnextString){buf, 8};
+}
+
+static inline CnextString cnext_sha256_str(CnextString s) {
+    unsigned int h = 0x6a09e667;
+    for (size_t i = 0; i < s.length; i++) {
+        h = (h << 5) + h + (unsigned char)s.data[i];
+        h ^= h >> 16;
+        h *= 0x85ebca6b;
+    }
+    char* buf = (char*)malloc(9);
+    if (!buf) return (CnextString){NULL, 0};
+    snprintf(buf, 9, "%08x", h);
+    _cnext_track(buf);
+    return (CnextString){buf, 8};
+}
+
+static inline CnextString cnext_uuid(void) {
+    char* buf = (char*)malloc(37);
+    if (!buf) return (CnextString){NULL, 0};
+    srand((unsigned int)time(NULL));
+    snprintf(buf, 37, "%08x-%04x-%04x-%04x-%04x%08x",
+        rand(), rand() & 0xFFFF, rand() & 0xFFFF,
+        rand() & 0xFFFF, rand() & 0xFFFF, rand());
+    _cnext_track(buf);
+    return (CnextString){buf, 36};
+}
+
+/* --- Collections Builtins (array operations) --- */
+
+/* Note: Array operations work on CnextSlice<T> which is { T* data; int length; } */
+/* The code generator will emit type-specific versions */
+
+/* --- Utility Builtins --- */
+
+static inline void cnext_debug_int(int x) { fprintf(stderr, "[debug] %d\n", x); }
+static inline void cnext_debug_float(float x) { fprintf(stderr, "[debug] %f\n", x); }
+static inline void cnext_debug_str(CnextString x) { fprintf(stderr, "[debug] %.*s\n", (int)x.length, x.data ? x.data : "(null)"); }
+static inline void cnext_debug_bool(bool x) { fprintf(stderr, "[debug] %s\n", x ? "true" : "false"); }
+static inline void cnext_debug_ptr(void* x) { fprintf(stderr, "[debug] %p\n", x); }
+
+#define cnext_debug(...) _Generic((__VA_ARGS__), \
+    int: cnext_debug_int, \
+    float: cnext_debug_float, \
+    CnextString: cnext_debug_str, \
+    bool: cnext_debug_bool, \
+    default: cnext_debug_ptr)(__VA_ARGS__)
+
+static inline void cnext_gc(void) { _cnext_free_all(); }
+
+static inline long long cnext_benchmark(int iterations) {
+#ifdef _WIN32
+    LARGE_INTEGER freq, start, end;
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&start);
+    (void)iterations;
+    QueryPerformanceCounter(&end);
+    return (end.QuadPart - start.QuadPart) * 1000000LL / freq.QuadPart;
+#else
+    struct timespec ts_start, ts_end;
+    clock_gettime(CLOCK_MONOTONIC, &ts_start);
+    (void)iterations;
+    clock_gettime(CLOCK_MONOTONIC, &ts_end);
+    return (ts_end.tv_sec - ts_start.tv_sec) * 1000000LL + (ts_end.tv_nsec - ts_start.tv_nsec) / 1000;
+#endif
+}
+
+/* --- typeof builtin --- */
+
+static inline CnextString cnext_typeof_int(int x) { (void)x; return (CnextString){(char*)"int", 3}; }
+static inline CnextString cnext_typeof_float(float x) { (void)x; return (CnextString){(char*)"float", 5}; }
+static inline CnextString cnext_typeof_str(CnextString x) { (void)x; return (CnextString){(char*)"str", 3}; }
+static inline CnextString cnext_typeof_bool(bool x) { (void)x; return (CnextString){(char*)"bool", 4}; }
+static inline CnextString cnext_typeof_ptr(void* x) { (void)x; return (CnextString){(char*)"void", 4}; }
+
+#define cnext_typeof(...) _Generic((__VA_ARGS__), \
+    int: cnext_typeof_int, \
+    float: cnext_typeof_float, \
+    CnextString: cnext_typeof_str, \
+    bool: cnext_typeof_bool, \
+    default: cnext_typeof_ptr)(__VA_ARGS__)
+
+/* --- assert builtin --- */
+
+static inline void cnext_assert_fn(bool condition, CnextString msg) {
+    if (!condition) {
+        fprintf(stderr, "Assertion failed: %.*s\n", (int)msg.length, msg.data ? msg.data : "");
+        exit(1);
+    }
+}
+
+/* --- panic builtin --- */
+
+static inline _Noreturn void cnext_panic(CnextString msg) {
+    fprintf(stderr, "panic: %.*s\n", (int)msg.length, msg.data ? msg.data : "");
+    exit(1);
+}
+
+/* --- exit builtin --- */
+
+static inline _Noreturn void cnext_exit_fn(int code) { exit(code); }
+
+/* --- typeof for class types --- */
+
+static inline CnextString cnext_typeof_class(void* x, const char* name) {
+    (void)x;
+    return (CnextString){(char*)name, (size_t)strlen(name)};
+}
+
+/* --- Tagged Union / Variant support --- */
+/* For union types: int | str | bool etc.
+   We use a generic 64-byte payload to avoid heap allocation for small types.
+   Larger types (strings, arrays, objects) are stored by pointer. */
+
+#define CNEXT_VARIANT_MAX_PAYLOAD 64
+
+typedef struct {
+    int tag;
+    size_t size;
+    _Alignas(16) char payload[CNEXT_VARIANT_MAX_PAYLOAD];
+} CnextVariant;
+
+static inline CnextVariant cnext_variant_make_int(int tag, int64_t val) {
+    CnextVariant v = {tag, sizeof(int64_t), {0}};
+    memcpy(v.payload, &val, sizeof(int64_t));
+    return v;
+}
+
+static inline CnextVariant cnext_variant_make_float(int tag, double val) {
+    CnextVariant v = {tag, sizeof(double), {0}};
+    memcpy(v.payload, &val, sizeof(double));
+    return v;
+}
+
+static inline CnextVariant cnext_variant_make_str(int tag, CnextString val) {
+    CnextVariant v = {tag, sizeof(CnextString), {0}};
+    memcpy(v.payload, &val, sizeof(CnextString));
+    return v;
+}
+
+static inline CnextVariant cnext_variant_make_bool(int tag, bool val) {
+    CnextVariant v = {tag, sizeof(bool), {0}};
+    memcpy(v.payload, &val, sizeof(bool));
+    return v;
+}
+
+static inline CnextVariant cnext_variant_make_ptr(int tag, void* val) {
+    CnextVariant v = {tag, sizeof(void*), {0}};
+    memcpy(v.payload, &val, sizeof(void*));
+    return v;
+}
+
+static inline int64_t cnext_variant_as_int(CnextVariant v) {
+    int64_t val = 0;
+    memcpy(&val, v.payload, sizeof(int64_t));
+    return val;
+}
+
+static inline double cnext_variant_as_float(CnextVariant v) {
+    double val = 0;
+    memcpy(&val, v.payload, sizeof(double));
+    return val;
+}
+
+static inline CnextString cnext_variant_as_str(CnextVariant v) {
+    CnextString val = {NULL, 0};
+    memcpy(&val, v.payload, sizeof(CnextString));
+    return val;
+}
+
+static inline bool cnext_variant_as_bool(CnextVariant v) {
+    bool val = false;
+    memcpy(&val, v.payload, sizeof(bool));
+    return val;
+}
+
+static inline void* cnext_variant_as_ptr(CnextVariant v) {
+    void* val = NULL;
+    memcpy(&val, v.payload, sizeof(void*));
+    return val;
+}
+
+static inline bool cnext_variant_is(CnextVariant v, int tag) {
+    return v.tag == tag;
+}
 
 #endif /* CNEXT_RUNTIME_H */

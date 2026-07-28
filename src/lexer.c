@@ -2,11 +2,13 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdbool.h>
+#include <stdlib.h>
 
 typedef struct {
     const char* start;
     const char* current;
     int line;
+    int column;
     bool unterminated_comment;
 } Lexer;
 
@@ -16,6 +18,7 @@ void init_lexer(const char* source) {
     lexer.start = source;
     lexer.current = source;
     lexer.line = 1;
+    lexer.column = 1;
     lexer.unterminated_comment = false;
 }
 
@@ -25,6 +28,7 @@ static bool is_at_end(void) {
 
 static char advance(void) {
     lexer.current++;
+    lexer.column++;
     return lexer.current[-1];
 }
 
@@ -50,6 +54,7 @@ static Token make_token(CnextTokenType type) {
     token.start = lexer.start;
     token.length = (int)(lexer.current - lexer.start);
     token.line = lexer.line;
+    token.column = lexer.column;
     return token;
 }
 
@@ -59,6 +64,7 @@ static Token error_token(const char* message) {
     token.start = message;
     token.length = (int)strlen(message);
     token.line = lexer.line;
+    token.column = lexer.column;
     return token;
 }
 
@@ -73,6 +79,7 @@ static void skip_whitespace(void) {
                 break;
             case '\n':
                 lexer.line++;
+                lexer.column = 1;
                 advance();
                 break;
             case '/':
@@ -81,7 +88,7 @@ static void skip_whitespace(void) {
                 } else if (peek_next() == '*') {
                     advance(); advance();
                     while (!is_at_end() && !(peek() == '*' && peek_next() == '/')) {
-                        if (peek() == '\n') lexer.line++;
+                        if (peek() == '\n') { lexer.line++; lexer.column = 1; }
                         advance();
                     }
                     if (!is_at_end()) {
@@ -101,246 +108,113 @@ static void skip_whitespace(void) {
     }
 }
 
-static CnextTokenType check_keyword(int start, int length, const char* rest, CnextTokenType type) {
-    if (lexer.current - lexer.start == start + length &&
-        memcmp(lexer.start + start, rest, length) == 0) {
-        return type;
-    }
-    return TOKEN_IDENTIFIER;
+typedef struct {
+    const char* word;
+    CnextTokenType type;
+} KeywordEntry;
+
+static int kw_cmp(const void* a, const void* b) {
+    return strcmp(((const KeywordEntry*)a)->word, ((const KeywordEntry*)b)->word);
 }
 
+static const KeywordEntry keywords[] = {
+    {"abstract", TOKEN_ABSTRACT},
+    {"as", TOKEN_AS},
+    {"assert", TOKEN_ASSERT},
+    {"async", TOKEN_ASYNC},
+    {"await", TOKEN_AWAIT},
+    {"bench", TOKEN_BENCH},
+    {"bool", TOKEN_BOOL_TYPE},
+    {"break", TOKEN_BREAK},
+    {"byte", TOKEN_BYTE_TYPE},
+    {"case", TOKEN_CASE},
+    {"catch", TOKEN_CATCH},
+    {"channel", TOKEN_CHANNEL},
+    {"char", TOKEN_CHAR_TYPE},
+    {"class", TOKEN_CLASS},
+    {"const", TOKEN_CONST},
+    {"constexpr", TOKEN_CONSTEXPR},
+    {"continue", TOKEN_CONTINUE},
+    {"coroutine", TOKEN_COROUTINE},
+    {"default", TOKEN_DEFAULT},
+    {"defer", TOKEN_DEFER},
+    {"double", TOKEN_DOUBLE_TYPE},
+    {"else", TOKEN_ELSE},
+    {"enum", TOKEN_ENUM},
+    {"err", TOKEN_ERR},
+    {"exit", TOKEN_IDENTIFIER},
+    {"extend", TOKEN_EXTEND},
+    {"extends", TOKEN_EXTENDS},
+    {"extern", TOKEN_EXTERN},
+    {"false", TOKEN_FALSE},
+    {"final", TOKEN_FINAL},
+    {"finally", TOKEN_FINALLY},
+    {"float", TOKEN_FLOAT_TYPE},
+    {"for", TOKEN_FOR},
+    {"func", TOKEN_FUNC},
+    {"if", TOKEN_IF},
+    {"implements", TOKEN_IMPLEMENTS},
+    {"import", TOKEN_IMPORT},
+    {"in", TOKEN_IN},
+    {"int", TOKEN_INT_TYPE},
+    {"interface", TOKEN_INTERFACE},
+    {"iter", TOKEN_ITER},
+    {"lock", TOKEN_LOCK},
+    {"long", TOKEN_LONG_TYPE},
+    {"macro", TOKEN_MACRO},
+    {"main", TOKEN_MAIN},
+    {"match", TOKEN_MATCH},
+    {"mutex", TOKEN_MUTEX},
+    {"new", TOKEN_NEW},
+    {"none", TOKEN_NONE},
+    {"null", TOKEN_NULL},
+    {"ok", TOKEN_OK},
+    {"operator", TOKEN_OPERATOR},
+    {"option", TOKEN_OPTION},
+    {"override", TOKEN_OVERRIDE},
+    {"own", TOKEN_OWN},
+    {"recv", TOKEN_RECV},
+    {"resume", TOKEN_RESUME},
+    {"return", TOKEN_RETURN},
+    {"run_async", TOKEN_RUN_ASYNC},
+    {"send", TOKEN_SEND},
+    {"spawn", TOKEN_SPAWN},
+    {"static", TOKEN_STATIC},
+    {"str", TOKEN_STR_TYPE},
+    {"struct", TOKEN_STRUCT},
+    {"super", TOKEN_SUPER},
+    {"switch", TOKEN_SWITCH},
+    {"test", TOKEN_TEST},
+    {"thread", TOKEN_THREAD},
+    {"throw", TOKEN_THROW},
+    {"trait", TOKEN_TRAIT},
+    {"true", TOKEN_TRUE},
+    {"try", TOKEN_TRY},
+    {"type", TOKEN_TYPE_ALIAS},
+    {"typeof", TOKEN_TYPEOF},
+    {"ubyte", TOKEN_UBYTE_TYPE},
+    {"uint", TOKEN_UINT_TYPE},
+    {"ulong", TOKEN_ULONG_TYPE},
+    {"unlock", TOKEN_UNLOCK},
+    {"ushort", TOKEN_USHORT_TYPE},
+    {"var", TOKEN_VAR},
+    {"when", TOKEN_WHEN},
+    {"while", TOKEN_WHILE},
+    {"with", TOKEN_WITH},
+    {"yield", TOKEN_YIELD},
+};
+
+#define KEYWORD_COUNT (sizeof(keywords) / sizeof(keywords[0]))
+
 static CnextTokenType identifier_type(void) {
-    switch (lexer.start[0]) {
-        case 'a': {
-            CnextTokenType t = check_keyword(1, 5, "ssert", TOKEN_ASSERT);
-            if (t != TOKEN_IDENTIFIER) return t;
-            t = check_keyword(1, 4, "sync", TOKEN_ASYNC);
-            if (t != TOKEN_IDENTIFIER) return t;
-            t = check_keyword(1, 4, "wait", TOKEN_AWAIT);
-            if (t != TOKEN_IDENTIFIER) return t;
-            return check_keyword(1, 1, "s", TOKEN_AS);
-        }
-        case 'b':
-            if (lexer.current - lexer.start > 1) {
-                switch (lexer.start[1]) {
-                    case 'r': return check_keyword(2, 3, "eak", TOKEN_BREAK);
-                    case 'o': return check_keyword(1, 3, "ool", TOKEN_BOOL_TYPE);
-                    case 'e': return check_keyword(2, 3, "nch", TOKEN_BENCH);
-                    case 'y': return check_keyword(2, 2, "te", TOKEN_BYTE_TYPE);
-                }
-            }
-            return check_keyword(1, 3, "ool", TOKEN_BOOL_TYPE);
-        case 'c': 
-            if (lexer.current - lexer.start > 1) {
-                switch (lexer.start[1]) {
-                    case 'a': {
-                        CnextTokenType t = check_keyword(2, 3, "tch", TOKEN_CATCH);
-                        if (t != TOKEN_IDENTIFIER) return t;
-                        return check_keyword(2, 2, "se", TOKEN_CASE);
-                    }
-                    case 'h': {
-                        CnextTokenType t = check_keyword(2, 5, "annel", TOKEN_CHANNEL);
-                        if (t != TOKEN_IDENTIFIER) return t;
-                        return check_keyword(2, 2, "ar", TOKEN_CHAR_TYPE);
-                    }
-                    case 'l': return check_keyword(2, 3, "ass", TOKEN_CLASS);
-                    case 'o': {
-                        CnextTokenType t = check_keyword(2, 7, "routine", TOKEN_COROUTINE);
-                        if (t != TOKEN_IDENTIFIER) return t;
-                        t = check_keyword(3, 5, "tinue", TOKEN_CONTINUE);
-                        if (t != TOKEN_IDENTIFIER) return t;
-                        t = check_keyword(2, 7, "nstexpr", TOKEN_CONSTEXPR);
-                        if (t != TOKEN_IDENTIFIER) return t;
-                        return check_keyword(2, 3, "nst", TOKEN_CONST);
-                    }
-                }
-            }
-            break;
-        case 'd': {
-            CnextTokenType t = check_keyword(1, 6, "efault", TOKEN_DEFAULT);
-            if (t != TOKEN_IDENTIFIER) return t;
-            t = check_keyword(1, 5, "ouble", TOKEN_DOUBLE_TYPE);
-            if (t != TOKEN_IDENTIFIER) return t;
-            return check_keyword(1, 4, "efer", TOKEN_DEFER);
-        }
-        case 'e': 
-            if (lexer.current - lexer.start > 1) {
-                switch (lexer.start[1]) {
-                    case 'l': return check_keyword(2, 2, "se", TOKEN_ELSE);
-                    case 'n': return check_keyword(2, 2, "um", TOKEN_ENUM);
-                    case 'x': {
-                        CnextTokenType t = check_keyword(2, 5, "tends", TOKEN_EXTENDS);
-                        if (t != TOKEN_IDENTIFIER) return t;
-                        t = check_keyword(2, 4, "tend", TOKEN_EXTEND);
-                        if (t != TOKEN_IDENTIFIER) return t;
-                        return check_keyword(2, 3, "tern", TOKEN_EXTERN);
-                    }
-                    // 'err' handled as identifier in parser context
-                }
-            }
-            break;
-        case 'f':
-            if (lexer.current - lexer.start > 1) {
-                switch (lexer.start[1]) {
-                    case 'a': return check_keyword(2, 3, "lse", TOKEN_FALSE);
-                    case 'i': return check_keyword(2, 5, "nally", TOKEN_FINALLY);
-                    case 'l': return check_keyword(2, 3, "oat", TOKEN_FLOAT_TYPE);
-                    case 'o': return check_keyword(2, 1, "r", TOKEN_FOR);
-                    case 'u': return check_keyword(2, 2, "nc", TOKEN_FUNC);
-                }
-            }
-            break;
-        case 'i':
-            if (lexer.current - lexer.start > 1) {
-                switch (lexer.start[1]) {
-                    case 'f': return check_keyword(2, 0, "", TOKEN_IF);
-                    case 'n':
-                        if (lexer.current - lexer.start == 2) return TOKEN_IN;
-                        {
-                            CnextTokenType t = check_keyword(2, 7, "terface", TOKEN_INTERFACE);
-                            if (t != TOKEN_IDENTIFIER) return t;
-                        }
-                        return check_keyword(2, 1, "t", TOKEN_INT_TYPE);
-                    case 'm': {
-                        CnextTokenType t = check_keyword(2, 8, "plements", TOKEN_IMPLEMENTS);
-                        if (t != TOKEN_IDENTIFIER) return t;
-                        return check_keyword(2, 4, "port", TOKEN_IMPORT);
-                    }
-                    case 't': return check_keyword(2, 2, "er", TOKEN_ITER);
-                }
-            }
-            break;
-        case 'm':
-            if (lexer.current - lexer.start > 1) {
-                switch (lexer.start[1]) {
-                    case 'a': {
-                        CnextTokenType t = check_keyword(2, 4, "cro", TOKEN_MACRO);
-                        if (t != TOKEN_IDENTIFIER) return t;
-                        t = check_keyword(2, 3, "tch", TOKEN_MATCH);
-                        if (t != TOKEN_IDENTIFIER) return t;
-                        return check_keyword(2, 2, "in", TOKEN_MAIN);
-                    }
-                    case 'u': return check_keyword(2, 3, "tex", TOKEN_MUTEX);
-                }
-            }
-            break;
-        case 'n':
-            if (lexer.current - lexer.start > 1) {
-                switch (lexer.start[1]) {
-                    case 'e': return check_keyword(2, 1, "w", TOKEN_NEW);
-                    case 'u': return check_keyword(2, 2, "ll", TOKEN_NULL);
-                }
-            }
-            break;
-        case 'o':
-            if (lexer.current - lexer.start > 1) {
-                switch (lexer.start[1]) {
-                    case 'p': return check_keyword(2, 6, "erator", TOKEN_OPERATOR);
-                    case 'v': return check_keyword(2, 6, "erride", TOKEN_OVERRIDE);
-                    case 'w': return check_keyword(2, 1, "n", TOKEN_OWN);
-                }
-            }
-            return check_keyword(1, 8, "verride", TOKEN_OVERRIDE);
-        case 'r':
-            if (lexer.current - lexer.start > 1) {
-                switch (lexer.start[1]) {
-                    case 'e': {
-                        CnextTokenType t = check_keyword(2, 4, "turn", TOKEN_RETURN);
-                        if (t != TOKEN_IDENTIFIER) return t;
-                        t = check_keyword(2, 4, "sume", TOKEN_RESUME);
-                        if (t != TOKEN_IDENTIFIER) return t;
-                        return check_keyword(2, 2, "cv", TOKEN_RECV);
-                    }
-                    case 'u': {
-                        // run_async
-                        if (lexer.current - lexer.start > 3 && lexer.start[2] == 'n') {
-                            return check_keyword(3, 6, "_async", TOKEN_RUN_ASYNC);
-                        }
-                        break;
-                    }
-                }
-            }
-            break;
-        case 's': 
-            if (lexer.current - lexer.start > 1) {
-                switch (lexer.start[1]) {
-                    case 't':
-                        if (lexer.current - lexer.start == 3) return check_keyword(2, 1, "r", TOKEN_STR_TYPE);
-                        return check_keyword(2, 4, "ruct", TOKEN_STRUCT);
-                    case 'w': return check_keyword(2, 4, "itch", TOKEN_SWITCH);
-                    case 'u': return check_keyword(2, 3, "per", TOKEN_SUPER);
-                    case 'p': return check_keyword(2, 4, "awn", TOKEN_SPAWN);
-                    case 'e': return check_keyword(2, 3, "nd", TOKEN_SEND);
-                }
-            }
-            break;
-        case 't':
-            if (lexer.current - lexer.start > 1) {
-                switch (lexer.start[1]) {
-                    case 'r': {
-                        CnextTokenType t = check_keyword(2, 3, "ait", TOKEN_TRAIT);
-                        if (t != TOKEN_IDENTIFIER) return t;
-                        t = check_keyword(2, 1, "y", TOKEN_TRY);
-                        if (t != TOKEN_IDENTIFIER) return t;
-                        return check_keyword(2, 2, "ue", TOKEN_TRUE);
-                    }
-                    case 'h': {
-                        CnextTokenType t = check_keyword(2, 3, "row", TOKEN_THROW);
-                        if (t != TOKEN_IDENTIFIER) return t;
-                        return check_keyword(2, 4, "read", TOKEN_THREAD);
-                    }
-                    case 'y': {
-                        CnextTokenType t = check_keyword(2, 4, "peof", TOKEN_TYPEOF);
-                        if (t != TOKEN_IDENTIFIER) return t;
-                        return check_keyword(2, 2, "pe", TOKEN_TYPE_ALIAS);
-                    }
-                    case 'e': return check_keyword(2, 2, "st", TOKEN_TEST);
-                }
-            }
-            break;
-        case 'v': return check_keyword(1, 2, "ar", TOKEN_VAR);
-        case 'w': {
-            CnextTokenType t = check_keyword(1, 4, "hile", TOKEN_WHILE);
-            if (t != TOKEN_IDENTIFIER) return t;
-            return check_keyword(1, 3, "ith", TOKEN_WITH);
-        }
-        case 'y': return check_keyword(1, 4, "ield", TOKEN_YIELD);
-        case 'l': {
-            CnextTokenType t = check_keyword(1, 3, "ock", TOKEN_LOCK);
-            if (t != TOKEN_IDENTIFIER) return t;
-            return check_keyword(1, 3, "ong", TOKEN_LONG_TYPE);
-        }
-        case 'u': {
-            if (lexer.current - lexer.start > 1) {
-                switch (lexer.start[1]) {
-                    case 'n': {
-                        CnextTokenType t = check_keyword(2, 4, "lock", TOKEN_UNLOCK);
-                        if (t != TOKEN_IDENTIFIER) return t;
-                        break;
-                    }
-                    case 'i': {
-                        CnextTokenType t = check_keyword(2, 2, "nt", TOKEN_UINT_TYPE);
-                        if (t != TOKEN_IDENTIFIER) return t;
-                        t = check_keyword(2, 3, "ong", TOKEN_ULONG_TYPE);
-                        if (t != TOKEN_IDENTIFIER) return t;
-                        break;
-                    }
-                    case 's': {
-                        CnextTokenType t = check_keyword(2, 4, "hort", TOKEN_USHORT_TYPE);
-                        if (t != TOKEN_IDENTIFIER) return t;
-                        break;
-                    }
-                    case 'b': {
-                        CnextTokenType t = check_keyword(2, 3, "yte", TOKEN_UBYTE_TYPE);
-                        if (t != TOKEN_IDENTIFIER) return t;
-                        break;
-                    }
-                }
-            }
-            break;
-        }
-    }
-    return TOKEN_IDENTIFIER;
+    int len = (int)(lexer.current - lexer.start);
+    if (len > 63) return TOKEN_IDENTIFIER;
+    char buf[64];
+    memcpy(buf, lexer.start, len);
+    buf[len] = '\0';
+    KeywordEntry key = {buf, TOKEN_EOF};
+    KeywordEntry* found = (KeywordEntry*)bsearch(&key, keywords, KEYWORD_COUNT, sizeof(KeywordEntry), kw_cmp);
+    return found ? found->type : TOKEN_IDENTIFIER;
 }
 
 static Token identifier(void) {
@@ -365,13 +239,24 @@ static Token string(void) {
             if (is_at_end()) break;
             advance();
         } else {
-            if (peek() == '\n') lexer.line++;
+            if (peek() == '\n') { lexer.line++; lexer.column = 1; }
             advance();
         }
     }
     if (is_at_end()) return error_token("Unterminated string.");
     advance(); // closing quote
     return make_token(TOKEN_STRING_LITERAL);
+}
+
+static Token raw_string(void) {
+    // Already consumed 'r' and '"'; now read until closing '"'
+    while (peek() != '"' && !is_at_end()) {
+        if (peek() == '\n') { lexer.line++; lexer.column = 1; }
+        advance();
+    }
+    if (is_at_end()) return error_token("Unterminated raw string.");
+    advance(); // closing quote
+    return make_token(TOKEN_RAW_STRING);
 }
 
 Token next_token(void) {
@@ -384,7 +269,13 @@ Token next_token(void) {
     if (is_at_end()) return make_token(TOKEN_EOF);
 
     char c = advance();
-    if (isalpha(c) || c == '_') return identifier();
+    if (isalpha(c) || c == '_') {
+        if (c == 'r' && peek() == '"') {
+            advance(); // consume the '"'
+            return raw_string();
+        }
+        return identifier();
+    }
     if (isdigit(c)) return number();
 
     switch (c) {
@@ -399,6 +290,7 @@ Token next_token(void) {
         case '.':
             if (match('.')) {
                 if (match('.')) return make_token(TOKEN_ELLIPSIS);
+                if (match('=')) return make_token(TOKEN_RANGE_INCLUSIVE);
                 return make_token(TOKEN_RANGE);
             }
             return make_token(TOKEN_DOT);
@@ -416,6 +308,7 @@ Token next_token(void) {
             return make_token(match('=') ? TOKEN_PLUS_EQUAL : TOKEN_PLUS);
         case '/': return make_token(match('=') ? TOKEN_SLASH_EQUAL : TOKEN_SLASH);
         case '*': return make_token(match('=') ? TOKEN_STAR_EQUAL : TOKEN_STAR);
+        case '%': return make_token(TOKEN_PERCENT);
         case '!': return make_token(match('=') ? TOKEN_BANG_EQ : TOKEN_BANG);
         case '=': 
             if (match('=')) return make_token(TOKEN_EQ_EQ);
@@ -424,7 +317,7 @@ Token next_token(void) {
         case '<': return make_token(match('=') ? TOKEN_LESS_EQ : TOKEN_LESS);
         case '>': return make_token(match('=') ? TOKEN_GREATER_EQ : TOKEN_GREATER);
         case '&': if (match('&')) return make_token(TOKEN_AND_AND); break;
-        case '|': if (match('|')) return make_token(TOKEN_OR_OR); break;
+        case '|': if (match('|')) return make_token(TOKEN_OR_OR); return make_token(TOKEN_PIPE);
         case '@': return make_token(TOKEN_AT);
         case '$': return make_token(TOKEN_DOLLAR);
         case '"': return string();

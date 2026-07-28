@@ -1,11 +1,11 @@
 // Async/Await
 
-async func fetch_data(str url) -> str {
+async func fetch_data(str url): str {
     // Simulate async work
     return "data from " + url
 }
 
-async func process(str url) -> str {
+async func process(str url): str {
     var data = await fetch_data(url)
     return "Processed: " + data
 }

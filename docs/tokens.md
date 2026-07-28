@@ -53,7 +53,7 @@ The Lexer breaks down a `.cn` file into the following tokens.
 - Logical: `&&`, `||`, `!`
 - Assignment: `=`, `+=`, `-=`, `*=`, `/=`
 - Increment/Decrement: `++`, `--`
-- Arrow: `->`, `=>`
+- Arrow: `=>`
 - Range: `..`
 
 ## Punctuation

@@ -40,12 +40,12 @@ printin(add_xy(5))  // 35
 Pass closures to functions:
 
 ```cnext
-func apply(int x, func f) -> int {
+func apply(int x, func f): int {
     return f(x)
 }
 
-func double(int x) -> int => x * 2
-func square(int x) -> int => x * x
+func double(int x): int => x * 2
+func square(int x): int => x * x
 
 printin(apply(5, double))  // 10
 printin(apply(5, square))  // 25
@@ -122,7 +122,7 @@ printin(add(3, 4))  // 7
 Closures are first-class values:
 
 ```cnext
-func apply(func f, int x) -> int {
+func apply(func f, int x): int {
     return f(x)
 }
 
@@ -136,7 +136,7 @@ printin(result)  // 10
 Functions can return closures:
 
 ```cnext
-func make_adder(int x) -> func {
+func make_adder(int x): func {
     return (int a) => a + x
 }
 
@@ -152,7 +152,7 @@ printin(add10(3))  // 13
 Closures automatically manage captured variables:
 
 ```cnext
-func create_counter() -> func {
+func create_counter(): func {
     var count = 0
     return () => {
         count = count + 1

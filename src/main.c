@@ -42,7 +42,7 @@ static int create_project(const char* project_name) {
         if (f) {
             fprintf(f,
                 "// %s - A Cnext project\n\n"
-                "func double_value(int x) -> int {\n"
+                "func double_value(int x): int {\n"
                 "    return x * 2\n"
                 "}\n\n"
                 "class Animal {\n"
@@ -50,7 +50,7 @@ static int create_project(const char* project_name) {
                 "    func new(str n) {\n"
                 "        self.name = n\n"
                 "    }\n\n"
-                "    func speak() -> str {\n"
+                "    func speak(): str {\n"
                 "        return \"Hello from {self.name}!\"\n"
                 "    }\n"
                 "}\n\n"
@@ -87,10 +87,10 @@ static int create_project(const char* project_name) {
         if (f) {
             fprintf(f,
                 "// Greeting utilities\n\n"
-                "func greet(str name) -> str {\n"
+                "func greet(str name): str {\n"
                 "    return \"Hello, {name}!\"\n"
                 "}\n\n"
-                "func shout(str message) -> str {\n"
+                "func shout(str message): str {\n"
                 "    return message.upper()\n"
                 "}\n");
             fclose(f);
@@ -110,7 +110,7 @@ static int create_project(const char* project_name) {
                 "        self.name = n\n"
                 "        self.age = a\n"
                 "    }\n\n"
-                "    func greet() -> str {\n"
+                "    func greet(): str {\n"
                 "        return \"Hi, I'm {self.name} and I'm {self.age} years old.\"\n"
                 "    }\n"
                 "}\n\n"
@@ -120,7 +120,7 @@ static int create_project(const char* project_name) {
                 "        super.new(n, a)\n"
                 "        self.school = s\n"
                 "    }\n\n"
-                "    override func greet() -> str {\n"
+                "    override func greet(): str {\n"
                 "        return \"Hi, I'm {self.name} from {self.school}.\"\n"
                 "    }\n"
                 "}\n");
@@ -431,18 +431,35 @@ int main(int argc, char** argv) {
             printf("--- End of generated C code ---\n\n");
         }
 
-        // Build the full GCC command string
-        char gcc_cmd[CNEXT_PATH_MAX * 3 + 512];
-        snprintf(gcc_cmd, sizeof(gcc_cmd),
-            "gcc -std=gnu11 %s -iquote \"%s\" \"%s\" -o \"%s\" "
+        // Build GCC arguments array (avoids shell injection via system())
+        char* gcc_args[32];
+        int gcc_argc = 0;
+        gcc_args[gcc_argc++] = "gcc";
+        gcc_args[gcc_argc++] = "-std=gnu11";
+        // Add optimization flags
+        if (opts.debug) {
+            gcc_args[gcc_argc++] = "-O0";
+            gcc_args[gcc_argc++] = "-g";
+            gcc_args[gcc_argc++] = "-DDEBUG";
+        } else {
+            gcc_args[gcc_argc++] = "-O2";
+            gcc_args[gcc_argc++] = "-DNDEBUG";
+        }
+        gcc_args[gcc_argc++] = "-iquote";
+        gcc_args[gcc_argc++] = include_path;
+        gcc_args[gcc_argc++] = CNEXT_TEMP_C;
+        gcc_args[gcc_argc++] = "-o";
+        gcc_args[gcc_argc++] = opts.output_exe;
 #ifdef _WIN32
-            "-lwinhttp -lws2_32"
+        gcc_args[gcc_argc++] = "-lwinhttp";
+        gcc_args[gcc_argc++] = "-lws2_32";
 #else
-            "-lcurl -lpthread"
+        gcc_args[gcc_argc++] = "-lcurl";
+        gcc_args[gcc_argc++] = "-lpthread";
 #endif
-            , opt_flags, include_path, CNEXT_TEMP_C, opts.output_exe);
+        gcc_args[gcc_argc] = NULL;
 
-        int gcc_status = system(gcc_cmd);
+        int gcc_status = run_process("gcc", gcc_args);
         if (gcc_status != 0) {
             fprintf(stderr, "C compilation failed.\n");
             return 65;

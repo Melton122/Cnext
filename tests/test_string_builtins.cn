@@ -1,0 +1,82 @@
+// EXPECT: Hello
+// EXPECT: hello world
+// EXPECT: HELLO WORLD
+// EXPECT: true
+// EXPECT: true
+// EXPECT: true
+// EXPECT: 6
+// EXPECT: hello there
+// EXPECT: hello
+// EXPECT: cba
+// EXPECT: Hello There World
+// EXPECT: ..........hello
+// EXPECT: hello..........
+// EXPECT: hello
+// EXPECT: 3
+// EXPECT: hello 
+// EXPECT: 1
+// EXPECT: one one one 
+main {
+    // capitalize
+    str cap = str_capitalize("hello")
+    printin(cap)
+
+    // to_lower / to_upper
+    str lower = str_to_lower("HELLO WORLD")
+    printin(lower)
+    str upper = str_to_upper("hello world")
+    printin(upper)
+
+    // starts_with / ends_with / contains
+    printin(str_starts_with("hello world", "hello"))
+    printin(str_ends_with("hello world", "world"))
+    printin(str_contains("hello world", "lo wo"))
+
+    // index_of
+    int idx = str_index_of("hello world", "world")
+    printin(idx)
+
+    // replace
+    str replaced = str_replace("hello world", "world", "there")
+    printin(replaced)
+
+    // substring
+    str sub = str_substring("hello world", 0, 5)
+    printin(sub)
+
+    // reverse
+    str rev = str_reverse("abc")
+    printin(rev)
+
+    // title case
+    str titled = str_title("hello there world")
+    printin(titled)
+
+    // pad_left
+    str padded_l = str_pad_left("hello", 15, '.')
+    printin(padded_l)
+
+    // pad_right
+    str padded_r = str_pad_right("hello", 15, '.')
+    printin(padded_r)
+
+    // insert
+    str ins = str_insert("hlo", 1, "el")
+    printin(ins)
+
+    // last_index_of
+    int last_idx = str_last_index_of("abcabc", "abc")
+    printin(last_idx)
+
+    // remove
+    str rem = str_remove("hello world", "world")
+    printin(rem)
+
+    // str_find (alias for index_of)
+    int find_idx = str_find("hXllo world", "X")
+    printin(find_idx)
+
+    // repeat
+    str rep = str_repeat("one ", 3)
+    printin(rep)
+}

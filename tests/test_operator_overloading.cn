@@ -30,27 +30,27 @@ class Vec2 {
         self.y = y_val
     }
 
-    func operator+(Vec2 other) -> Vec2 {
+    func operator+(Vec2 other): Vec2 {
         return new Vec2(self.x + other.x, self.y + other.y)
     }
 
-    func operator-(Vec2 other) -> Vec2 {
+    func operator-(Vec2 other): Vec2 {
         return new Vec2(self.x - other.x, self.y - other.y)
     }
 
-    func operator*(float scalar) -> Vec2 {
+    func operator*(float scalar): Vec2 {
         return new Vec2(self.x * scalar, self.y * scalar)
     }
 
-    func operator==(Vec2 other) -> bool {
+    func operator==(Vec2 other): bool {
         return (self.x == other.x) && (self.y == other.y)
     }
 
-    func operator!=(Vec2 other) -> bool {
+    func operator!=(Vec2 other): bool {
         return (self.x != other.x) || (self.y != other.y)
     }
 
-    func magnitude() -> float {
+    func magnitude(): float {
         return self.x * self.x + self.y * self.y
     }
 }

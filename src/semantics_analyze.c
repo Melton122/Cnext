@@ -72,7 +72,7 @@ void analyze_assignment(ASTNode* node) {
     }
 
     if (!node->left) {
-        report_error(node->token.line, "Invalid assignment target.", NULL);
+        report_error(ERR_SEM_INVALID_ASSIGN, node->token.line, "Invalid assignment target.", NULL);
         return;
     }
 
@@ -81,7 +81,7 @@ void analyze_assignment(ASTNode* node) {
         if (!sym) {
             // Already reported by analyze_expression
         } else if (sym->is_const) {
-            report_error(node->left->token.line, "Cannot reassign to const variable:", sym->name);
+            report_error(ERR_SEM_CONST_MUTATE, node->left->token.line, "Cannot reassign to const variable:", sym->name);
         }
         return;
     }
@@ -90,21 +90,21 @@ void analyze_assignment(ASTNode* node) {
         return;
     }
 
-    report_error(node->token.line, "Invalid assignment target.", NULL);
+    report_error(ERR_SEM_INVALID_ASSIGN, node->token.line, "Invalid assignment target.", NULL);
 }
 
 void analyze_postfix(ASTNode* node) {
     if (!node->left) {
-        report_error(node->token.line, "Invalid postfix target.", NULL);
+        report_error(ERR_SEM_INVALID_POSTFIX, node->token.line, "Invalid postfix target.", NULL);
         return;
     }
 
     if (node->left->type == AST_IDENTIFIER) {
         Symbol* sym = resolve_symbol(node->left->token);
         if (!sym) {
-            report_token_error(node->left->token, "Undeclared variable:");
+            report_token_error(ERR_SEM_UNDECLARED, node->left->token, "Undeclared variable:");
         } else if (sym->is_const) {
-            report_error(node->left->token.line, "Cannot mutate const variable:", sym->name);
+            report_error(ERR_SEM_CONST_MUTATE, node->left->token.line, "Cannot mutate const variable:", sym->name);
         }
         return;
     }
@@ -115,7 +115,7 @@ void analyze_postfix(ASTNode* node) {
     }
 
     analyze_expression(node->left);
-    report_error(node->token.line, "Invalid postfix target.", NULL);
+    report_error(ERR_SEM_INVALID_POSTFIX, node->token.line, "Invalid postfix target.", NULL);
 }
 
 void analyze_node(ASTNode* node) {
@@ -153,9 +153,73 @@ void analyze_node(ASTNode* node) {
                     analyze_field_declaration(node->children[i]);
                 }
             }
+            // Check trait/interface conformance
+            if (node->implements_names) {
+                char names_copy[1024];
+                strncpy(names_copy, node->implements_names, sizeof(names_copy) - 1);
+                names_copy[sizeof(names_copy) - 1] = '\0';
+                char* name = names_copy;
+                while (name && *name) {
+                    char* comma = strchr(name, ',');
+                    if (comma) *comma = '\0';
+                    while (*name == ' ' || *name == '\t') name++;
+                    if (*name) {
+                        Token trait_tok = {TOKEN_IDENTIFIER, name, (int)strlen(name), node->token.line};
+                        Symbol* trait_sym = resolve_symbol(trait_tok);
+                        if (trait_sym && trait_sym->decl_node &&
+                            (trait_sym->decl_node->type == AST_TRAIT_DECL ||
+                             trait_sym->decl_node->type == AST_INTERFACE_DECL)) {
+                            ASTNode* trait_node = trait_sym->decl_node;
+                            for (int t = 0; t < trait_node->child_count; t++) {
+                                ASTNode* tmethod = trait_node->children[t];
+                                if (tmethod->type != AST_FUNC_DECL) continue;
+                                // Interface methods have no body; trait abstract methods have no body
+                                if (tmethod->left != NULL) continue;
+                                // Check if class implements this method
+                                bool found = false;
+                                for (int c = 0; c < node->child_count; c++) {
+                                    ASTNode* cmethod = node->children[c];
+                                    if (cmethod->type == AST_FUNC_DECL &&
+                                        cmethod->token.length == tmethod->token.length &&
+                                        strncmp(cmethod->token.start, tmethod->token.start, tmethod->token.length) == 0) {
+                                        found = true;
+                                        break;
+                                    }
+                                }
+                                if (!found) {
+                                    char msg[512];
+                                    snprintf(msg, sizeof(msg), "Class '%.*s' does not implement required method '%.*s' from '%s'.",
+                                             node->token.length, node->token.start,
+                                             tmethod->token.length, tmethod->token.start, name);
+                                     report_error(ERR_SEM_MISSING_METHOD, node->token.line, msg, NULL);
+                                }
+                            }
+                        }
+                    }
+                    if (comma) name = comma + 1;
+                    else break;
+                }
+            }
             break;
-        case AST_ENUM_DECL:
+        case AST_ENUM_DECL: {
+            // Validate variant payload types exist
+            for (int i = 0; i < node->child_count; i++) {
+                if (node->children[i]->type == AST_VARIANT) {
+                    ASTNode* variant = node->children[i];
+                    for (int j = 0; j < variant->child_count; j++) {
+                        if (variant->children[j]->type == AST_IDENTIFIER) {
+                            validate_type_token(variant->children[j]->token);
+                        } else if (variant->children[j]->type == AST_UNION_TYPE) {
+                            // Validate each type in the union
+                            for (int k = 0; k < variant->children[j]->child_count; k++) {
+                                validate_type_token(variant->children[j]->children[k]->token);
+                            }
+                        }
+                    }
+                }
+            }
             break;
+        }
         case AST_IMPORT:
             register_import(node->token);
             break;
@@ -218,20 +282,28 @@ void analyze_node(ASTNode* node) {
             break;
         case AST_BREAK:
             if (loop_depth == 0 && switch_depth == 0) {
-                report_error(node->token.line, "Cannot use 'break' outside of a loop or switch.", NULL);
+                report_error(ERR_SEM_BREAK_OUTSIDE, node->token.line, "Cannot use 'break' outside of a loop or switch.", NULL);
             }
             break;
         case AST_CONTINUE:
             if (loop_depth == 0) {
-                report_error(node->token.line, "Cannot use 'continue' outside of a loop.", NULL);
+                report_error(ERR_SEM_CONTINUE_OUTSIDE, node->token.line, "Cannot use 'continue' outside of a loop.", NULL);
             }
             break;
         case AST_DEFER:
-            if (node->left) analyze_expression(node->left);
+            if (node->left) {
+                if (node->left->type == AST_BLOCK) {
+                    sem_push_scope();
+                    analyze_node(node->left);
+                    sem_pop_scope();
+                } else {
+                    analyze_expression(node->left);
+                }
+            }
             break;
         case AST_YIELD:
             if (generator_depth == 0) {
-                report_error(node->token.line, "Cannot use 'yield' outside of a generator function.", NULL);
+                report_error(ERR_SEM_YIELD_OUTSIDE, node->token.line, "Cannot use 'yield' outside of a generator function.", NULL);
             }
             if (node->left) analyze_expression(node->left);
             break;
@@ -246,7 +318,6 @@ void analyze_node(ASTNode* node) {
             if (node->right) analyze_expression(node->right);
             break;
         case AST_AWAIT_EXPR:
-            // await expr — should be inside async function (validated by generator_depth)
             analyze_expression(node->left);
             break;
         case AST_RUN_ASYNC:
@@ -425,6 +496,11 @@ void analyze_node(ASTNode* node) {
         case AST_OWN_EXPR:
             // own expr — analyze the expression, ownership is a semantic hint
             if (node->left) analyze_expression(node->left);
+            break;
+        case AST_TYPE_ALIAS:
+            // type MyType = OtherType — validate the target type exists and register the alias
+            if (node->left) validate_type_token(node->left->token);
+            define_type_symbol(node, TOKEN_CLASS);
             break;
         default:
             break;

@@ -49,7 +49,7 @@ typedef struct {
 bool lint_source(const char* source, LintResult* result) {
     init_lexer(source);
 
-    Token prev_token = {TOKEN_EOF, "", 0, 0};
+    Token prev_token = {TOKEN_EOF, "", 0, 0, 0};
     int paren_depth = 0;
     int brace_depth = 0;
     bool after_return = false;

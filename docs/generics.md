@@ -5,7 +5,7 @@
 Write functions that work with any type:
 
 ```cnext
-func first<T>(T[] arr) -> T {
+func first<T>(T[] arr): T {
     return arr[0]
 }
 
@@ -28,7 +28,7 @@ class Box<T> {
         self.value = v
     }
 
-    func get() -> T {
+    func get(): T {
         return self.value
     }
 
@@ -65,7 +65,7 @@ printin(pair.second)  // "hello"
 ## Generic Functions with Multiple Type Parameters
 
 ```cnext
-func swap<T>(T a, T b) -> (T, T) {
+func swap<T>(T a, T b): (T, T) {
     return (b, a)
 }
 
@@ -94,8 +94,8 @@ print_all({"hello", "world"})
 ```cnext
 interface Container<T> {
     func add(T item)
-    func get(int index) -> T
-    func size() -> int
+    func get(int index): T
+    func size(): int
 }
 
 class List<T> implements Container<T> {
@@ -109,11 +109,11 @@ class List<T> implements Container<T> {
         // Add item
     }
 
-    override func get(int index) -> T {
+    override func get(int index): T {
         return self.items[index]
     }
 
-    override func size() -> int {
+    override func size(): int {
         return self.items.length
     }
 }
@@ -123,8 +123,8 @@ class List<T> implements Container<T> {
 
 ```cnext
 trait Serializable<T> {
-    func serialize() -> str
-    func deserialize(str data) -> T
+    func serialize(): str
+    func deserialize(str data): T
 }
 
 class User implements Serializable<User> {
@@ -134,11 +134,11 @@ class User implements Serializable<User> {
         self.name = n
     }
 
-    override func serialize() -> str {
+    override func serialize(): str {
         return '{"name": "' + self.name + '"}'
     }
 
-    override func deserialize(str data) -> User {
+    override func deserialize(str data): User {
         // Parse JSON and create User
         return new User("parsed")
     }
@@ -162,7 +162,7 @@ var none = Option<int>.None
 The compiler often infers generic types:
 
 ```cnext
-func identity<T>(T x) -> T {
+func identity<T>(T x): T {
     return x
 }
 
@@ -178,7 +178,7 @@ var y = identity("hello")
 The compiler generates specialized versions for each type used:
 
 ```cnext
-func add<T>(T a, T b) -> T {
+func add<T>(T a, T b): T {
     return a + b
 }
 

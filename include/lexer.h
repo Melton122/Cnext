@@ -76,11 +76,13 @@ typedef enum {
     TOKEN_TRUE,
     TOKEN_FALSE,
     TOKEN_NULL,
+    TOKEN_NONE,
 
     // Operators
     TOKEN_PLUS,         // +
     TOKEN_MINUS,        // -
     TOKEN_STAR,         // *
+    TOKEN_PERCENT,      // %
     TOKEN_SLASH,        // /
     TOKEN_EQUAL,        // =
     TOKEN_PLUS_EQUAL,   // +=
@@ -163,6 +165,17 @@ typedef enum {
     // v10.0: New keywords & operators
     TOKEN_DEFER,        // defer
     TOKEN_RANGE,        // .. (range operator)
+
+    // v11.0: Class modifiers & type system
+    TOKEN_STATIC,       // static (class methods)
+    TOKEN_ABSTRACT,     // abstract (abstract classes/methods)
+    TOKEN_FINAL,        // final (sealed classes)
+    TOKEN_PIPE,         // | (union types)
+
+    // v12.0: New features
+    TOKEN_RANGE_INCLUSIVE, // ..= (inclusive range)
+    TOKEN_RAW_STRING,      // r"..." (raw string literal)
+    TOKEN_WHEN,            // when (multi-branch conditional expression)
 } CnextTokenType;
 
 typedef struct {
@@ -170,6 +183,7 @@ typedef struct {
     const char* start;
     int length;
     int line;
+    int column;
 } Token;
 
 void init_lexer(const char* source);

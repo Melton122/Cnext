@@ -1,10 +1,10 @@
 // Closures
 
-func apply(int x, func f) -> int {
+func apply(int x, func f): int {
     return f(x)
 }
 
-func make_adder(int x) -> func {
+func make_adder(int x): func {
     return (int a) => a + x
 }
 

@@ -28,11 +28,11 @@ class Circle {
         self.radius = r
     }
 
-    func area() -> float {
+    func area(): float {
         return 3.14159 * self.radius * self.radius
     }
 
-    func circumference() -> float {
+    func circumference(): float {
         return 2 * 3.14159 * self.radius
     }
 }
@@ -107,7 +107,7 @@ class User implements Loggable {
         self.name = n
     }
 
-    func to_string() -> str {
+    func to_string(): str {
         return "User(" + self.name + ")"
     }
 }
@@ -141,7 +141,7 @@ class Box<T> {
         self.value = v
     }
 
-    func get() -> T {
+    func get(): T {
         return self.value
     }
 }
@@ -162,15 +162,15 @@ class Vec2 {
         self.y = y_val
     }
 
-    func operator+(Vec2 other) -> Vec2 {
+    func operator+(Vec2 other): Vec2 {
         return new Vec2(self.x + other.x, self.y + other.y)
     }
 
-    func operator==(Vec2 other) -> bool {
+    func operator==(Vec2 other): bool {
         return self.x == other.x && self.y == other.y
     }
 
-    func operator[](int index) -> int {
+    func operator[](int index): int {
         if index == 0 { return self.x }
         return self.y
     }
@@ -186,7 +186,7 @@ enum Shape {
     TRIANGLE
 }
 
-func describe(Shape s) -> str {
+func describe(Shape s): str {
     match s {
         CIRCLE => "Circle"
         RECTANGLE => "Rectangle"

@@ -1,8 +1,8 @@
 const vscode = require('vscode');
-const { exec } = require('child_process');
+const { execFile } = require('child_process');
 const path = require('path');
 const util = require('util');
-const execPromise = util.promisify(exec);
+const execFilePromise = util.promisify(execFile);
 
 let outputChannel;
 
@@ -20,14 +20,13 @@ function activate(context) {
         return workspaceFolder ? workspaceFolder.uri.fsPath : undefined;
     }
 
-    async function runCommand(command, args, cwd) {
+    async function runCommand(command, argsArray, cwd) {
         const compiler = getCompilerPath();
-        const fullArgs = args ? ` ${args}` : '';
-        const cmd = `${compiler} ${command}${fullArgs}`;
-        outputChannel.appendLine(`> ${cmd}`);
+        const fullArgs = [command, ...(argsArray || [])];
+        outputChannel.appendLine(`> ${compiler} ${fullArgs.join(' ')}`);
 
         try {
-            const { stdout, stderr } = await execPromise(cmd, { cwd: cwd || getCwd(), timeout: 30000 });
+            const { stdout, stderr } = await execFilePromise(compiler, fullArgs, { cwd: cwd || getCwd(), timeout: 30000 });
             if (stdout) outputChannel.appendLine(stdout);
             if (stderr) outputChannel.appendLine(stderr);
             outputChannel.show(true);
@@ -53,7 +52,7 @@ function activate(context) {
             return;
         }
         await editor.document.save();
-        const result = await runCommand('run', `"${editor.document.fileName}"`);
+        const result = await runCommand('run', [editor.document.fileName]);
         if (result.success && result.output.trim()) {
             vscode.window.showInformationMessage(`Output: ${result.output.trim().split('\n')[0]}`);
         }
@@ -69,7 +68,7 @@ function activate(context) {
         await editor.document.save();
         const ext = process.platform === 'win32' ? '.exe' : '';
         const outputFile = editor.document.fileName.replace(/\.cn$/, ext);
-        const result = await runCommand('build', `"${editor.document.fileName}" -o "${outputFile}"`);
+        const result = await runCommand('build', [editor.document.fileName, '-o', outputFile]);
         if (result.success) {
             vscode.window.showInformationMessage(`Built: ${path.basename(outputFile)}`);
         }
@@ -85,7 +84,7 @@ function activate(context) {
         await editor.document.save();
         const ext = process.platform === 'win32' ? '.exe' : '';
         const outputFile = editor.document.fileName.replace(/\.cn$/, ext);
-        const result = await runCommand('build', `"${editor.document.fileName}" -o "${outputFile}" --release`);
+        const result = await runCommand('build', [editor.document.fileName, '-o', outputFile, '--release']);
         if (result.success) {
             vscode.window.showInformationMessage(`Release built: ${path.basename(outputFile)}`);
         }
@@ -93,7 +92,7 @@ function activate(context) {
 
     // Run tests
     context.subscriptions.push(vscode.commands.registerCommand('cnext.test', async () => {
-        await runCommand('test', '');
+        await runCommand('test', []);
     }));
 
     // Format file
@@ -104,7 +103,7 @@ function activate(context) {
             return;
         }
         await editor.document.save();
-        const result = await runCommand('fmt', `"${editor.document.fileName}"`);
+        const result = await runCommand('fmt', [editor.document.fileName]);
         if (result.success) {
             vscode.window.showInformationMessage('Formatted');
             await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
@@ -119,7 +118,7 @@ function activate(context) {
             vscode.window.showErrorMessage('Open a .cn file first');
             return;
         }
-        await runCommand('lint', `"${editor.document.fileName}"`);
+        await runCommand('lint', [editor.document.fileName]);
     }));
 
     // New project
@@ -135,13 +134,13 @@ function activate(context) {
             }
         });
         if (!name) return;
-        await runCommand('new', name);
+        await runCommand('new', [name]);
         vscode.window.showInformationMessage(`Project "${name}" created. Open the folder to start coding!`);
     }));
 
     // Doctor
     context.subscriptions.push(vscode.commands.registerCommand('cnext.doctor', async () => {
-        await runCommand('doctor', '');
+        await runCommand('doctor', []);
     }));
 
     // REPL
@@ -157,10 +156,10 @@ function activate(context) {
         const config = vscode.workspace.getConfiguration('cnext');
 
         if (config.get('autoFormat', false)) {
-            await runCommand('fmt', `"${document.fileName}"`);
+            await runCommand('fmt', [document.fileName]);
         }
         if (config.get('autoRun', false)) {
-            await runCommand('run', `"${document.fileName}"`);
+            await runCommand('run', [document.fileName]);
         }
     }));
 }

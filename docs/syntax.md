@@ -256,7 +256,7 @@ match c {
 ### Basic Function
 
 ```cnext
-func add(int a, int b) -> int {
+func add(int a, int b): int {
     return a + b
 }
 ```
@@ -264,7 +264,7 @@ func add(int a, int b) -> int {
 ### Arrow Function
 
 ```cnext
-func multiply(int a, int b) -> int => a * b
+func multiply(int a, int b): int => a * b
 ```
 
 ### Default Arguments
@@ -292,7 +292,7 @@ create_person(age = 30, name = "Charlie")
 ### Variadic Functions
 
 ```cnext
-func sum(int... args) -> int {
+func sum(int... args): int {
     var total = 0
     for var n in args {
         total = total + n
@@ -301,6 +301,62 @@ func sum(int... args) -> int {
 }
 
 printin(sum(1, 2, 3))  // 6
+```
+
+### Built-in Functions
+
+Cnext provides many built-in functions globally available without imports:
+
+**String Functions:**
+```cnext
+str_upper("hello")           // "HELLO"
+str_lower("HELLO")           // "hello"
+str_trim("  hi  ")           // "hi"
+str_contains("hello", "ell") // true
+str_index_of("hello", "ll")  // 2
+str_replace("hello", "l", "r") // "herro"
+str_substring("hello", 1, 3) // "el"
+str_repeat("ab", 3)          // "ababab"
+str_reverse("hello")         // "olleh"
+str_capitalize("hello")      // "Hello"
+str_title("hello world")     // "Hello World"
+```
+
+**Math Functions:**
+```cnext
+math_abs(-5)                 // 5
+math_min(5, 3)               // 3
+math_max(5, 3)               // 5
+math_clamp(10, 0, 5)         // 5
+math_gcd(12, 8)              // 4
+math_lcm(4, 6)               // 12
+math_factorial(5)            // 120
+math_fibonacci(10)           // 55
+```
+
+**Type Conversion:**
+```cnext
+to_int(3.14)                 // 3
+to_float(42)                 // 42.0
+to_str(42)                   // "42"
+to_bool(1)                   // true
+ord("A")                     // 65
+```
+
+**File Operations:**
+```cnext
+write_file("test.txt", "hello")
+str content = read_file("test.txt")
+bool exists = file_exists("test.txt")
+long size = file_size("test.txt")
+```
+
+**System Info:**
+```cnext
+str os = platform()          // "windows"
+int cpus = cpu_count()       // 8
+str temp = temp_dir()        // temp directory
+str home = home_dir()        // home directory
 ```
 
 ## Arrays

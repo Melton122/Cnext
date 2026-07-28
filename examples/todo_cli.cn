@@ -14,7 +14,7 @@ func print_help() {
     printin(" ")
 }
 
-func add_todo(str todos, str text) -> str {
+func add_todo(str todos, str text): str {
     if todos == "" {
         return text
     }
@@ -33,7 +33,7 @@ func list_todos(str todos) {
     printin(" ")
 }
 
-func count_todos(str todos) -> int {
+func count_todos(str todos): int {
     if todos == "" {
         return 0
     }

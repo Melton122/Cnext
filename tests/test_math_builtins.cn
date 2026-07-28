@@ -1,0 +1,64 @@
+// EXPECT: 5
+// EXPECT: 5
+// EXPECT: 7
+// EXPECT: 3
+// EXPECT: 5
+// EXPECT: 3
+// EXPECT: -2
+// EXPECT: 4
+// EXPECT: -1
+// EXPECT: 1
+// EXPECT: 2
+// EXPECT: -2
+// EXPECT: 2
+// EXPECT: -2
+// EXPECT: 120
+// EXPECT: 8
+// EXPECT: 4
+// EXPECT: 12
+main {
+    // abs
+    int a = -5
+    printin(math_abs(a))
+    printin(math_abs(5))
+
+    // min / max
+    printin(math_max(3, 7))
+    printin(math_min(3, 7))
+    printin(math_clamp(10, 1, 5))
+
+    // floor - positive
+    printin(math_floor(3.7))
+
+    // floor - negative (regression: was returning -1 instead of -2)
+    printin(math_floor(-1.5))
+
+    // ceil - positive
+    printin(math_ceil(3.2))
+
+    // ceil - negative (regression: was returning 0 instead of -1)
+    printin(math_ceil(-1.5))
+
+    // round - positive
+    printin(math_round(1.4))
+    printin(math_round(1.6))
+
+    // round - negative (regression: was returning -1 instead of -2)
+    printin(math_round(-1.6))
+
+    // ceil on integer value
+    printin(math_ceil(2.0))
+
+    // floor on integer value
+    printin(math_floor(-2.0))
+
+    // factorial
+    printin(math_factorial(5))
+
+    // fibonacci
+    printin(math_fibonacci(6))
+
+    // gcd / lcm
+    printin(math_gcd(12, 8))
+    printin(math_lcm(4, 6))
+}

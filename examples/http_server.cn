@@ -3,7 +3,7 @@
 
 import net
 
-func handle_request(str method, str path) -> str {
+func handle_request(str method, str path): str {
     if path == "/" {
         return "<html><body><h1>Welcome to Cnext!</h1></body></html>"
     }

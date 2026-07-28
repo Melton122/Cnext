@@ -9,8 +9,7 @@ ASTNode* var_declaration(bool is_const) {
         return NULL;
     }
     ASTNode* node = create_node(AST_VAR_DECL, parser.previous);
-    node->var_type = typeNode->token;
-    node->is_array = typeNode->is_array;
+    assign_type_from_node(node, typeNode);
     node->is_const = is_const;
     free_ast(typeNode);
     if (match_token(TOKEN_EQUAL)) {
@@ -148,10 +147,18 @@ static ASTNode* for_statement() {
                 node->left = block();
                 return node;
             }
-            parser.current = name;
+            // Not for-in: manually create var declaration (can't restore parser state)
+            ASTNode* vdecl = create_node(AST_VAR_DECL, name);
+            vdecl->var_type = saved_type;
+            vdecl->is_const = false;
+            if (match_token(TOKEN_EQUAL)) {
+                vdecl->init = expression();
+            }
+            node->init = vdecl;
+        } else {
+            // Just a type with no identifier - shouldn't happen but fallback
+            node->init = var_declaration(false);
         }
-        parser.current = saved_type;
-        node->init = var_declaration(false);
     } else {
         node->init = expr_stmt();
     }
@@ -263,7 +270,7 @@ static ASTNode* try_statement() {
                 if (typeNode) {
                     consume(TOKEN_IDENTIFIER, "Expect error variable name.");
                     catch_node->token = parser.previous;
-                    catch_node->var_type = typeNode->token;
+                    assign_type_from_node(catch_node, typeNode);
                     free_ast(typeNode);
                 }
             } else {
@@ -348,8 +355,7 @@ static ASTNode* destructure_declaration() {
     }
     consume(TOKEN_IDENTIFIER, "Expect variable name.");
     ASTNode* var1 = create_node(AST_VAR_DECL, parser.previous);
-    var1->var_type = typeNode->token;
-    var1->is_array = typeNode->is_array;
+    assign_type_from_node(var1, typeNode);
     free_ast(typeNode);
     add_child(node, var1);
     
@@ -362,8 +368,7 @@ static ASTNode* destructure_declaration() {
         }
         consume(TOKEN_IDENTIFIER, "Expect variable name.");
         ASTNode* var = create_node(AST_VAR_DECL, parser.previous);
-        var->var_type = typeNode->token;
-        var->is_array = typeNode->is_array;
+        assign_type_from_node(var, typeNode);
         free_ast(typeNode);
         add_child(node, var);
     }
@@ -392,7 +397,13 @@ ASTNode* statement() {
     if (match_token(TOKEN_BENCH)) return bench_statement();
     if (match_token(TOKEN_DEFER)) {
         ASTNode* node = create_node(AST_DEFER, parser.previous);
-        node->left = expression();
+        if (check(TOKEN_LBRACE)) {
+            // defer { ... } block
+            node->left = block();
+        } else {
+            // defer expression;
+            node->left = expression();
+        }
         optionally_consume_semicolon();
         return node;
     }

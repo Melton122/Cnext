@@ -85,15 +85,23 @@ void generate_generic_class_specialization(ASTNode* class_decl, const char* mang
     for (int i = 0; i < class_decl->child_count; i++) {
         if (class_decl->children[i]->type == AST_FUNC_DECL) {
             ASTNode* method = class_decl->children[i];
+            // Skip abstract methods (no body)
+            if (method->is_abstract) continue;
+            
             Token saved_self_type = {TOKEN_EOF, NULL, 0, 0};
-            if (method->child_count > 0 && method->children[0]) {
-                saved_self_type = method->children[0]->var_type;
-                Token self_tok = {TOKEN_IDENTIFIER, mangled_name, (int)strlen(mangled_name), 0};
-                method->children[0]->var_type = self_tok;
-            }
-            generate_function(method, mangled_name);
-            if (method->child_count > 0 && method->children[0]) {
-                method->children[0]->var_type = saved_self_type;
+            if (method->is_static) {
+                // Static methods: no self parameter replacement
+                generate_function(method, mangled_name);
+            } else {
+                if (method->child_count > 0 && method->children[0]) {
+                    saved_self_type = method->children[0]->var_type;
+                    Token self_tok = {TOKEN_IDENTIFIER, mangled_name, (int)strlen(mangled_name), 0};
+                    method->children[0]->var_type = self_tok;
+                }
+                generate_function(method, mangled_name);
+                if (method->child_count > 0 && method->children[0]) {
+                    method->children[0]->var_type = saved_self_type;
+                }
             }
         }
     }

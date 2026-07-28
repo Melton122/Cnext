@@ -21,6 +21,14 @@
 
 Cnext is a high-level, statically-typed language with a familiar syntax that transpiles to C. It combines modern language features like generics, closures, pattern matching, and async/await with the performance and portability of C.
 
+## What's New in v10.0
+
+- **Global Built-in Functions** — 170+ functions available without imports: string, math, type conversion, file, system, encoding, crypto, collections, and utility functions
+- **Table-driven Codegen** — Refactored code generator for efficient builtin routing
+- **Comprehensive Tests** — 7 new test files covering all built-in function categories
+- **Example Programs** — 4 new example files demonstrating built-in function usage
+- **Updated Documentation** — Complete stdlib reference with all built-in functions
+
 ## What's New in v9.0
 
 - **Checked Memory Allocations** — All compiler memory allocations now use safe wrappers that exit cleanly on OOM
@@ -45,7 +53,9 @@ Cnext is a high-level, statically-typed language with a familiar syntax that tra
 - **Async/Await** — Asynchronous programming with `async func` and `await`
 - **Multithreading** — Thread-safe programming with `Mutex` and `Channel`
 - **Standard Library** — Modules for I/O, math, JSON, networking, crypto, and more
-- **String Utilities** — `contains`, `starts_with`, `ends_with`, `to_upper`, `to_lower`, `trim`, `find`, `replace`, and more
+- **Global Built-in Functions** — 170+ functions available without imports: string, math, type conversion, file, system, encoding, crypto, collections, and utility functions
+- **String Utilities** — `str_upper`, `str_lower`, `str_trim`, `str_contains`, `str_replace`, `str_reverse`, and more
+- **Math Functions** — `math_abs`, `math_min`, `math_max`, `math_gcd`, `math_lcm`, `math_factorial`, `math_fibonacci`, and more
 - **Package Manager** — Built-in dependency management with `cnext.toml`
 - **Code Formatter** — `cnext fmt` for consistent code style
 - **Linter** — `cnext lint` with rules for unreachable code, comparisons, and more
@@ -173,12 +183,12 @@ int? optional_int = 42
 ### Functions
 
 ```cnext
-func add(int a, int b) -> int {
+func add(int a, int b): int {
     return a + b
 }
 
 // Arrow syntax for simple functions
-func multiply(int a, int b) -> int => a * b
+func multiply(int a, int b): int => a * b
 
 // Default and named arguments
 func greet(str name, str greeting = "Hello") {
@@ -199,7 +209,7 @@ class Animal {
         self.name = n
     }
 
-    func speak() -> str {
+    func speak(): str {
         return "..."
     }
 }
@@ -209,7 +219,7 @@ class Dog extends Animal {
         super.new(n)
     }
 
-    override func speak() -> str {
+    override func speak(): str {
         return "Woof!"
     }
 }
@@ -218,7 +228,7 @@ class Dog extends Animal {
 ### Generics
 
 ```cnext
-func first<T>(T[] arr) -> T {
+func first<T>(T[] arr): T {
     return arr[0]
 }
 
@@ -253,7 +263,7 @@ increment()  // 2
 ```cnext
 enum Color { RED, GREEN, BLUE }
 
-func color_name(Color c) -> str {
+func color_name(Color c): str {
     match c {
         RED => "red"
         GREEN => "green"
@@ -272,7 +282,7 @@ enum HttpStatus {
     ERROR = 500
 }
 
-func describe(HttpStatus code) -> str {
+func describe(HttpStatus code): str {
     match code {
         200 => "OK"
         404 => "Not Found"

@@ -22,7 +22,7 @@ test "control flow" {
 }
 
 test "functions" {
-    func add(int a, int b) -> int {
+    func add(int a, int b): int {
         return a + b
     }
     assert(add(3, 4) == 7)
@@ -39,7 +39,7 @@ test "classes" {
             self.y = py
         }
         
-        func distance() -> int {
+        func distance(): int {
             return self.x * self.x + self.y * self.y
         }
     }

@@ -5,21 +5,14 @@
 #include <ctype.h>
 #include <errno.h>
 
+extern int run_process(const char* program, char* const args[]);
+extern int run_process_captured(const char* program, char* const args[], char* output_buf, size_t output_buf_size);
+
 #ifdef _WIN32
 #define CNEXT_PATH_SEP '\\'
 #else
 #define CNEXT_PATH_SEP '/'
 #endif
-
-static bool is_safe_shell_arg(const char* s) {
-    if (!s || s[0] == '\0') return false;
-    for (const char* p = s; *p; p++) {
-        if (*p == '"' || *p == '\'' || *p == '`' || *p == '$' || *p == '\\' ||
-            *p == ';' || *p == '|' || *p == '&' || *p == '\n' || *p == '\r')
-            return false;
-    }
-    return true;
-}
 
 #ifdef _WIN32
 #include <windows.h>
@@ -72,35 +65,25 @@ static const char* get_cache_dir(void) {
 }
 
 static bool http_get(const char* url, char** out_body, long* out_status) {
-    if (!is_safe_shell_arg(url)) { *out_status = 0; *out_body = NULL; return false; }
-    if (url && strncmp(url, "http://", 7) == 0) {
+    if (!url || url[0] == '\0') { *out_status = 0; *out_body = NULL; return false; }
+    if (strncmp(url, "http://", 7) == 0) {
         fprintf(stderr, "Warning: Refusing insecure HTTP download. Use HTTPS instead.\n");
         *out_status = 0; *out_body = NULL; return false;
     }
-    char cmd[2048];
     char tmpfile_path[1024];
 #ifdef _WIN32
     snprintf(tmpfile_path, sizeof(tmpfile_path), "%s\\http_response.tmp", get_cache_dir());
-    cnext_mkdir(get_cache_dir());
-    snprintf(cmd, sizeof(cmd),
-        "curl -s -w \"%%{http_code}\" -o \"%s\" \"%s\"",
-        tmpfile_path, url);
 #else
     snprintf(tmpfile_path, sizeof(tmpfile_path), "%s/http_response.tmp", get_cache_dir());
-    cnext_mkdir(get_cache_dir());
-    snprintf(cmd, sizeof(cmd),
-        "curl -s -w '%%{http_code}' -o '%s' '%s'",
-        tmpfile_path, url);
 #endif
+    cnext_mkdir(get_cache_dir());
 
-    FILE* pipe = popen(cmd, "r");
-    if (!pipe) return false;
+    // Use argument array instead of shell command (no shell injection)
+    char stdout_buf[64] = "";
+    char* curl_args[] = {"curl", "-s", "-w", "%{http_code}", "-o", tmpfile_path, (char*)url, NULL};
+    run_process_captured("curl", curl_args, stdout_buf, sizeof(stdout_buf));
 
-    char status_buf[16] = "";
-    if (fgets(status_buf, sizeof(status_buf), pipe)) { /* read ok */ }
-    pclose(pipe);
-
-    *out_status = atol(status_buf);
+    *out_status = atol(stdout_buf);
 
     FILE* f = fopen(tmpfile_path, "rb");
     if (!f) return false;
@@ -109,7 +92,7 @@ static bool http_get(const char* url, char** out_body, long* out_status) {
     if (size < 0) { fclose(f); remove(tmpfile_path); *out_body = NULL; return false; }
     rewind(f);
     *out_body = (char*)checked_malloc(size + 1);
-    if (!*out_body) { fclose(f); return false; }
+    if (!*out_body) { fclose(f); remove(tmpfile_path); return false; }
     if (fread(*out_body, 1, size, f)) { /* read ok */ }
     (*out_body)[size] = '\0';
     fclose(f);
@@ -118,61 +101,63 @@ static bool http_get(const char* url, char** out_body, long* out_status) {
 }
 
 static bool http_post(const char* url, const char* body, const char* token, long* out_status) {
-    if (!is_safe_shell_arg(url) || (token && !is_safe_shell_arg(token))) { *out_status = 0; return false; }
-    if (url && strncmp(url, "http://", 7) == 0) {
+    if (!url || url[0] == '\0') { *out_status = 0; return false; }
+    if (strncmp(url, "http://", 7) == 0) {
         fprintf(stderr, "Warning: Refusing insecure HTTP request. Use HTTPS instead.\n");
         *out_status = 0; return false;
     }
-    char cmd[4096];
     char tmpfile_path[1024];
+    char body_tmpfile[1024];
 #ifdef _WIN32
     snprintf(tmpfile_path, sizeof(tmpfile_path), "%s\\http_response.tmp", get_cache_dir());
-    cnext_mkdir(get_cache_dir());
-    if (token && token[0]) {
-        snprintf(cmd, sizeof(cmd),
-            "curl -s -w \"%%{http_code}\" -o \"%s\" -X POST -H \"Content-Type: application/json\" -H \"Authorization: Bearer %s\" -d @- \"%s\"",
-            tmpfile_path, token, url);
-    } else {
-        snprintf(cmd, sizeof(cmd),
-            "curl -s -w \"%%{http_code}\" -o \"%s\" -X POST -H \"Content-Type: application/json\" -d @- \"%s\"",
-            tmpfile_path, url);
-    }
+    snprintf(body_tmpfile, sizeof(body_tmpfile), "%s\\http_body.tmp", get_cache_dir());
 #else
     snprintf(tmpfile_path, sizeof(tmpfile_path), "%s/http_response.tmp", get_cache_dir());
-    cnext_mkdir(get_cache_dir());
-    if (token && token[0]) {
-        snprintf(cmd, sizeof(cmd),
-            "curl -s -w '%%{http_code}' -o '%s' -X POST -H 'Content-Type: application/json' -H 'Authorization: Bearer %s' -d @- '%s'",
-            tmpfile_path, token, url);
-    } else {
-        snprintf(cmd, sizeof(cmd),
-            "curl -s -w '%%{http_code}' -o '%s' -X POST -H 'Content-Type: application/json' -d @- '%s'",
-            tmpfile_path, url);
-    }
+    snprintf(body_tmpfile, sizeof(body_tmpfile), "%s/http_body.tmp", get_cache_dir());
 #endif
+    cnext_mkdir(get_cache_dir());
 
-    FILE* pipe = popen(cmd, "w");
-    if (!pipe) return false;
-    if (body) fwrite(body, 1, strlen(body), pipe);
-    pclose(pipe);
-
-    // Read status code from tmpfile (we wrote it there)
-    // Actually the status was written to stdout, not tmpfile. Let's re-read.
-    FILE* f = fopen(tmpfile_path, "rb");
-    if (!f) return false;
-    fseek(f, 0, SEEK_END);
-    long size = ftell(f);
-    if (size < 0) { fclose(f); remove(tmpfile_path); return false; }
-    rewind(f);
-    char* resp = (char*)checked_malloc(size + 1);
-    if (resp) {
-        if (fread(resp, 1, size, f)) { /* read ok */ }
-        resp[size] = '\0';
-        // Status is typically in the last line
-        *out_status = 200; // default
+    // Write body to temp file (avoids piping via shell)
+    if (body) {
+        FILE* bf = fopen(body_tmpfile, "wb");
+        if (bf) {
+            fwrite(body, 1, strlen(body), bf);
+            fclose(bf);
+        }
     }
-    free(resp);
-    fclose(f);
+
+    // Build curl args array (no shell interpretation)
+    char* curl_args[16];
+    int argc = 0;
+    curl_args[argc++] = "curl";
+    curl_args[argc++] = "-s";
+    curl_args[argc++] = "-w";
+    curl_args[argc++] = "%{http_code}";
+    curl_args[argc++] = "-o";
+    curl_args[argc++] = tmpfile_path;
+    curl_args[argc++] = "-X";
+    curl_args[argc++] = "POST";
+    curl_args[argc++] = "-H";
+    curl_args[argc++] = "Content-Type: application/json";
+    if (token && token[0]) {
+        static char auth_header[512];
+        snprintf(auth_header, sizeof(auth_header), "Authorization: Bearer %s", token);
+        curl_args[argc++] = "-H";
+        curl_args[argc++] = auth_header;
+    }
+    if (body) {
+        static char data_arg[2048];
+        snprintf(data_arg, sizeof(data_arg), "-d@%s", body_tmpfile);
+        curl_args[argc++] = data_arg;
+    }
+    curl_args[argc++] = (char*)url;
+    curl_args[argc] = NULL;
+
+    char stdout_buf[64] = "";
+    run_process_captured("curl", curl_args, stdout_buf, sizeof(stdout_buf));
+    *out_status = atol(stdout_buf);
+
+    remove(body_tmpfile);
     remove(tmpfile_path);
     return true;
 }
@@ -640,6 +625,15 @@ bool registry_update(const char* project_dir) {
 // --- Remove ---
 
 bool registry_remove(const char* package_name, const char* project_dir) {
+    // Path traversal guard: reject names with ".." or path separators
+    if (!package_name || package_name[0] == '\0') return false;
+    for (const char* p = package_name; *p; p++) {
+        if ((*p == '.' && *(p + 1) == '.') || *p == '/' || *p == '\\') {
+            fprintf(stderr, "Invalid package name: contains path separators.\n");
+            return false;
+        }
+    }
+
     char toml_path[1024];
     snprintf(toml_path, sizeof(toml_path), "%s/cnext.toml", project_dir);
 

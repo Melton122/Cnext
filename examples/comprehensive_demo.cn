@@ -1,0 +1,115 @@
+// Comprehensive Builtins Demo
+// Showcases all global built-in functions in Cnext
+
+main {
+    printin("=== Cnext Builtins Demo ===")
+    printin("")
+
+    // --- String Operations ---
+    printin("--- String Operations ---")
+    str name = "hello world"
+    printin(str_upper(name))
+    printin(str_lower("HELLO WORLD"))
+    printin(str_capitalize("hello"))
+    printin(str_title("hello there world"))
+    printin(str_trim("  spaces  "))
+    printin(str_contains("hello world", "world"))
+    printin(str_starts_with("hello", "hel"))
+    printin(str_ends_with("hello", "llo"))
+    printin(str_index_of("hello world", "world"))
+    printin(str_replace("hello world", "world", "cnext"))
+    printin(str_substring("hello", 0, 3))
+    printin(str_reverse("abcde"))
+    printin(str_repeat("ha", 3))
+    printin(str_pad_left("hi", 6, '.'))
+    printin(str_pad_right("hi", 6, '.'))
+    printin(str_insert("hlo", 1, "el"))
+    printin(str_remove("hello world", "world"))
+    printin(str_last_index_of("abcabc", "abc"))
+    printin(str_count("banana", "a"))
+    printin(str_is_empty(""))
+    printin(str_char_at("hello", 1))
+    printin("")
+
+    // --- Math Operations ---
+    printin("--- Math Operations ---")
+    printin(math_abs(-42))
+    printin(math_max(10, 20))
+    printin(math_min(10, 20))
+    printin(math_clamp(100, 0, 10))
+    printin(math_floor(3.7))
+    printin(math_ceil(3.2))
+    printin(math_round(3.5))
+    printin(math_floor(-1.5))
+    printin(math_ceil(-1.5))
+    printin(math_round(-2.5))
+    printin(math_sqrt(16.0))
+    printin(math_pow(2.0, 10.0))
+    printin(math_factorial(6))
+    printin(math_fibonacci(10))
+    printin(math_gcd(12, 8))
+    printin(math_lcm(4, 6))
+    printin("")
+
+    // --- Type Conversion ---
+    printin("--- Type Conversion ---")
+    int x = to_int("42")
+    printin(x)
+    float y = to_float(7)
+    printin(y)
+    bool b = to_bool(1)
+    printin(b)
+    int code = ord("A")
+    printin(code)
+    printin("")
+
+    // --- Type Introspection ---
+    printin("--- Type Introspection ---")
+    int val = 99
+    printin(typeof(val))
+    str txt = "test"
+    printin(typeof(txt))
+    float pi = 3.14
+    printin(typeof(pi))
+    printin("")
+
+    // --- File Operations ---
+    printin("--- File Operations ---")
+    write_file("_demo_output.txt", "Hello from Cnext!")
+    str contents = read_file("_demo_output.txt")
+    printin(contents)
+    long sz = file_size("_demo_output.txt")
+    printin(sz == 17)
+    printin(file_exists("_demo_output.txt"))
+    append_file("_demo_output.txt", " Appended!")
+    str full = read_file("_demo_output.txt")
+    printin(len(full) > 17)
+    delete_file("_demo_output.txt")
+    printin(file_exists("_demo_output.txt") == false)
+    printin("")
+
+    // --- System ---
+    printin("--- System ---")
+    str p = platform()
+    printin(len(p) > 0)
+    str d = cwd()
+    printin(len(d) > 0)
+    setenv("CNEXT_DEMO_TEST", "it_works")
+    str env_val = getenv("CNEXT_DEMO_TEST")
+    printin(env_val == "it_works")
+    printin("")
+
+    // --- Encoding / Crypto ---
+    printin("--- Encoding & Crypto ---")
+    str encoded = base64_encode("hello")
+    printin(encoded)
+    str decoded = base64_decode(encoded)
+    printin(decoded == "hello")
+    printin(md5("test"))
+    printin(sha256("test"))
+    str id = uuid()
+    printin(len(id) == 36)
+    printin("")
+
+    printin("=== All demos completed! ===")
+}

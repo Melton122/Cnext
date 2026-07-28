@@ -6,23 +6,23 @@
 // EXPECT: 20
 
 // Test 1: Simple async function
-async func simple_async() -> int {
+async func simple_async(): int {
     return 42
 }
 
 // Test 2: Async function with computation
-async func compute_async(int x) -> int {
+async func compute_async(int x): int {
     var result = x * 2
     return result
 }
 
 // Test 3: Multiple async calls
-async func add_async(int a, int b) -> int {
+async func add_async(int a, int b): int {
     return a + b
 }
 
 // Test 4: Async function calling another async function
-async func nested_async(int x) -> int {
+async func nested_async(int x): int {
     var doubled = await compute_async(x)
     var added = await add_async(doubled, 10)
     return added

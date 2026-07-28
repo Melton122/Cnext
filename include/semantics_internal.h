@@ -5,6 +5,7 @@
 #include "checked_alloc.h"
 #include "ast.h"
 #include "lexer.h"
+#include "diagnostics.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -35,8 +36,8 @@ extern int generator_depth;
 /* --- Core Functions (semantics_scope.c) --- */
 char* copy_cstring(const char* value);
 char* sem_copy_token_text(Token token);
-void report_error(int line, const char* message, const char* detail);
-void report_token_error(Token token, const char* message);
+void report_error(ErrorCode code, int line, const char* message, const char* detail);
+void report_token_error(ErrorCode code, Token token, const char* message);
 void sem_push_scope(void);
 void sem_pop_scope(void);
 bool token_matches_name(Token token, const char* name);
@@ -57,6 +58,7 @@ void validate_var_initializer(ASTNode* node);
 void analyze_var_declaration(ASTNode* node);
 void analyze_field_declaration(ASTNode* node);
 void register_import(Token module);
+void register_all_builtins(Token module);
 
 /* --- Predeclaration (semantics_predeclare.c) --- */
 void predeclare_global(ASTNode* node);

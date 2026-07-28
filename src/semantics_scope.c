@@ -25,36 +25,30 @@ char* sem_copy_token_text(Token token) {
     return copy;
 }
 
-static void print_source_line(int line) {
-    if (!semantics_source) return;
-    const char* p = semantics_source;
-    int current_line = 1;
-    while (*p && current_line < line) {
-        if (*p == '\n') current_line++;
-        p++;
-    }
-    if (*p == '\0') return;
-    const char* line_start = p;
-    while (*p && *p != '\n') p++;
-    size_t line_len = (size_t)(p - line_start);
-    if (line_len > 0)
-        fprintf(stderr, "  | %.*s\n", (int)line_len, line_start);
-}
-
-void report_error(int line, const char* message, const char* detail) {
+void report_error(ErrorCode code, int line, const char* message, const char* detail) {
+    char full_msg[1024];
     if (detail && detail[0] != '\0') {
-        fprintf(stderr, "[line %d] Semantic Error: %s %s\n", line, message, detail);
+        snprintf(full_msg, sizeof(full_msg), "%s %s", message, detail);
     } else {
-        fprintf(stderr, "[line %d] Semantic Error: %s\n", line, message);
+        snprintf(full_msg, sizeof(full_msg), "%s", message);
     }
-    print_source_line(line);
+    const char* hint = get_hint_for_error(code);
+    diag_emit(DIAG_ERROR, code, line, 0, full_msg, hint, NULL);
     has_semantic_error = true;
 }
 
-void report_token_error(Token token, const char* message) {
+void report_token_error(ErrorCode code, Token token, const char* message) {
     char* detail = sem_copy_token_text(token);
-    report_error(token.line, message, detail);
+    char full_msg[1024];
+    if (detail && detail[0] != '\0') {
+        snprintf(full_msg, sizeof(full_msg), "%s %s", message, detail);
+    } else {
+        snprintf(full_msg, sizeof(full_msg), "%s", message);
+    }
+    const char* hint = get_hint_for_error(code);
+    diag_emit(DIAG_ERROR, code, token.line, token.column, full_msg, hint, NULL);
     free(detail);
+    has_semantic_error = true;
 }
 
 void sem_push_scope(void) {
@@ -114,7 +108,7 @@ void define_symbol(Token token, CnextTokenType type, bool is_const, const char* 
     if (!sem_current_scope) return;
     Symbol* existing = resolve_current_symbol(token);
     if (existing) {
-        report_error(token.line, "Name already declared in this scope:", existing->name);
+        report_error(ERR_SEM_DUPLICATE_DECL, token.line, "Name already declared in this scope:", existing->name);
         return;
     }
     Symbol* sym = (Symbol*)checked_malloc(sizeof(Symbol));
@@ -171,18 +165,18 @@ bool validate_type_token(Token token) {
     if (token.type == TOKEN_EOF || is_builtin_value_type(token.type) ||
         token.type == TOKEN_ITER || token.type == TOKEN_FUNC) return true;
     if (token.type != TOKEN_IDENTIFIER) {
-        report_token_error(token, "Invalid type:");
+        report_token_error(ERR_SEM_UNKNOWN_TYPE, token, "Invalid type:");
         return false;
     }
 
     Symbol* type_symbol = resolve_symbol(token);
     if (!type_symbol) {
-        report_token_error(token, "Unknown type:");
+        report_token_error(ERR_SEM_UNKNOWN_TYPE, token, "Unknown type:");
         return false;
     }
     // Type parameters (generics) and user-defined types are valid type tokens
     if (!is_named_type_symbol(type_symbol->type) && type_symbol->type != TOKEN_IDENTIFIER) {
-        report_token_error(token, "Unknown type:");
+        report_token_error(ERR_SEM_UNKNOWN_TYPE, token, "Unknown type:");
         return false;
     }
     return true;

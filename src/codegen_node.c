@@ -21,7 +21,6 @@ void generate_block(ASTNode* node) {
     indent_level--;
     write_indent();
     fprintf(out, "}\n");
-    codegen_gen_line++;
 }
 
 void generate_node(ASTNode* node) {
@@ -47,27 +46,36 @@ void generate_node(ASTNode* node) {
             indent_level--;
             fprintf(out, "} %.*s;\n\n", node->token.length, node->token.start);
             
-            for (int i = 0; i < node->child_count; i++) {
-                if (node->children[i]->type == AST_CONSTRUCTOR) {
-                    char* prefix = copy_token_text(node->token);
-                    fprintf(out, "void %s_new(%s* self", prefix, prefix);
-                    for (int j = 0; j < node->children[i]->child_count; j++) {
-                        fprintf(out, ", ");
-                        generate_type(node->children[i]->children[j]->var_type, false);
-                        fprintf(out, " %.*s", node->children[i]->children[j]->token.length,
-                            node->children[i]->children[j]->token.start);
+            // Skip constructor emission for abstract classes
+            if (!node->is_abstract) {
+                for (int i = 0; i < node->child_count; i++) {
+                    if (node->children[i]->type == AST_CONSTRUCTOR) {
+                        char* prefix = copy_token_text(node->token);
+                        fprintf(out, "void %s_new(%s* self", prefix, prefix);
+                        for (int j = 0; j < node->children[i]->child_count; j++) {
+                            fprintf(out, ", ");
+                            generate_type(node->children[i]->children[j]->var_type, false);
+                            fprintf(out, " %.*s", node->children[i]->children[j]->token.length,
+                                node->children[i]->children[j]->token.start);
+                        }
+                        fprintf(out, ") ");
+                        generate_block(node->children[i]->left);
+                        fprintf(out, "\n");
+                        free(prefix);
                     }
-                    fprintf(out, ") ");
-                    generate_block(node->children[i]->left);
-                    fprintf(out, "\n");
-                    free(prefix);
                 }
             }
             
             for (int i = 0; i < node->child_count; i++) {
                 if (node->children[i]->type == AST_FUNC_DECL) {
+                    // Skip abstract methods (no body)
+                    if (node->children[i]->is_abstract) continue;
+                    
                     char* prefix = copy_token_text(node->token);
-                    if (node->children[i]->child_count > 0 && node->children[i]->children[0]) {
+                    if (node->children[i]->is_static) {
+                        // Static methods: no self parameter, just use prefix
+                        generate_function(node->children[i], prefix);
+                    } else if (node->children[i]->child_count > 0 && node->children[i]->children[0]) {
                         Token saved_self_type = node->children[i]->children[0]->var_type;
                         node->children[i]->children[0]->var_type = node->token;
                         generate_function(node->children[i], prefix);
@@ -135,20 +143,16 @@ void generate_node(ASTNode* node) {
             break;
         case AST_RESUME_EXPR: {
             ASTNode* co_expr = node->left;
-            if (node->right) {
-                write_indent();
-                fprintf(out, "/* resume with value */\n");
-            }
             fprintf(out, "({ ");
             fprintf(out, "__auto_type _co = ");
             generate_expression(co_expr);
             fprintf(out, "; ");
             if (node->right) {
-                fprintf(out, "_co->_received = ");
+                fprintf(out, "_co->_received = (");
                 generate_expression(node->right);
-                fprintf(out, "; ");
+                fprintf(out, "); ");
             }
-            fprintf(out, "_co; })");
+            fprintf(out, "_co->_next(_co); })");
             break;
         }
         case AST_AWAIT_EXPR: {
@@ -157,8 +161,12 @@ void generate_node(ASTNode* node) {
         }
         case AST_RUN_ASYNC: {
             if (node->left) {
+                fprintf(out, "({ ");
+                fprintf(out, "__auto_type _a = ");
                 generate_expression(node->left);
-                fprintf(out, ";\n");
+                fprintf(out, "; ");
+                fprintf(out, "_a->_next(_a); ");
+                fprintf(out, "_a; })");
             }
             break;
         }
@@ -173,18 +181,152 @@ void generate_node(ASTNode* node) {
             indent_level--;
             fprintf(out, "} %.*s;\n", node->token.length, node->token.start);
             break;
-        case AST_ENUM_DECL:
-            fprintf(out, "typedef enum {\n");
-            indent_level++;
+        case AST_ENUM_DECL: {
+            // Check if this enum has any variants with data
+            bool has_variants = false;
             for (int i = 0; i < node->child_count; i++) {
-                write_indent();
-                fprintf(out, "%.*s", node->children[i]->token.length, node->children[i]->token.start);
-                if (i < node->child_count - 1) fprintf(out, ",");
-                fprintf(out, "\n");
+                if (node->children[i]->type == AST_VARIANT) {
+                    has_variants = true;
+                    break;
+                }
             }
-            indent_level--;
-            fprintf(out, "} %.*s;\n", node->token.length, node->token.start);
+            
+            if (!has_variants) {
+                // Plain enum: just emit a C enum
+                fprintf(out, "typedef enum {\n");
+                indent_level++;
+                for (int i = 0; i < node->child_count; i++) {
+                    write_indent();
+                    fprintf(out, "%.*s", node->children[i]->token.length, node->children[i]->token.start);
+                    if (node->children[i]->left) {
+                        fprintf(out, " = ");
+                        generate_expression(node->children[i]->left);
+                    }
+                    if (i < node->child_count - 1) fprintf(out, ",");
+                    fprintf(out, "\n");
+                }
+                indent_level--;
+                fprintf(out, "} %.*s;\n\n", node->token.length, node->token.start);
+            } else {
+                // Algebraic data type: generate tag enum + tagged union struct
+                char enum_name[256] = {0};
+                int nlen = node->token.length < 255 ? node->token.length : 255;
+                strncpy(enum_name, node->token.start, nlen);
+                enum_name[nlen] = '\0';
+                
+                // Tag enum
+                fprintf(out, "typedef enum {\n");
+                indent_level++;
+                for (int i = 0; i < node->child_count; i++) {
+                    if (node->children[i]->type == AST_VARIANT) {
+                        write_indent();
+                        fprintf(out, "%s_TAG_%.*s", enum_name,
+                            node->children[i]->token.length, node->children[i]->token.start);
+                        if (i < node->child_count - 1) fprintf(out, ",");
+                        fprintf(out, "\n");
+                    }
+                }
+                indent_level--;
+                fprintf(out, "} %s_Tag;\n\n", enum_name);
+                
+                // Tagged union struct
+                fprintf(out, "typedef struct {\n");
+                indent_level++;
+                write_indent();
+                fprintf(out, "%s_Tag tag;\n", enum_name);
+                write_indent();
+                fprintf(out, "_Alignas(16) char payload[CNEXT_VARIANT_MAX_PAYLOAD];\n");
+                indent_level--;
+                fprintf(out, "} %s;\n\n", enum_name);
+                
+                // Constructor helpers for each variant
+                for (int i = 0; i < node->child_count; i++) {
+                    if (node->children[i]->type == AST_VARIANT) {
+                        ASTNode* variant = node->children[i];
+                        if (variant->child_count == 0) {
+                            // Unit variant: no payload
+                            fprintf(out, "static inline %s %s_%.*s(void) {\n",
+                                enum_name, enum_name, variant->token.length, variant->token.start);
+                            indent_level++;
+                            write_indent();
+                            fprintf(out, "%s v = {0};\n", enum_name);
+                            write_indent();
+                            fprintf(out, "v.tag = %s_TAG_%.*s;\n", enum_name,
+                                variant->token.length, variant->token.start);
+                            write_indent();
+                            fprintf(out, "return v;\n");
+                            indent_level--;
+                            fprintf(out, "}\n\n");
+                        } else if (variant->child_count == 1) {
+                            // Single-payload variant
+                            fprintf(out, "static inline %s %s_%.*s(",
+                                enum_name, enum_name, variant->token.length, variant->token.start);
+                            generate_type(variant->children[0]->token, false);
+                            fprintf(out, " val) {\n");
+                            indent_level++;
+                            write_indent();
+                            fprintf(out, "%s v = {0};\n", enum_name);
+                            write_indent();
+                            fprintf(out, "v.tag = %s_TAG_%.*s;\n", enum_name,
+                                variant->token.length, variant->token.start);
+                            write_indent();
+                            fprintf(out, "memcpy(v.payload, &val, sizeof(val));\n");
+                            write_indent();
+                            fprintf(out, "return v;\n");
+                            indent_level--;
+                            fprintf(out, "}\n\n");
+                        } else {
+                            // Multi-payload variant: generate a struct and copy into payload
+                            char vname[256] = {0};
+                            int vnlen = variant->token.length < 250 ? variant->token.length : 250;
+                            strncpy(vname, variant->token.start, vnlen);
+                            vname[vnlen] = '\0';
+                            
+                            // Inner struct typedef
+                            fprintf(out, "typedef struct {\n");
+                            indent_level++;
+                            for (int p = 0; p < variant->child_count; p++) {
+                                write_indent();
+                                generate_type(variant->children[p]->token, false);
+                                fprintf(out, " _%d;\n", p);
+                            }
+                            indent_level--;
+                            fprintf(out, "} %s_%s_Payload;\n\n", enum_name, vname);
+                            
+                            // Constructor
+                            fprintf(out, "static inline %s %s_%.*s(",
+                                enum_name, enum_name, variant->token.length, variant->token.start);
+                            for (int p = 0; p < variant->child_count; p++) {
+                                if (p > 0) fprintf(out, ", ");
+                                generate_type(variant->children[p]->token, false);
+                                fprintf(out, " p%d", p);
+                            }
+                            fprintf(out, ") {\n");
+                            indent_level++;
+                            write_indent();
+                            fprintf(out, "%s_%s_Payload _p = {", enum_name, vname);
+                            for (int p = 0; p < variant->child_count; p++) {
+                                if (p > 0) fprintf(out, ", ");
+                                fprintf(out, "p%d", p);
+                            }
+                            fprintf(out, "};\n");
+                            write_indent();
+                            fprintf(out, "%s v = {0};\n", enum_name);
+                            write_indent();
+                            fprintf(out, "v.tag = %s_TAG_%.*s;\n", enum_name,
+                                variant->token.length, variant->token.start);
+                            write_indent();
+                            fprintf(out, "memcpy(v.payload, &_p, sizeof(_p));\n");
+                            write_indent();
+                            fprintf(out, "return v;\n");
+                            indent_level--;
+                            fprintf(out, "}\n\n");
+                        }
+                    }
+                }
+            }
             break;
+        }
         case AST_IMPORT: {
             static const char* std_modules[] = {"io", "file", "net", "json", "math", "os", "string_utils", "time", "regex", "collections", "crypto", "path", "encoding", "process", "random", "thread", "http", "log", "args", "fmt", NULL};
             bool is_std = false;
@@ -371,8 +513,10 @@ void generate_node(ASTNode* node) {
         }
         case AST_MAIN:
             push_scope();
-            fprintf(out, "int main(void) {\n");
+            fprintf(out, "int main(int argc, char** argv) {\n");
             indent_level++;
+            write_indent();
+            fprintf(out, "cnext_init_args(argc, argv);\n");
             if (codegen_test_count > 0) {
                 write_indent();
                 fprintf(out, "int _cnext_tp = 0, _cnext_tf = 0;\n");
@@ -404,8 +548,31 @@ void generate_node(ASTNode* node) {
             fprintf(out, "}\n\n");
             break;
         case AST_EXPR_STMT:
-            generate_expression(node->left);
-            fprintf(out, ";\n");
+            if (node->left && node->left->type == AST_TRY_EXPR) {
+                // expr? as statement — generate null/tag check + early return
+                int d = try_counter++;
+                write_indent();
+                fprintf(out, "{\n");
+                indent_level++;
+                write_indent();
+                fprintf(out, "__auto_type _try_%d = ", d);
+                generate_expression(node->left->left);
+                fprintf(out, ";\n");
+                write_indent();
+                fprintf(out, "if (_try_%d == NULL) {\n", d);
+                indent_level++;
+                write_indent();
+                fprintf(out, "return;\n");
+                indent_level--;
+                write_indent();
+                fprintf(out, "}\n");
+                indent_level--;
+                write_indent();
+                fprintf(out, "}\n");
+            } else {
+                generate_expression(node->left);
+                fprintf(out, ";\n");
+            }
             break;
         case AST_ASSIGN:
             if (node->right && node->right->type == AST_SLICE) {
@@ -527,30 +694,33 @@ void generate_node(ASTNode* node) {
                 indent_level--;
                 write_indent();
                 fprintf(out, "}\n");
-            } else if (node->condition->type == AST_RANGE) {
+            } else if (node->condition->type == AST_RANGE || node->condition->type == AST_RANGE_INCLUSIVE) {
                 fprintf(out, "for (int %.*s = ", node->init->token.length, node->init->token.start);
                 generate_expression(node->condition->left);
-                fprintf(out, "; %.*s < ", node->init->token.length, node->init->token.start);
+                fprintf(out, "; %.*s %s ", node->init->token.length, node->init->token.start,
+                    node->condition->type == AST_RANGE_INCLUSIVE ? "<=" : "<");
                 generate_expression(node->condition->right);
                 fprintf(out, "; %.*s = %.*s + 1) ",
                         node->init->token.length, node->init->token.start,
                         node->init->token.length, node->init->token.start);
                 generate_block(node->left);
             } else {
-                fprintf(out, "for (size_t _i%d = 0; _i%d < (", current_loop, current_loop);
+                fprintf(out, "{ __auto_type _src%d = (", current_loop);
                 generate_expression(node->condition);
-                fprintf(out, ").length; _i%d++) {\n", current_loop);
+                fprintf(out, "); for (size_t _i%d = 0; _i%d < _src%d.length; _i%d++) {\n", 
+                        current_loop, current_loop, current_loop, current_loop);
                 indent_level++;
                 write_indent();
-                fprintf(out, "__auto_type %.*s = (", node->init->token.length, node->init->token.start);
-                generate_expression(node->condition);
-                fprintf(out, ").data[_i%d];\n", current_loop);
+                fprintf(out, "__auto_type %.*s = _src%d.data[_i%d];\n",
+                        node->init->token.length, node->init->token.start, current_loop, current_loop);
                 
                 for (int i = 0; i < node->left->child_count; i++) {
                     write_indent();
                     generate_node(node->left->children[i]);
                 }
                 indent_level--;
+                write_indent();
+                fprintf(out, "}\n");
                 write_indent();
                 fprintf(out, "}\n");
             }
@@ -616,14 +786,40 @@ void generate_node(ASTNode* node) {
             int d = defer_counter++;
             write_indent();
             fprintf(out, "void _cnext_defer_fn_%d(void* _d) { ", d);
-            if (node->left) generate_expression(node->left);
-            fprintf(out, "; }\n");
+            if (node->left) {
+                if (node->left->type == AST_BLOCK) {
+                    // Block form: defer { ... }
+                    generate_block(node->left);
+                } else {
+                    // Expression form: defer expr;
+                    generate_expression(node->left);
+                    fprintf(out, ";");
+                }
+            }
+            fprintf(out, " }\n");
             write_indent();
+#ifdef _MSC_VER
+            fprintf(out, "volatile int _cnext_defer_done_%d = 0;\n", d);
+            write_indent();
+            fprintf(out, "__try { _cnext_defer_done_%d = 1; }\n", d);
+            write_indent();
+            fprintf(out, "__finally { if (_cnext_defer_done_%d) { ", d);
+            if (node->left) {
+                if (node->left->type == AST_BLOCK) {
+                    generate_block(node->left);
+                } else {
+                    generate_expression(node->left);
+                    fprintf(out, ";");
+                }
+            }
+            fprintf(out, " } }\n");
+#else
             fprintf(out, "volatile int _cnext_defer_done_%d = 0;\n", d);
             write_indent();
             fprintf(out, "char _cnext_defer_cleanup_%d __attribute__((cleanup(_cnext_defer_fn_%d))) = 0;\n", d, d);
             write_indent();
             fprintf(out, "_cnext_defer_done_%d = 1;\n", d);
+#endif
             break;
         }
         case AST_TRY: {
@@ -687,8 +883,17 @@ void generate_node(ASTNode* node) {
                 ASTNode* arm = node->children[i];
                 write_indent();
                 if (arm->is_const) {
-                    if (!first) {
-                        fprintf(out, "else ");
+                    if (arm->condition) {
+                        if (!first) {
+                            fprintf(out, "else ");
+                        }
+                        fprintf(out, "if (");
+                        generate_expression(arm->condition);
+                        fprintf(out, ") ");
+                    } else {
+                        if (!first) {
+                            fprintf(out, "else ");
+                        }
                     }
                 } else if (arm->child_count > 0) {
                     if (!first) {
@@ -780,6 +985,9 @@ void generate_node(ASTNode* node) {
             else if (node->operator_token.type == TOKEN_GREATER) snprintf(op_name, sizeof(op_name), "_gt");
             else if (node->operator_token.type == TOKEN_GREATER_EQ) snprintf(op_name, sizeof(op_name), "_gte");
             else if (node->operator_token.type == TOKEN_LBRACKET) snprintf(op_name, sizeof(op_name), "_idx");
+            else if (node->operator_token.type == TOKEN_PERCENT) snprintf(op_name, sizeof(op_name), "_mod");
+            else if (node->operator_token.type == TOKEN_AND_AND) snprintf(op_name, sizeof(op_name), "_and");
+            else if (node->operator_token.type == TOKEN_OR_OR) snprintf(op_name, sizeof(op_name), "_or");
             
             generate_type(node->return_type, false);
             fprintf(out, " operator%s(", op_name);
@@ -819,7 +1027,18 @@ void generate_node(ASTNode* node) {
         case AST_BLOCK:
             generate_block(node);
             break;
+        case AST_TYPE_ALIAS: {
+            // type MyType = OtherType → typedef OtherType MyType;
+            write_indent();
+            fprintf(out, "typedef ");
+            if (node->left) {
+                generate_type(node->left->token, false);
+            }
+            fprintf(out, " %.*s;\n", node->token.length, node->token.start);
+            break;
+        }
         default:
+            fprintf(stderr, "warning: unhandled AST node type %d at line %d\n", node->type, node->token.line);
             break;
     }
 }

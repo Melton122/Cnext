@@ -120,3 +120,20 @@
 - **Colored error messages:** File/line context with colored output
 - **Critical bug fixes:** NULL pointer handling, integer overflow protection, `math_abs(INT_MIN)`, `intcmp` overflow in qsort
 - **`func` type:** Use `func` as a type for function pointers and closures
+
+## Version 10.0 — Global Built-in Functions (Implemented)
+- **All built-in functions globally available:** No `import` required for core, string, math, type conversion, file, system, encoding, and crypto functions
+- **String builtins:** `str_upper`, `str_lower`, `str_trim`, `str_contains`, `str_starts_with`, `str_ends_with`, `str_index_of`, `str_last_index_of`, `str_replace`, `str_substring`, `str_repeat`, `str_reverse`, `str_count`, `str_is_empty`, `str_capitalize`, `str_title`, `str_pad_left`, `str_pad_right`, `str_remove`, `str_insert`, `str_split`, `str_join`
+- **Math builtins:** `math_abs`, `math_min`, `math_max`, `math_clamp`, `math_gcd`, `math_lcm`, `math_factorial`, `math_fibonacci`, `math_sqrt`, `math_pow`, `math_log`, `math_exp`, `math_sin`, `math_cos`, `math_tan`, `math_random`, `math_random_range`
+- **Type conversion builtins:** `to_int`, `to_float`, `to_str`, `to_bool`, `to_char`, `parse_int`, `parse_float`, `char`, `ord`, `bytes`
+- **Core builtins:** `print`, `printin`, `input`, `len`, `typeof`, `assert`, `panic`, `exit`, `clone`, `swap`
+- **File builtins:** `read_file`, `write_file`, `append_file`, `delete_file`, `copy_file`, `move_file`, `file_exists`, `file_size`
+- **System builtins:** `cwd`, `chdir`, `platform`, `sys_args`, `getenv`, `setenv`, `hostname`, `username`, `cpu_count`, `temp_dir`, `home_dir`, `sys_exec`, `sys_shell`
+- **Time builtins:** `time_now`, `time_sleep`, `time_timestamp`, `time_date`, `time_time`, `time_stopwatch_start`, `time_stopwatch_stop`, `time_format_time`
+- **Encoding builtins:** `base64_encode`, `base64_decode`
+- **Crypto builtins:** `md5`, `sha1`, `sha256`, `uuid`
+- **Collections builtins:** `push`, `pop`, `shift`, `unshift`, `insert_at`, `remove_at`, `clear`, `sort`, `reverse_array`, `contains_item`, `array_index`, `array_last`, `array_first`, `array_slice`, `array_unique`, `array_shuffle`, `array_map`, `array_filter`, `array_reduce`, `array_find`
+- **Utility builtins:** `debug`, `gc`, `benchmark`, `stacktrace`
+- **Table-driven codegen:** Refactored code generator to use dispatch table for efficient builtin routing
+- **Comprehensive tests:** 7 new test files covering all built-in function categories
+- **Example programs:** 4 new example files demonstrating built-in function usage

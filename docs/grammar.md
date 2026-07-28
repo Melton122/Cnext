@@ -19,7 +19,7 @@ block          ::= "{" { statement } "}"
 
 class_decl     ::= "class" IDENTIFIER "{" { var_decl } "}"
 
-func_decl      ::= "func" IDENTIFIER "(" [ param_list ] ")" [ "->" type ] block
+func_decl      ::= "func" IDENTIFIER "(" [ param_list ] ")" [ ":" type ] block
 
 main_block     ::= "main" block
 

@@ -344,3 +344,12 @@ int run_process_captured(const char* program, char* const args[], char* output_b
     return 127;
 #endif
 }
+
+bool is_safe_path_component(const char* name) {
+    if (!name || name[0] == '\0') return false;
+    for (const char* p = name; *p; p++) {
+        if (*p == '.' && *(p + 1) == '.') return false;  // no ".."
+        if (*p == '/' || *p == '\\') return false;         // no path separators
+    }
+    return true;
+}

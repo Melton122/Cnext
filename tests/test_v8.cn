@@ -24,11 +24,11 @@ main {
     printin(small)
     
     // Test functions
-    func add(int a, int b) -> int {
+    func add(int a, int b): int {
         return a + b
     }
     
-    func greet(str n) -> str {
+    func greet(str n): str {
         return "Hello, " + n + "!"
     }
     
@@ -43,7 +43,7 @@ main {
     printin(sum)
     
     // Test pattern matching
-    func describe(int v) -> str {
+    func describe(int v): str {
         match v {
             0 => "zero"
             1 => "one"
@@ -66,7 +66,7 @@ main {
     printin(increment())
     
     // Test try/catch
-    func divide(int a, int b) -> int {
+    func divide(int a, int b): int {
         if b == 0 {
             throw "Division by zero"
         }

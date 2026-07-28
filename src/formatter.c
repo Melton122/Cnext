@@ -59,7 +59,7 @@ bool format_source(const char* source, char** output) {
 
     int indent = 0;
     bool need_indent = true;
-    Token prev_token = {TOKEN_EOF, "", 0, 0};
+    Token prev_token = {TOKEN_EOF, "", 0, 0, 0};
 
     for (;;) {
         Token token = next_token();

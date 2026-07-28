@@ -208,7 +208,7 @@ Use `func` as a type for function pointers and closures:
 
 ```cnext
 // Function parameter typed as func
-func apply(int x, func f) -> int {
+func apply(int x, func f): int {
     return f(x)
 }
 
@@ -216,7 +216,7 @@ var dbl = (int x) => x * 2
 printin(apply(5, dbl))  // 10
 
 // Return type as func
-func make_adder(int x) -> func {
+func make_adder(int x): func {
     return (int a) => a + x
 }
 
@@ -228,7 +228,7 @@ printin(add5(3))  // 8
 
 ```cnext
 // Iterator type for generators
-coroutine func count_to(int n) -> iter<int> {
+coroutine func count_to(int n): iter<int> {
     for int i = 1; i <= n; i = i + 1 {
         yield i
     }

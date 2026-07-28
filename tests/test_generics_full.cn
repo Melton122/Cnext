@@ -15,19 +15,19 @@
 // EXPECT: true
 
 // --- Generic Functions ---
-func identity<T>(T x) -> T {
+func identity<T>(T x): T {
     return x
 }
 
-func pair<T, U>(T a, U b) -> str {
+func pair<T, U>(T a, U b): str {
     return "(" + identity<T>(a) + ", " + identity<U>(b) + ")"
 }
 
-func add<T>(T a, T b) -> T {
+func add<T>(T a, T b): T {
     return a + b
 }
 
-func swap<T, U>(T a, U b) -> str {
+func reverse_pair<T, U>(T a, U b): str {
     return identity<U>(b) + " " + identity<T>(a)
 }
 
@@ -39,7 +39,7 @@ class Box<T> {
         self.value = val
     }
 
-    func get() -> T {
+    func get(): T {
         return self.value
     }
 
@@ -57,11 +57,11 @@ class Pair<A, B> {
         self.second = b
     }
 
-    func get_first() -> A {
+    func get_first(): A {
         return self.first
     }
 
-    func get_second() -> B {
+    func get_second(): B {
         return self.second
     }
 }
@@ -87,7 +87,7 @@ main {
     printin(sum == 30)
 
     // --- Test 4: Generic swap ---
-    str swapped = swap(1, "hello")
+    str swapped = reverse_pair(1, "hello")
     printin(swapped == "hello 1")
 
     // --- Test 5: Generic Box<int> ---

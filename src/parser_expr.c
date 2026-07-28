@@ -77,11 +77,15 @@ static ASTNode* primary() {
     }
     if (match_token(TOKEN_FALSE) || match_token(TOKEN_TRUE) ||
         match_token(TOKEN_NUMBER) || match_token(TOKEN_FLOAT_LITERAL) ||
-        match_token(TOKEN_STRING_LITERAL) || match_token(TOKEN_CHAR_LITERAL)) {
+        match_token(TOKEN_STRING_LITERAL) || match_token(TOKEN_RAW_STRING) ||
+        match_token(TOKEN_CHAR_LITERAL)) {
         return create_node(AST_LITERAL, parser.previous);
     }
     if (match_token(TOKEN_NULL)) {
         return create_node(AST_NULL_LITERAL, parser.previous);
+    }
+    if (match_token(TOKEN_NONE)) {
+        return create_node(AST_OPTION_NONE, parser.previous);
     }
     if (match_token(TOKEN_TYPEOF)) {
         consume(TOKEN_LPAREN, "Expect '(' after 'typeof'.");
@@ -153,7 +157,14 @@ static ASTNode* primary() {
             }
             return node;
         }
-        if (match_token(TOKEN_DOT)) { // member access or method call
+        if (match_token(TOKEN_DOT)) { // member access, tuple access, or method call
+            if (check(TOKEN_NUMBER) || check(TOKEN_FLOAT_LITERAL)) {
+                // Tuple access: expr.0, expr.1, etc.
+                advance_token();
+                ASTNode* access = create_node(AST_TUPLE_ACCESS, parser.previous);
+                access->left = node;
+                return access;
+            }
             consume_name("Expect property name after '.'.");
             Token member_name = parser.previous;
             if (match_token(TOKEN_LPAREN)) { // Method call: obj.method(args)
@@ -288,8 +299,7 @@ static ASTNode* primary() {
                     }
                     consume(TOKEN_IDENTIFIER, "Expect parameter name.");
                     ASTNode* param = create_node(AST_VAR_DECL, parser.previous);
-                    param->var_type = typeNode->token;
-                    param->is_array = typeNode->is_array;
+                    assign_type_from_node(param, typeNode);
                     free_ast(typeNode);
                     add_child(lambda_node, param);
                 } while (match_token(TOKEN_COMMA));
@@ -373,6 +383,29 @@ static ASTNode* primary() {
         node->left = expression();
         return node;
     }
+    if (match_token(TOKEN_WHEN)) {
+        // when { cond1 => expr1, cond2 => expr2, else => expr3 }
+        ASTNode* node = create_node(AST_WHEN, parser.previous);
+        consume(TOKEN_LBRACE, "Expect '{' after 'when'.");
+        while (!check(TOKEN_RBRACE) && !check(TOKEN_EOF)) {
+            ASTNode* arm = create_node(AST_WHEN_ARM, parser.current);
+            // Check for else arm
+            if (check_identifier_text("else", 4)) {
+                advance_token();
+                arm->is_const = true; // else/default arm
+            } else {
+                arm->condition = expression();
+            }
+            consume(TOKEN_FAT_ARROW, "Expect '=>' after when condition.");
+            arm->left = expression();
+            if (check(TOKEN_COMMA)) {
+                advance_token();
+            }
+            add_child(node, arm);
+        }
+        consume(TOKEN_RBRACE, "Expect '}' after when body.");
+        return node;
+    }
     error_at_current("Expect expression.");
     return NULL;
 }
@@ -392,8 +425,7 @@ static ASTNode* postfix() {
                 free_ast(cast_node);
                 return NULL;
             }
-            cast_node->var_type = type_node->token;
-            cast_node->is_array = type_node->is_array;
+            assign_type_from_node(cast_node, type_node);
             free_ast(type_node);
             node = cast_node;
         } else {
@@ -414,7 +446,7 @@ static ASTNode* unary() {
 
 static ASTNode* factor() {
     ASTNode* expr = unary();
-    while (match_token(TOKEN_STAR) || match_token(TOKEN_SLASH)) {
+    while (match_token(TOKEN_STAR) || match_token(TOKEN_SLASH) || match_token(TOKEN_PERCENT)) {
         ASTNode* node = create_node(AST_BINARY, parser.previous);
         node->left = expr;
         node->right = unary();
@@ -492,8 +524,10 @@ static ASTNode* logic_or() {
 
 static ASTNode* range_expr() {
     ASTNode* expr = logic_or();
-    while (match_token(TOKEN_RANGE)) {
-        ASTNode* node = create_node(AST_RANGE, parser.previous);
+    while (match_token(TOKEN_RANGE) || match_token(TOKEN_RANGE_INCLUSIVE)) {
+        ASTNode* node = create_node(
+            parser.previous.type == TOKEN_RANGE_INCLUSIVE ? AST_RANGE_INCLUSIVE : AST_RANGE,
+            parser.previous);
         node->left = expr;
         node->right = logic_or();
         expr = node;
@@ -502,5 +536,24 @@ static ASTNode* range_expr() {
 }
 
 ASTNode* expression() {
-    return range_expr();
+    ASTNode* node = range_expr();
+    if (check(TOKEN_QUESTION)) {
+        advance_token(); // consume ?
+        bool is_ternary = !check(TOKEN_COLON) && !check(TOKEN_SEMICOLON) && !check(TOKEN_RPAREN) && 
+            !check(TOKEN_RBRACE) && !check(TOKEN_COMMA) && !check(TOKEN_EOF) &&
+            !check(TOKEN_DOT) && !check(TOKEN_INCREMENT) && !check(TOKEN_DECREMENT);
+        if (is_ternary) {
+            ASTNode* ternary = create_node(AST_TERNARY, parser.previous);
+            ternary->condition = node;
+            ternary->left = expression();
+            consume(TOKEN_COLON, "Expect ':' in ternary expression.");
+            ternary->right = expression();
+            return ternary;
+        } else {
+            ASTNode* try_node = create_node(AST_TRY_EXPR, parser.previous);
+            try_node->left = node;
+            return try_node;
+        }
+    }
+    return node;
 }

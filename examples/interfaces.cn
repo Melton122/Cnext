@@ -1,11 +1,11 @@
 // Interfaces
 
 interface Sortable {
-    func compare_to(Sortable other) -> int
+    func compare_to(Sortable other): int
 }
 
 interface Printable {
-    func to_string() -> str
+    func to_string(): str
 }
 
 class Student implements Printable {
@@ -17,7 +17,7 @@ class Student implements Printable {
         self.grade = g
     }
 
-    override func to_string() -> str {
+    override func to_string(): str {
         return self.name + " (Grade: " + self.grade + ")"
     }
 }

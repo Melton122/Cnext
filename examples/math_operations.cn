@@ -1,0 +1,57 @@
+// Example: Math Operations with Built-in Functions
+// Demonstrates math operations without imports
+
+main {
+    // Basic operations
+    int a = math_abs(-42)
+    int b = math_min(10, 20)
+    int c = math_max(10, 20)
+    int d = math_clamp(15, 0, 10)
+
+    printin("abs(-42) = " + to_str(a))
+    printin("min(10, 20) = " + to_str(b))
+    printin("max(10, 20) = " + to_str(c))
+    printin("clamp(15, 0, 10) = " + to_str(d))
+
+    // Number theory
+    int g = math_gcd(48, 18)
+    int l = math_lcm(4, 6)
+
+    printin("gcd(48, 18) = " + to_str(g))
+    printin("lcm(4, 6) = " + to_str(l))
+
+    // Factorial and Fibonacci
+    long fact5 = math_factorial(5)
+    long fact10 = math_factorial(10)
+    int fib10 = math_fibonacci(10)
+    int fib20 = math_fibonacci(20)
+
+    printin("5! = " + to_str(fact5))
+    printin("10! = " + to_str(fact10))
+    printin("fib(10) = " + to_str(fib10))
+    printin("fib(20) = " + to_str(fib20))
+
+    // Practical examples
+    // Calculate average
+    int scores_sum = 85 + 92 + 78 + 95 + 88
+    int avg = scores_sum / 5
+    printin("Average score: " + to_str(avg))
+
+    // Find range
+    int min_score = math_min(85, math_min(92, math_min(78, math_min(95, 88))))
+    int max_score = math_max(85, math_max(92, math_max(78, math_max(95, 88))))
+    printin("Score range: " + to_str(min_score) + " - " + to_str(max_score))
+
+    // Clamping values
+    int health = 150
+    int clamped_health = math_clamp(health, 0, 100)
+    printin("Health clamped: " + to_str(clamped_health))
+
+    // GCD for fractions
+    int num = 48
+    int den = 18
+    int divisor = math_gcd(num, den)
+    int simplified_num = num / divisor
+    int simplified_den = den / divisor
+    printin("48/18 simplified: " + to_str(simplified_num) + "/" + to_str(simplified_den))
+}

@@ -20,6 +20,7 @@ bool analyze_semantics(ASTNode* program, bool require_main) {
     sem_push_scope();
 
     Token printin_token = {TOKEN_IDENTIFIER, "printin", 7, 0};
+    Token print_token = {TOKEN_IDENTIFIER, "print", 5, 0};
     Token input_token = {TOKEN_IDENTIFIER, "input", 5, 0};
     Token free_token = {TOKEN_IDENTIFIER, "free", 4, 0};
     Token len_token = {TOKEN_IDENTIFIER, "len", 3, 0};
@@ -29,6 +30,7 @@ bool analyze_semantics(ASTNode* program, bool require_main) {
     Token unwrap_token = {TOKEN_IDENTIFIER, "unwrap", 6, 0};
     Token expect_token = {TOKEN_IDENTIFIER, "expect", 6, 0};
     define_symbol_if_missing(printin_token, TOKEN_FUNC, true, NULL);
+    define_symbol_if_missing(print_token, TOKEN_FUNC, true, NULL);
     define_symbol_if_missing(input_token, TOKEN_FUNC, true, NULL);
     define_symbol_if_missing(free_token, TOKEN_FUNC, true, NULL);
     define_symbol_if_missing(len_token, TOKEN_FUNC, true, NULL);
@@ -41,6 +43,10 @@ bool analyze_semantics(ASTNode* program, bool require_main) {
     Token str_to_float_token = {TOKEN_IDENTIFIER, "str_to_float", 12, 0};
     define_symbol_if_missing(str_to_int_token, TOKEN_FUNC, true, NULL);
     define_symbol_if_missing(str_to_float_token, TOKEN_FUNC, true, NULL);
+
+    /* Register all global built-in functions */
+    Token builtin_module = {TOKEN_IDENTIFIER, "_builtins", 9, 0, 0};
+    register_all_builtins(builtin_module);
 
     for (int i = 0; i < program->child_count; i++) {
         predeclare_global(program->children[i]);
@@ -58,7 +64,7 @@ bool analyze_semantics(ASTNode* program, bool require_main) {
         analyze_node(program->children[i]);
     }
     if (require_main && !has_main && !has_test) {
-        report_error(0, "Program must have a 'main' block.", NULL);
+        report_error(ERR_SEM_NO_MAIN, 0, "Program must have a 'main' block.", NULL);
     }
 
     sem_pop_scope();

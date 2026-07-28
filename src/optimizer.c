@@ -169,6 +169,14 @@ typedef struct CopyEntry {
     struct CopyEntry* next;
 } CopyEntry;
 
+static void copy_table_free_one(CopyEntry* e) {
+    if (e) {
+        free(e->dest);
+        free(e->src);
+        free(e);
+    }
+}
+
 static CopyEntry* copy_table = NULL;
 
 static void copy_table_push(const char* dest, const char* src) {
@@ -213,7 +221,7 @@ static void propagate_copies(ASTNode* node) {
         }
     }
 
-    // Replace copies in identifiers
+    // Replace copies in identifiers (safe copy with owned memory)
     if (node->type == AST_IDENTIFIER && node->token.type == TOKEN_IDENTIFIER) {
         char name[256];
         int nlen = node->token.length < 255 ? node->token.length : 255;
@@ -221,8 +229,8 @@ static void propagate_copies(ASTNode* node) {
         name[nlen] = '\0';
         const char* src = copy_table_find(name);
         if (src) {
-            node->token.start = src;
-            node->token.length = strlen(src);
+            node->token.start = checked_strdup(src);
+            node->token.length = (int)strlen(src);
             opt_count++;
         }
     }
@@ -597,7 +605,7 @@ static void optimize_tail_calls(ASTNode* node) {
             if (is_tail_call(last_stmt, func_name)) {
                 // Mark for tail-call optimization (flag on the node)
                 // The code generator will handle this by converting to a loop
-                node->is_generator = true; // Reuse flag for TCO marker
+                node->is_tail_call_optimized = true;
                 opt_count++;
             }
         }

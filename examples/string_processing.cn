@@ -1,0 +1,72 @@
+// Example: String Processing with Built-in Functions
+// Demonstrates string manipulation without imports
+
+main {
+    // Basic string operations
+    str greeting = "Hello, World!"
+    printin("Original: " + greeting)
+
+    // Case transformations
+    str upper = str_upper(greeting)
+    str lower = str_lower(greeting)
+    str cap = str_capitalize("hello world")
+    str title = str_title("hello beautiful world")
+
+    printin("Upper: " + upper)
+    printin("Lower: " + lower)
+    printin("Capitalize: " + cap)
+    printin("Title: " + title)
+
+    // String trimming
+    str messy = "   Hello, World!   "
+    str trimmed = str_trim(messy)
+    printin("Trimmed: '" + trimmed + "'")
+
+    // Search operations
+    str text = "The quick brown fox jumps over the lazy dog"
+    bool has_fox = str_contains(text, "fox")
+    bool starts_the = str_starts_with(text, "The")
+    bool ends_dog = str_ends_with(text, "dog")
+    int fox_pos = str_index_of(text, "fox")
+    int last_the = str_last_index_of(text, "the")
+
+    printin("Contains 'fox': " + to_str(has_fox))
+    printin("Starts with 'The': " + to_str(starts_the))
+    printin("Ends with 'dog': " + to_str(ends_dog))
+    printin("Fox at position: " + to_str(fox_pos))
+    printin("Last 'the' at: " + to_str(last_the))
+
+    // String manipulation
+    str replaced = str_replace(text, "fox", "cat")
+    str repeated = str_repeat("Ha", 3)
+    str reversed = str_reverse("Hello")
+    str padded_l = str_pad_left("42", 6, '0')
+    str padded_r = str_pad_right("Hi", 6, '.')
+
+    printin("Replaced: " + replaced)
+    printin("Repeated: " + repeated)
+    printin("Reversed: " + reversed)
+    printin("Padded left: " + padded_l)
+    printin("Padded right: " + padded_r)
+
+    // Substring and removal
+    str sub = str_substring(text, 10, 19)
+    str removed = str_remove(text, "lazy ")
+    str inserted = str_insert("Hello!", 5, " Beautiful")
+
+    printin("Substring: " + sub)
+    printin("Removed: " + removed)
+    printin("Inserted: " + inserted)
+
+    // Counting
+    int the_count = str_count(text, "the")
+    int empty_check = len(str_trim(""))
+
+    printin("'the' count: " + to_str(the_count))
+
+    // Chained operations
+    str result = str_trim("  Hello World  ")
+    result = str_to_upper(result)
+    result = str_replace(result, " ", "_")
+    printin("Chained: " + result)
+}

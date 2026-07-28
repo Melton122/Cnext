@@ -5,7 +5,7 @@
 Functions that can be paused and resumed:
 
 ```cnext
-coroutine func counter() -> iter<int> {
+coroutine func counter(): iter<int> {
     var i = 0
     while true {
         yield i
@@ -20,13 +20,13 @@ Coroutines are like generators but support bidirectional communication:
 
 ```cnext
 // Generator: yields values
-func gen() -> iter<int> {
+func gen(): iter<int> {
     yield 1
     yield 2
 }
 
 // Coroutine: can receive values
-coroutine func coro() -> iter<int> {
+coroutine func coro(): iter<int> {
     var received = 0
     while true {
         yield received
@@ -47,7 +47,7 @@ var val3 = resume co      // 2
 ## Coroutine with Input
 
 ```cnext
-coroutine func doubler() -> iter<int> {
+coroutine func doubler(): iter<int> {
     var val = 1
     while true {
         yield val
@@ -64,7 +64,7 @@ var v3 = resume co          // 4
 ## Sending Values to Coroutines
 
 ```cnext
-coroutine func accumulator() -> iter<int> {
+coroutine func accumulator(): iter<int> {
     var total = 0
     while true {
         var received = yield total
@@ -83,7 +83,7 @@ resume co with 5     // total = 35, returns 35
 Coroutines maintain their state between calls:
 
 ```cnext
-coroutine func stateful() -> iter<int> {
+coroutine func stateful(): iter<int> {
     var count = 0
     while true {
         count = count + 1
@@ -100,7 +100,7 @@ printin(resume co)  // 3
 ## Coroutine with Parameters
 
 ```cnext
-coroutine func range_coro(int start, int end) -> iter<int> {
+coroutine func range_coro(int start, int end): iter<int> {
     var i = start
     while i < end {
         yield i
@@ -120,7 +120,7 @@ printin(resume co)  // 6
 Coroutines can be used with for-in loops:
 
 ```cnext
-coroutine func filter_positive(int[] nums) -> iter<int> {
+coroutine func filter_positive(int[] nums): iter<int> {
     for var n in nums {
         if n > 0 {
             yield n
@@ -137,13 +137,13 @@ for var x in filter_positive(data) {
 ## Nested Coroutines
 
 ```cnext
-coroutine func inner() -> iter<int> {
+coroutine func inner(): iter<int> {
     yield 1
     yield 2
     yield 3
 }
 
-coroutine func outer() -> iter<int> {
+coroutine func outer(): iter<int> {
     for var x in inner() {
         yield x * 10
     }
@@ -159,7 +159,7 @@ for var x in outer() {
 Coroutines can communicate via yield and resume:
 
 ```cnext
-coroutine func echo() -> iter<str> {
+coroutine func echo(): iter<str> {
     while true {
         var msg = yield ""
         printin("Echo: " + msg)
@@ -176,7 +176,7 @@ resume co with "world"  // Echo: world
 Coroutines are memory efficient:
 
 ```cnext
-coroutine func fibonacci_coro() -> iter<int> {
+coroutine func fibonacci_coro(): iter<int> {
     var a = 0, b = 1
     while true {
         yield a

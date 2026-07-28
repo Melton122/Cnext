@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+extern bool is_safe_path_component(const char* name);
+
 typedef struct {
     char* data;
     int length;
@@ -225,6 +227,12 @@ bool generate_docs(const char* file_path, const char* output_dir) {
     name_buf[sizeof(name_buf) - 1] = '\0';
     char* dot = strrchr(name_buf, '.');
     if (dot) *dot = '\0';
+
+    if (!is_safe_path_component(name_buf)) {
+        fprintf(stderr, "Invalid filename component for doc generation.\n");
+        free(source);
+        return false;
+    }
 
     char* md = NULL;
     if (!generate_docs_from_source(source, name_buf, &md)) {
