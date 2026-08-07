@@ -39,6 +39,30 @@ else
     MKDIR = mkdir -p
     SEP = /
 endif
+# Version (single source of truth: include/main_internal.h)
+VERSION := $(shell sed -n 's/.*CNEXT_VERSION "\([^"]*\)".*/\1/p' include/main_internal.h 2>/dev/null)
+ifeq ($(strip $(VERSION)),)
+    VERSION := 9.0.0
+endif
+
+# Install layout: exe -> INSTALL_BIN, runtime headers -> INSTALL_INC.
+# Windows matches install.ps1 / install.bat (%LOCALAPPDATA%\Cnext\{bin,include}).
+# POSIX-style tools (provided by MSYS on Windows) keep every target portable.
+RM    = rm -f
+RMDIR = rm -rf
+MKDIR = mkdir -p
+
+ifdef WINDOWS_BUILD
+    INSTALL_DIR = $(subst \,/,$(LOCALAPPDATA))/Cnext
+    INSTALL_BIN = $(INSTALL_DIR)/bin
+    INSTALL_INC = $(INSTALL_DIR)/include
+else
+    INSTALL_DIR = /usr/local
+    INSTALL_BIN = /usr/local/bin
+    INSTALL_INC = /usr/local/include
+endif
+
+
 
 # Compiler settings
 CC ?= gcc
@@ -99,28 +123,21 @@ check: $(EXEC)
 	@python3 tests/test_lsp.py 2>/dev/null || python tests/test_lsp.py 2>/dev/null || echo "LSP tests skipped"
 
 install: $(EXEC)
-ifdef WINDOWS_BUILD
-	@if not exist "$(INSTALL_DIR)" mkdir "$(INSTALL_DIR)"
-	copy /Y $(EXEC) "$(INSTALL_DIR)\$(EXEC)"
-	@echo Copying include directory...
-	@xcopy /E /Y /Q "include\*" "$(INSTALL_DIR)\..\include\" >nul 2>&1
-else
-	$(MKDIR) "$(INSTALL_DIR)" 2>/dev/null || true
-	cp $(EXEC) "$(INSTALL_DIR)/$(EXEC)"
-	cp -r include "$(INSTALL_DIR)/../include" 2>/dev/null || true
-endif
-	@echo "Installed $(EXEC) to $(INSTALL_DIR)"
-	@echo "Add $(INSTALL_DIR) to your PATH to use 'cnext' globally."
+	@mkdir -p "$(INSTALL_BIN)" "$(INSTALL_INC)"
+	@cp "$(EXEC)" "$(INSTALL_BIN)/$(EXEC)"
+	@echo "Copying include directory..."
+	@cp -r include/. "$(INSTALL_INC)/"
+	@echo "Installed $(EXEC) to $(INSTALL_BIN)"
+	@echo "Add $(INSTALL_BIN) to your PATH to use 'cnext' globally."
 
 uninstall:
+	@rm -f "$(INSTALL_BIN)/$(EXEC)"
 ifdef WINDOWS_BUILD
-	@if exist "$(INSTALL_DIR)\$(EXEC)" del /f "$(INSTALL_DIR)\$(EXEC)"
-	@if exist "$(INSTALL_DIR)\..\include" rmdir /S /Q "$(INSTALL_DIR)\..\include" 2>nul
+	@rm -rf "$(INSTALL_INC)" 2>/dev/null || true
 else
-	$(RM) "$(INSTALL_DIR)/$(EXEC)" 2>/dev/null || true
-	rm -rf "$(INSTALL_DIR)/../include" 2>/dev/null || true
+	@echo "Note: kept $(INSTALL_INC) (system header directory)."
 endif
-	@echo "Removed $(EXEC) from $(INSTALL_DIR)"
+	@echo "Removed $(EXEC) from $(INSTALL_BIN)"
 
 format:
 	clang-format -i src/*.c include/*.h
@@ -139,18 +156,29 @@ bench: $(EXEC)
 	@time $(MAKE) 2>/dev/null
 
 release: $(EXEC)
-	@echo "Packaging Cnext release..."
-	@mkdir -p release/build
-	@cp $(EXEC) release/build/
-	@cp -r include release/build/ 2>/dev/null || true
-	@cp -r examples release/build/ 2>/dev/null || true
-	@cp install.sh release/build/ 2>/dev/null || true
-	@cd release/build && tar -czf ../cnext-$(shell uname -s | tr A-Z a-z)-$(shell uname -m).tar.gz *
-	@echo "Release archive: release/cnext-$(shell uname -s | tr A-Z a-z)-$(shell uname -m).tar.gz"
+	@echo "Packaging Cnext $(VERSION) release..."
+	@mkdir -p dist
+	@cp "$(EXEC)" dist/
+	@cp -r include dist/ 2>/dev/null || true
+	@cp -r examples dist/ 2>/dev/null || true
+	@cp README.md dist/ 2>/dev/null || true
+	@cp LICENSE dist/ 2>/dev/null || true
+	@cp install.sh dist/ 2>/dev/null || true
+	@chmod +x dist/install.sh 2>/dev/null || true
+ifdef WINDOWS_BUILD
+	@echo "Creating Windows ZIP archive..."
+	@powershell -NoProfile -Command "Compress-Archive -Path 'dist/*' -DestinationPath 'cnext-windows-x64-$(VERSION).zip' -Force"
+	@echo "Release archive: cnext-windows-x64-$(VERSION).zip"
+	@rm -rf dist
+else
+	@cd dist && tar -czf "$(CURDIR)/cnext-$(shell uname -s | tr A-Z a-z)-$(shell uname -m)-$(VERSION).tar.gz" *
+	@rm -rf dist
+	@echo "Release archive: cnext-$(shell uname -s | tr A-Z a-z)-$(shell uname -m)-$(VERSION).tar.gz"
+endif
 	@echo ""
-	@echo "To create a full release, push a tag:"
-	@echo "  git tag v9.0.0"
-	@echo "  git push origin v9.0.0"
+	@echo "To create a full multi-platform release, push a tag:"
+	@echo "  git tag v$(VERSION)"
+	@echo "  git push origin v$(VERSION)"
 	@echo ""
 	@echo "GitHub Actions will build for all platforms automatically."
 
