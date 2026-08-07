@@ -140,8 +140,11 @@ static const struct {
     {"base64_decode", "cnext_base64_decode("},
     /* Crypto */
     {"hash_md5", "cnext_hash_md5_str("},
+    {"md5", "cnext_hash_md5_str("},
     {"hash_sha1", "cnext_hash_sha1_str("},
+    {"sha1", "cnext_hash_sha1_str("},
     {"hash_sha256", "cnext_hash_sha256_str("},
+    {"sha256", "cnext_hash_sha256_str("},
     {"uuid", "cnext_uuid("},
     /* Utility */
     {"debug", "cnext_debug("},

@@ -17,18 +17,19 @@ static inline long time_now(void) {
     return (long)time(NULL);
 }
 
-static inline long time_now_ms(void) {
+static inline long long time_now_ms(void) {
 #ifdef _WIN32
     FILETIME ft;
     GetSystemTimeAsFileTime(&ft);
     ULARGE_INTEGER ui;
     ui.LowPart = ft.dwLowDateTime;
     ui.HighPart = ft.dwHighDateTime;
-    return (long)((ui.QuadPart - 116444736000000000ULL) / 10000);
+    // FILETIME is 100ns intervals since 1601-01-01; convert to milliseconds since the Unix epoch.
+    return (long long)((ui.QuadPart - 116444736000000000ULL) / 10000);
 #else
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
-    return (long)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
+    return (long long)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
 #endif
 }
 

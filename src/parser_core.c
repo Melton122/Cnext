@@ -99,7 +99,8 @@ bool match_token(CnextTokenType type) {
 }
 
 void optionally_consume_semicolon(void) {
-    consume(TOKEN_SEMICOLON, "Expect ';' after statement.");
+    // Semicolons are optional: Cnext uses newlines as statement separators.
+    match_token(TOKEN_SEMICOLON);
 }
 
 bool check_identifier_text(const char* text, int len) {

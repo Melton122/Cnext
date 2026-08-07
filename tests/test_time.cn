@@ -9,7 +9,7 @@ main {
     int now = time_now()
     printin(now > 0)
 
-    int ms = time_now_ms()
+    long ms = time_now_ms()
     printin(ms > 0)
 
     int y = time_year(now)
