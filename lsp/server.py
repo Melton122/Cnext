@@ -20,29 +20,92 @@ from typing import Optional, Dict, List, Any
 # LSP protocol helpers
 MAX_CONTENT_LENGTH = 10 * 1024 * 1024  # 10MB limit
 
-def read_message():
-    """Read a JSON-RPC message from stdin."""
-    content_length = None
+# Buffered stdin reader with push-back so we can resynchronize after a
+# malformed/oversized frame instead of dropping subsequent valid messages.
+_MARKER = b'Content-Length:'
+_buf = bytearray()
+
+
+def _fill():
+    """Read more into the internal buffer. Return False on EOF."""
+    chunk = sys.stdin.buffer.read(4096)
+    if not chunk:
+        return False
+    _buf.extend(chunk)
+    return True
+
+
+def _read_line():
+    """Return one line (without the trailing newline), or None on EOF."""
     while True:
-        line = sys.stdin.buffer.readline()
-        if not line:
+        idx = _buf.find(b'\n')
+        if idx != -1:
+            line = bytes(_buf[:idx])
+            del _buf[:idx + 1]
+            return line
+        if not _fill():
+            if _buf:
+                line = bytes(_buf)
+                _buf.clear()
+                return line
             return None
-        line = line.decode('utf-8').strip()
-        if line.startswith('Content-Length:'):
+
+
+def _read_exact(n):
+    """Read exactly n bytes from the buffer, or None on premature EOF."""
+    while len(_buf) < n:
+        if not _fill():
+            return None
+    data = bytes(_buf[:n])
+    del _buf[:n]
+    return data
+
+
+def _discard_until_next_header():
+    """Discard bytes up to (but not including) the next 'Content-Length:' header."""
+    while True:
+        idx = _buf.find(_MARKER)
+        if idx != -1:
+            del _buf[:idx]
+            return True
+        if not _fill():
+            return False
+
+
+def read_message():
+    """Read a JSON-RPC message from stdin. Returns None on EOF.
+
+    Corrupt frames (invalid or oversized Content-Length, bad JSON body) are
+    skipped and the next valid message is still processed.
+    """
+    while True:
+        content_length = None
+        while True:
+            line = _read_line()
+            if line is None:
+                return None
+            line = line.decode('utf-8', 'replace').strip()
+            if line.startswith('Content-Length:'):
+                try:
+                    content_length = int(line.split(':', 1)[1].strip())
+                except (ValueError, IndexError):
+                    content_length = None
+            elif line == '':
+                break
+
+        if content_length is not None and not (content_length < 0 or content_length > MAX_CONTENT_LENGTH):
+            body = _read_exact(content_length)
+            if body is None:
+                return None
             try:
-                content_length = int(line.split(':')[1].strip())
-            except (ValueError, IndexError):
-                content_length = None
-            if content_length is not None and (content_length < 0 or content_length > MAX_CONTENT_LENGTH):
-                content_length = None
-        elif line == '':
-            break
-    if content_length is None:
-        return None
-    body = sys.stdin.buffer.read(content_length)
-    if len(body) != content_length:
-        return None
-    return json.loads(body.decode('utf-8'))
+                return json.loads(body.decode('utf-8'))
+            except (ValueError, UnicodeDecodeError):
+                # Valid length but malformed body: skip and keep serving.
+                continue
+
+        # Invalid or oversized frame: drop its body and resync on the next header.
+        if not _discard_until_next_header():
+            return None
 
 def send_message(msg):
     """Send a JSON-RPC message to stdout."""
