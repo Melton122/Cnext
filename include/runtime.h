@@ -1239,7 +1239,11 @@ static inline int cnext_fibonacci(int n) {
 static inline long long cnext_timestamp(void) {
     FILETIME ft;
     GetSystemTimeAsFileTime(&ft);
-    return ((long long)ft.dwHighDateTime << 32) | ft.dwLowDateTime;
+    ULARGE_INTEGER uli;
+    uli.LowPart = ft.dwLowDateTime;
+    uli.HighPart = ft.dwHighDateTime;
+    // FILETIME is 100ns intervals since 1601-01-01; convert to Unix seconds (since 1970-01-01).
+    return (long long)((uli.QuadPart - 116444736000000000ULL) / 10000000ULL);
 }
 static inline void cnext_time_sleep(int ms) { Sleep((DWORD)ms); }
 #else

@@ -122,9 +122,6 @@ typedef enum {
     TOKEN_RESULT,       // Result
     TOKEN_OPERATOR,     // operator
     TOKEN_EXTEND,       // extend
-    TOKEN_OPTION,       // option
-    TOKEN_OK,           // ok
-    TOKEN_ERR,          // err
 
     // v3.5: Iterators
     TOKEN_YIELD,        // yield
