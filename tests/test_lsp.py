@@ -47,16 +47,19 @@ def run_lsp_session(messages, timeout=10):
 
 def parse_responses(output):
     """Parse LSP responses from server output."""
+    # Normalize line endings: subprocess text-mode capture translates CRLF->LF
+    # on Windows, so accept both "\r\n\r\n" and "\n\n" header terminators.
+    output = output.replace("\r\n", "\n")
     responses = []
     i = 0
     while i < len(output):
         # Find Content-Length header
         if output[i:].startswith("Content-Length:"):
             # Parse header
-            header_end = output.index("\r\n\r\n", i)
+            header_end = output.index("\n\n", i)
             length_str = output[i + len("Content-Length:"):header_end].strip()
             content_length = int(length_str)
-            body_start = header_end + 4
+            body_start = header_end + 2
             body = output[body_start:body_start + content_length]
             responses.append(json.loads(body))
             i = body_start + content_length
