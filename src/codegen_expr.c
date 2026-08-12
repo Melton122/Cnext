@@ -77,6 +77,12 @@ static const struct {
     {"unwrap", "cnext_unwrap_ptr("},
     {"expect", "cnext_expect_str("},
     {"free", "cnext_free("},
+    /* Memory Arenas */
+    {"mem_arena_create", "cnext_mem_arena_create("},
+    {"mem_arena_alloc", "cnext_mem_arena_alloc("},
+    {"mem_arena_free", "cnext_mem_arena_free("},
+    {"mem_arena_destroy", "cnext_mem_arena_destroy("},
+    {"mem_arena_usage", "cnext_mem_arena_usage("},
     /* Math */
     {"math_abs", "cnext_abs("},
     {"math_min", "cnext_min("},

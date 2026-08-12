@@ -4,6 +4,14 @@ All notable changes to Cnext will be documented in this file.
 
 ## [10.0.2] - 2026
 
+### Added
+- **Memory arenas (runtime):** new `mem_arena_create`, `mem_arena_alloc`,
+  `mem_arena_free`, `mem_arena_destroy`, and `mem_arena_usage` builtins give
+  deterministic memory reclamation *during* program run (not just at exit):
+  all allocations made from an arena are freed in one call. Idiomatic use is
+  `var a = mem_arena_create(); defer mem_arena_destroy(a);` — the first step
+  toward a real memory model for long-running programs
+
 ### Fixed
 - **Installers (Linux/macOS):** headers were installed FLAT into `/usr/local/include`,
   clobbering system headers (`math.h`, `os.h`, `ast.h`, ...) and breaking other

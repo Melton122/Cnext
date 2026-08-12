@@ -128,6 +128,42 @@ static void cnext_arena_free_all(CnextArena* arena) {
     arena->total_freed = arena->total_allocated;
 }
 
+/* --- Arena API (exposed to the language) --- */
+// Heap-allocated arenas give deterministic reclamation during program run:
+// every allocation made from an arena is freed in one call, unlike the
+// process-wide tracked allocations that live until exit. Idiomatic use:
+//   var a = mem_arena_create(); defer mem_arena_destroy(a);
+static CnextArena* cnext_mem_arena_create(void) {
+    CnextArena* arena = (CnextArena*)malloc(sizeof(CnextArena));
+    if (!arena) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
+    arena->current = NULL;
+    arena->total_allocated = 0;
+    arena->total_freed = 0;
+    return arena;
+}
+
+static void* cnext_mem_arena_alloc(CnextArena* arena, size_t size) {
+    return cnext_arena_alloc(arena, size);
+}
+
+static void cnext_mem_arena_free(CnextArena* arena) {
+    if (!arena) return;
+    cnext_arena_free_all(arena);
+}
+
+static void cnext_mem_arena_destroy(CnextArena* arena) {
+    if (!arena) return;
+    cnext_arena_free_all(arena);
+    free(arena);
+}
+
+static size_t cnext_mem_arena_usage(CnextArena* arena) {
+    if (!arena) return 0;
+    return arena->total_allocated > arena->total_freed
+        ? arena->total_allocated - arena->total_freed
+        : 0;
+}
+
 // Convenience macro for using the global arena
 #define ARENA_ALLOC(size) cnext_arena_alloc(&_cnext_global_arena, size)
 #define ARENA_FREE_ALL() cnext_arena_free_all(&_cnext_global_arena)

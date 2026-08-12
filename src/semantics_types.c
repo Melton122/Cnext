@@ -428,6 +428,10 @@ void register_all_builtins(Token module) {
         {"print", 5}, {"printin", 7}, {"input", 5}, {"len", 3},
         {"typeof", 6}, {"assert", 6}, {"panic", 5}, {"exit", 4},
         {"clone", 5}, {"swap_values", 11}, {"free", 4},
+        /* Memory Arenas */
+        {"mem_arena_create", 16}, {"mem_arena_alloc", 15},
+        {"mem_arena_free", 14}, {"mem_arena_destroy", 17},
+        {"mem_arena_usage", 15},
         /* Type Conversion */
         {"to_int", 6}, {"to_float", 8}, {"to_str", 6}, {"to_bool", 7},
         {"to_char", 7}, {"parse_int", 9}, {"parse_float", 11},

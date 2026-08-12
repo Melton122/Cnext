@@ -1,0 +1,47 @@
+// EXPECT: arena created
+// EXPECT: usage-64
+// EXPECT: usage-big
+// EXPECT: reclaimed-0
+// EXPECT: reuse-128
+// EXPECT: done
+main {
+    var arena = mem_arena_create()
+    printin("arena created")
+
+    mem_arena_alloc(arena, 64)
+    int used = mem_arena_usage(arena)
+    if (used != 64) {
+        printin("FAIL usage-64")
+        return 0
+    }
+    printin("usage-64")
+
+    mem_arena_alloc(arena, 70000)
+    // Oversized allocation bypasses arena blocks but still counts
+    used = mem_arena_usage(arena)
+    if (used <= 64) {
+        printin("FAIL usage-big")
+        return 0
+    }
+    printin("usage-big")
+
+    mem_arena_free(arena)
+    used = mem_arena_usage(arena)
+    if (used != 0) {
+        printin("FAIL reclaimed-0")
+        return 0
+    }
+    printin("reclaimed-0")
+    mem_arena_destroy(arena)
+
+    var arena2 = mem_arena_create()
+    defer mem_arena_destroy(arena2)
+    mem_arena_alloc(arena2, 128)
+    int u2 = mem_arena_usage(arena2)
+    if (u2 != 128) {
+        printin("FAIL reuse-128")
+        return 0
+    }
+    printin("reuse-128")
+    printin("done")
+}
