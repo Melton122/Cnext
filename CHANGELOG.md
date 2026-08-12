@@ -11,6 +11,11 @@ All notable changes to Cnext will be documented in this file.
   all allocations made from an arena are freed in one call. Idiomatic use is
   `var a = mem_arena_create(); defer mem_arena_destroy(a);` — the first step
   toward a real memory model for long-running programs
+- **Scoped memory (runtime):** inside `mem_scope_begin()`/`mem_scope_end()`,
+  every `new` allocation is made from the thread's innermost scope arena
+  instead of the tracked heap, so whole object graphs die deterministically
+  when the scope ends (nested scopes supported, `mem_scope_usage` reports live
+  bytes). Scoped objects skip destructors and must not outlive their scope
 
 ### Fixed
 - **Installers (Linux/macOS):** headers were installed FLAT into `/usr/local/include`,

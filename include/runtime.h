@@ -191,6 +191,41 @@ static size_t cnext_mem_arena_usage(CnextArena* arena) {
         : 0;
 }
 
+/* --- Scoped Memory (automatic, thread-local) --- */
+// Inside mem_scope_begin()/mem_scope_end(), every `new` allocates from the
+// thread's innermost scope arena instead of the tracked heap, so entire object
+// graphs die deterministically when the scope ends. Scoped objects have no
+// destructor call and must not outlive their scope.
+typedef struct _CnextScopeEntry {
+    struct _CnextScopeEntry* prev;
+    CnextArena* arena;
+} _CnextScopeEntry;
+
+static _Thread_local _CnextScopeEntry* _cnext_scope_head = NULL;
+static _Thread_local CnextArena* _cnext_cur_arena = NULL;
+
+static void cnext_mem_scope_begin(void) {
+    _CnextScopeEntry* e = (_CnextScopeEntry*)malloc(sizeof(_CnextScopeEntry));
+    if (!e) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
+    e->arena = cnext_mem_arena_create();
+    e->prev = _cnext_scope_head;
+    _cnext_scope_head = e;
+    _cnext_cur_arena = e->arena;
+}
+
+static void cnext_mem_scope_end(void) {
+    if (!_cnext_scope_head) return;
+    _CnextScopeEntry* e = _cnext_scope_head;
+    _cnext_scope_head = e->prev;
+    _cnext_cur_arena = _cnext_scope_head ? _cnext_scope_head->arena : NULL;
+    cnext_mem_arena_destroy(e->arena);
+    free(e);
+}
+
+static size_t cnext_mem_scope_usage(void) {
+    return _cnext_cur_arena ? cnext_mem_arena_usage(_cnext_cur_arena) : 0;
+}
+
 // Convenience macro for using the global arena
 #define ARENA_ALLOC(size) cnext_arena_alloc(&_cnext_global_arena, size)
 #define ARENA_FREE_ALL() cnext_arena_free_all(&_cnext_global_arena)

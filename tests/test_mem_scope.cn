@@ -1,0 +1,52 @@
+// EXPECT: heap ok hero
+// EXPECT: scoped a
+// EXPECT: nested b
+// EXPECT: scope freed
+// EXPECT: heap alive hero
+// EXPECT: done
+
+class Player {
+    int hp
+    str name
+
+    func new(str n, int h) {
+        self.name = n
+        self.hp = h
+    }
+}
+
+main {
+    var hero = new Player("hero", 100)
+    printin("heap ok " + hero.name)
+
+    mem_scope_begin()
+    var a = new Player("a", 10)
+    printin("scoped {a.name}")
+    int u1 = mem_scope_usage()
+    if (u1 == 0) {
+        printin("FAIL scope usage")
+        return 0
+    }
+
+    mem_scope_begin()
+    var b = new Player("b", 20)
+    printin("nested {b.name}")
+    mem_scope_end()
+
+    int u2 = mem_scope_usage()
+    if (u2 == 0) {
+        printin("FAIL nested leaked outer")
+        return 0
+    }
+    mem_scope_end()
+
+    int u3 = mem_scope_usage()
+    if (u3 != 0) {
+        printin("FAIL scope not freed")
+        return 0
+    }
+    printin("scope freed")
+
+    printin("heap alive " + hero.name)
+    printin("done")
+}

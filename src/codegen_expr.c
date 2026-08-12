@@ -83,6 +83,9 @@ static const struct {
     {"mem_arena_free", "cnext_mem_arena_free("},
     {"mem_arena_destroy", "cnext_mem_arena_destroy("},
     {"mem_arena_usage", "cnext_mem_arena_usage("},
+    {"mem_scope_begin", "cnext_mem_scope_begin("},
+    {"mem_scope_end", "cnext_mem_scope_end("},
+    {"mem_scope_usage", "cnext_mem_scope_usage("},
     /* Math */
     {"math_abs", "cnext_abs("},
     {"math_min", "cnext_min("},
@@ -965,8 +968,8 @@ void generate_expression(ASTNode* node) {
                 cname = node->token.start;
                 cname_len = node->token.length;
             }
-            fprintf(out, "({ %.*s* _obj = (%.*s*)malloc(sizeof(%.*s)); if (!_obj) { fprintf(stderr, \"Cnext runtime: out of memory.\\n\"); exit(70); } _cnext_track(_obj); ",
-                cname_len, cname, cname_len, cname, cname_len, cname);
+            fprintf(out, "({ %.*s* _obj; if (_cnext_cur_arena) { _obj = (%.*s*)cnext_arena_alloc(_cnext_cur_arena, sizeof(%.*s)); } else { _obj = (%.*s*)malloc(sizeof(%.*s)); if (!_obj) { fprintf(stderr, \"Cnext runtime: out of memory.\\n\"); exit(70); } _cnext_track(_obj); } ",
+                cname_len, cname, cname_len, cname, cname_len, cname, cname_len, cname, cname_len, cname);
             fprintf(out, "%.*s_new(_obj", cname_len, cname);
             for (int i = 0; i < node->child_count; i++) {
                 fprintf(out, ", ");
