@@ -16,6 +16,11 @@ All notable changes to Cnext will be documented in this file.
   instead of the tracked heap, so whole object graphs die deterministically
   when the scope ends (nested scopes supported, `mem_scope_usage` reports live
   bytes). Scoped objects skip destructors and must not outlive their scope
+- **Reference counting (runtime):** `ref_new`, `ref_retain`, `ref_release`,
+  and `ref_count` builtins wrap a `new` object in a heap handle that frees the
+  object exactly when the last reference is released (early deterministic
+  death for shared objects instead of exit-time cleanup; forgetting to release
+  cannot leak past exit and released objects are never double-freed)
 
 ### Fixed
 - **Installers (Linux/macOS):** headers were installed FLAT into `/usr/local/include`,

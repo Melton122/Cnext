@@ -86,6 +86,11 @@ static const struct {
     {"mem_scope_begin", "cnext_mem_scope_begin("},
     {"mem_scope_end", "cnext_mem_scope_end("},
     {"mem_scope_usage", "cnext_mem_scope_usage("},
+    /* Reference Counting */
+    {"ref_new", "cnext_ref_new("},
+    {"ref_retain", "cnext_ref_handle_retain("},
+    {"ref_release", "cnext_ref_handle_release("},
+    {"ref_count", "cnext_ref_handle_count("},
     /* Math */
     {"math_abs", "cnext_abs("},
     {"math_min", "cnext_min("},

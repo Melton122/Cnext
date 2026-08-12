@@ -1,0 +1,54 @@
+// EXPECT: ref created
+// EXPECT: count-2
+// EXPECT: alive after one release
+// EXPECT: released-0
+// EXPECT: fresh heap ok
+// EXPECT: done
+
+class Item {
+    int id
+
+    func new(int i) {
+        self.id = i
+    }
+}
+
+main {
+    var obj = new Item(7)
+    var h = ref_new(obj)
+    if (is_null(h)) {
+        printin("FAIL ref_new null")
+        return 0
+    }
+    printin("ref created")
+
+    ref_retain(h)
+    int c = ref_count(h)
+    if (c != 2) {
+        printin("FAIL count != 2")
+        return 0
+    }
+    printin("count-2")
+
+    ref_release(h)
+    c = ref_count(h)
+    if (c != 1) {
+        printin("FAIL count != 1")
+        return 0
+    }
+    printin("alive after one release")
+    printin(obj.id)
+
+    ref_release(h)
+    c = ref_count(h)
+    if (c != 0) {
+        printin("FAIL count != 0")
+        return 0
+    }
+    printin("released-0")
+
+    var obj2 = new Item(9)
+    printin("fresh heap ok")
+    printin(obj2.id)
+    printin("done")
+}

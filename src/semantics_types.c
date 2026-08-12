@@ -434,6 +434,9 @@ void register_all_builtins(Token module) {
         {"mem_arena_usage", 15},
         {"mem_scope_begin", 15}, {"mem_scope_end", 13},
         {"mem_scope_usage", 15},
+        /* Reference Counting */
+        {"ref_new", 7}, {"ref_retain", 10},
+        {"ref_release", 11}, {"ref_count", 9},
         /* Type Conversion */
         {"to_int", 6}, {"to_float", 8}, {"to_str", 6}, {"to_bool", 7},
         {"to_char", 7}, {"parse_int", 9}, {"parse_float", 11},

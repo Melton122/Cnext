@@ -322,6 +322,46 @@ static inline void cnext_ref_release(CnextRef* ref) {
     }
 }
 
+/* --- Reference handles (exposed to the language) --- */
+// Heap-allocated refcount handles let `new` objects die deterministically when
+// the last reference is released (instead of at exit). Both the handle and the
+// wrapped object are tracked, so forgetting to release cannot leak past exit
+// (and the object is freed exactly once, never double-freed). Per-handle
+// retain/release must not race across threads without a user mutex.
+static void* cnext_ref_new(void* obj) {
+    if (!obj) return NULL;
+    CnextRef* h = (CnextRef*)malloc(sizeof(CnextRef));
+    if (!h) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
+    h->ptr = obj;
+    h->refcount = 1;
+    h->destructor = NULL;
+    _cnext_track(h);
+    return h;
+}
+
+static void cnext_ref_handle_retain(void* handle) {
+    CnextRef* h = (CnextRef*)handle;
+    if (!h) return;
+    h->refcount++;
+}
+
+static void cnext_ref_handle_release(void* handle) {
+    CnextRef* h = (CnextRef*)handle;
+    if (!h || h->refcount <= 0) return;
+    h->refcount--;
+    if (h->refcount == 0) {
+        _cnext_untrack(h->ptr);
+        free(h->ptr);
+        _cnext_untrack(h);
+        free(h);
+    }
+}
+
+static int cnext_ref_handle_count(void* handle) {
+    CnextRef* h = (CnextRef*)handle;
+    return h ? h->refcount : 0;
+}
+
 /* --- Memory Profiling --- */
 static size_t _cnext_alloc_count = 0;
 static size_t _cnext_free_count = 0;
