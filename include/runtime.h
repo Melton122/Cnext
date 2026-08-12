@@ -20,9 +20,9 @@
  * the need for a separate runtime library link step. For multi-file projects,
  * consider extracting these into a runtime.c file and linking separately.
  *
- * Thread safety: The global arena/pool/ref tracking are process-wide statics.
- * Generated programs using threads should use per-thread arenas or protect
- * shared allocators with mutexes. This is acceptable for v1.0.
+ * Thread safety: The global tracking list, arena, and pool are process-wide
+ * statics guarded by an internal lock, so generated multithreaded programs may
+ * allocate, track, and release memory from any thread safely.
  * ======================================================================== */
 
 /* --- String Type --- */
@@ -39,36 +39,57 @@ typedef struct _AllocNode {
 
 static _AllocNode* _cnext_allocs = NULL;
 
+/* Internal lock protecting the tracking list, global arena, and global pool.
+ * C11 atomic spinlock: works on GCC/Clang everywhere without pulling in
+ * platform headers (which would leak winapi/pthread identifiers into the
+ * namespaces of generated programs, e.g. GDI's "Rectangle"). */
+#include <stdatomic.h>
+static atomic_flag _cnext_mem_lock = ATOMIC_FLAG_INIT;
+static void _cnext_mem_lock_acquire(void) {
+    while (atomic_flag_test_and_set_explicit(&_cnext_mem_lock, memory_order_acquire)) {
+    }
+}
+static void _cnext_mem_lock_release(void) {
+    atomic_flag_clear_explicit(&_cnext_mem_lock, memory_order_release);
+}
+
 static void _cnext_track(void* ptr) {
     if (!ptr) return;
     _AllocNode* node = (_AllocNode*)malloc(sizeof(_AllocNode));
     if (!node) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
     node->ptr = ptr;
+    _cnext_mem_lock_acquire();
     node->next = _cnext_allocs;
     _cnext_allocs = node;
+    _cnext_mem_lock_release();
 }
 
 static void _cnext_untrack(void* ptr) {
     if (!ptr) return;
+    _cnext_mem_lock_acquire();
     _AllocNode** curr = &_cnext_allocs;
     while (*curr) {
         if ((*curr)->ptr == ptr) {
             _AllocNode* to_remove = *curr;
             *curr = (*curr)->next;
             free(to_remove);
+            _cnext_mem_lock_release();
             return;
         }
         curr = &(*curr)->next;
     }
+    _cnext_mem_lock_release();
 }
 
 static void _cnext_free_all() {
+    _cnext_mem_lock_acquire();
     while (_cnext_allocs) {
         _AllocNode* node = _cnext_allocs;
         _cnext_allocs = node->next;
         free(node->ptr);
         free(node);
     }
+    _cnext_mem_lock_release();
 }
 
 #include "json.h"
@@ -99,10 +120,13 @@ static void* cnext_arena_alloc(CnextArena* arena, size_t size) {
         // Too large for arena, use regular malloc
         void* ptr = malloc(size);
         if (!ptr) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
+        _cnext_mem_lock_acquire();
         arena->total_allocated += size;
+        _cnext_mem_lock_release();
         return ptr;
     }
 
+    _cnext_mem_lock_acquire();
     if (!arena->current || arena->current->used + size > CNEXT_ARENA_BLOCK_SIZE) {
         _ArenaBlock* block = (_ArenaBlock*)malloc(sizeof(_ArenaBlock));
         if (!block) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
@@ -114,10 +138,12 @@ static void* cnext_arena_alloc(CnextArena* arena, size_t size) {
     void* ptr = arena->current->data + arena->current->used;
     arena->current->used += size;
     arena->total_allocated += size;
+    _cnext_mem_lock_release();
     return ptr;
 }
 
 static void cnext_arena_free_all(CnextArena* arena) {
+    _cnext_mem_lock_acquire();
     _ArenaBlock* block = arena->current;
     while (block) {
         _ArenaBlock* next = block->next;
@@ -126,6 +152,7 @@ static void cnext_arena_free_all(CnextArena* arena) {
     }
     arena->current = NULL;
     arena->total_freed = arena->total_allocated;
+    _cnext_mem_lock_release();
 }
 
 /* --- Arena API (exposed to the language) --- */
@@ -194,6 +221,7 @@ static void* cnext_pool_alloc(CnextPool* pool, size_t size) {
     // Align to 8 bytes
     size = (size + 7) & ~(size_t)7;
 
+    _cnext_mem_lock_acquire();
     if (!pool->blocks || pool->blocks->used + (int)size > CNEXT_POOL_BLOCK_SIZE) {
         _PoolBlock* block = (_PoolBlock*)malloc(sizeof(_PoolBlock));
         if (!block) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
@@ -205,10 +233,12 @@ static void* cnext_pool_alloc(CnextPool* pool, size_t size) {
     void* ptr = pool->blocks->data + pool->blocks->used;
     pool->blocks->used += size;
     pool->total_allocated += size;
+    _cnext_mem_lock_release();
     return ptr;
 }
 
 static void cnext_pool_free_all(CnextPool* pool) {
+    _cnext_mem_lock_acquire();
     _PoolBlock* block = pool->blocks;
     while (block) {
         _PoolBlock* next = block->next;
@@ -216,6 +246,7 @@ static void cnext_pool_free_all(CnextPool* pool) {
         block = next;
     }
     pool->blocks = NULL;
+    _cnext_mem_lock_release();
 }
 
 // Convenience macros

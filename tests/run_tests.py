@@ -360,6 +360,88 @@ main {
     finally:
         temp_path.unlink(missing_ok=True)
 
+    # Concurrent allocator stress: 8 threads hammer track/untrack + arena + pool
+    print("\n--- Thread-Safe Memory Stress ---")
+    thread_stress_source = r"""
+#include "runtime.h"
+#ifdef _WIN32
+#include <windows.h>
+static HANDLE threads[8];
+static DWORD WINAPI worker(LPVOID arg) {
+#else
+#include <pthread.h>
+static pthread_t threads[8];
+static void* worker(void* arg) {
+#endif
+    long id = (long)(intptr_t)arg;
+    for (int i = 0; i < 20000; i++) {
+        char* buf = (char*)malloc(64 + (i % 256));
+        _cnext_track(buf);
+        CnextString s = cnext_to_string_int((int)(id * 1000000 + i));
+        cnext_free(s);
+        CnextArena* a = cnext_mem_arena_create();
+        cnext_mem_arena_alloc(a, (size_t)(i % 512) + 8);
+        cnext_mem_arena_free(a);
+        if (cnext_mem_arena_usage(a) != 0) exit(3);
+        cnext_mem_arena_destroy(a);
+        void* p = ARENA_ALLOC(((size_t)i % 64) + 4);
+        if (p == NULL) exit(3);
+        void* q = POOL_ALLOC(((size_t)i % 32) + 4);
+        if (q == NULL) exit(3);
+        _cnext_untrack(buf);
+        free(buf);
+    }
+    return 0;
+}
+int main(void) {
+    for (long i = 0; i < 8; i++) {
+#ifdef _WIN32
+        threads[i] = CreateThread(NULL, 0, worker, (LPVOID)i, 0, NULL);
+#else
+        pthread_create(&threads[i], NULL, worker, (void*)(intptr_t)i);
+#endif
+    }
+    for (int i = 0; i < 8; i++) {
+#ifdef _WIN32
+        WaitForSingleObject(threads[i], INFINITE);
+#else
+        pthread_join(threads[i], NULL);
+#endif
+    }
+    printf("THREAD STRESS OK\n");
+    return 0;
+}
+"""
+    c_path = ROOT / "tests" / "_thread_stress.c"
+    out_path = ROOT / "tests" / ("_thread_stress.exe" if os.name == "nt" else "_thread_stress")
+    c_path.write_text(thread_stress_source, encoding="utf-8")
+    try:
+        compile_cmd = ["gcc", "-std=gnu11", "-O2", "-w",
+                       "-iquote", str(ROOT / "include"),
+                       str(c_path), "-o", str(out_path)]
+        if os.name == "nt":
+            compile_cmd += ["-lwinhttp", "-lws2_32"]
+        else:
+            compile_cmd += ["-lpthread"]
+        compile_result = subprocess.run(compile_cmd, capture_output=True, text=True, timeout=60,
+                                        cwd=ROOT)
+        if compile_result.returncode != 0 or not out_path.exists():
+            success = False
+            detail = compile_result.stderr.strip()[:100] or "compile failed"
+        else:
+            run_result = subprocess.run([str(out_path)], capture_output=True, text=True, timeout=60)
+            success = run_result.returncode == 0 and "THREAD STRESS OK" in run_result.stdout
+            detail = "OK" if success else run_result.stdout.strip()[:100]
+        status = "PASS" if success else "FAIL"
+        if not success:
+            all_passed = False
+        print(f"[{status}] memory/thread_stress: {detail}")
+    except (FileNotFoundError, OSError):
+        print("[SKIP] memory/thread_stress: gcc not available")
+    finally:
+        c_path.unlink(missing_ok=True)
+        out_path.unlink(missing_ok=True)
+
     scratch_file.unlink(missing_ok=True)
 
     return 0 if all_passed else 1

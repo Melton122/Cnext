@@ -30,6 +30,12 @@ All notable changes to Cnext will be documented in this file.
   July 21; the fixes above restore a green `build` matrix alongside the release
   pipeline's new installer smoke tests (version check + build hello program with
   the installed compiler)
+- **Thread safety (runtime):** the memory subsystem (tracking list, global
+  arena, global pool) was a documented data race — any `thread_spawn` program
+  that allocated/freed on worker threads hit UB. All of it is now guarded by an
+  internal C11 `atomic_flag` spinlock (no platform headers leaked into generated
+  code; `tests/run_tests.py` gained a `memory/thread_stress` 8-thread hammer
+  test covering track/untrack, arenas, and pools concurrently)
 
 ## [10.0.1] - 2026
 
