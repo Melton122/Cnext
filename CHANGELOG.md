@@ -26,6 +26,17 @@ All notable changes to Cnext will be documented in this file.
 - All built-in functions are now globally available without requiring `import` statements
 - Code generator uses table-driven dispatch for better performance and maintainability
 
+### Fixed
+- **Parser:** restore optional semicolon consumption (v10 release-blocker regression broke
+  newline-separated statements; full suite now passes 76/76)
+- **Lexer:** `ok`/`err`/`option` are identifiers again (not reserved keywords), fixing
+  `option()`/`ok()`/`err()` Result constructors, `bool ok = ...`, and `catch (str err)`
+- **Codegen:** `md5`/`sha1`/`sha256` builtins now emit correct runtime calls
+- **Time:** Windows `time_now()` returns Unix seconds (was raw FILETIME ticks); `time_now_ms()`
+  returns `long long` (Windows `long` is 32-bit)
+- **Makefile:** `make install` and `make release` work on Windows (produce `cnext-windows-x64-10.0.0.zip`)
+- **LSP:** tests pass on Windows (CRLF/LF frame handling + corrupt-frame recovery)
+
 ## [9.0.0] - 2026
 
 ### Added

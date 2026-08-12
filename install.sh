@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-CNEXT_VERSION="${CNEXT_VERSION:-9.0.0}"
+CNEXT_VERSION="${CNEXT_VERSION:-10.0.0}"
 CNEXT_REPO="Melton122/cnext"
 INSTALL_DIR="${CNEXT_INSTALL_DIR:-/usr/local}"
 

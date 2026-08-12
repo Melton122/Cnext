@@ -310,7 +310,8 @@ static void print_help(void) {
     printf("  -o, --output <path>            Set output file path.\n");
     printf("  --release                      Release build (optimized, no debug info).\n");
     printf("  --debug                        Debug build (no optimization, with symbols).\n");
-    printf("  --no-optimize                  Disable the optimizer.\n");
+    printf("  --optimize                     Enable the (experimental) Cnext-level optimizer.\n");
+    printf("  --no-optimize                  Disable the optimizer (overrides --optimize).\n");
     printf("  --verbose                      Show generated C code before compilation.\n");
     printf("  --clean                        Remove build artifacts.\n");
 }
@@ -321,6 +322,7 @@ typedef struct {
     bool release;
     bool debug;
     bool no_optimize;
+    bool enable_optimize;
     bool verbose;
 } BuildOptions;
 
@@ -330,6 +332,7 @@ static int parse_build_args(int argc, char** argv, BuildOptions* opts) {
     opts->release = false;
     opts->debug = false;
     opts->no_optimize = false;
+    opts->enable_optimize = false;
     opts->verbose = false;
 
     if (argc < 3) return 64;
@@ -348,6 +351,8 @@ static int parse_build_args(int argc, char** argv, BuildOptions* opts) {
             opts->debug = true;
         } else if (strcmp(argv[i], "--no-optimize") == 0) {
             opts->no_optimize = true;
+        } else if (strcmp(argv[i], "--optimize") == 0) {
+            opts->enable_optimize = true;
         } else if (strcmp(argv[i], "--verbose") == 0) {
             opts->verbose = true;
         } else if (strcmp(argv[i], "--clean") == 0) {
@@ -397,7 +402,8 @@ int main(int argc, char** argv) {
         }
 
         remove(CNEXT_TEMP_C);
-        int compile_status = compile_file(opts.input_path, CNEXT_TEMP_C, false);
+        int compile_status = compile_file(opts.input_path, CNEXT_TEMP_C, false,
+                                      opts.enable_optimize && !opts.no_optimize);
         if (compile_status != 0) {
             remove(CNEXT_TEMP_C);
             return compile_status;
@@ -413,10 +419,9 @@ int main(int argc, char** argv) {
             strcpy(opt_flags, "-O2 -DNDEBUG");
         }
 
-        if (opts.no_optimize) {
-            // The optimizer runs at the Cnext level, not GCC level
-            // This flag is for future use
-        }
+        // The optimizer runs at the Cnext level. It is OFF by default; use --optimize
+        // to enable it, and --no-optimize to ensure it is disabled. GCC flags here
+        // only control the C compiler.
 
         if (opts.verbose) {
             printf("--- Generated C code ---\n");

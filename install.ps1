@@ -3,7 +3,7 @@
 
 $ErrorActionPreference = "Stop"
 
-$CNEXT_VERSION = "9.0.0"
+$CNEXT_VERSION = "10.0.0"
 $CNEXT_REPO = "Melton122/Cnext"
 $INSTALL_DIR = "$env:LOCALAPPDATA\Cnext"
 

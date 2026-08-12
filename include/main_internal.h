@@ -39,7 +39,7 @@ int _mkdir(const char* path);
 #include "registry.h"
 #include "docgen.h"
 
-#define CNEXT_VERSION "9.0.0"
+#define CNEXT_VERSION "10.0.0"
 #define CNEXT_TEMP_C "temp_out.c"
 #define CNEXT_PATH_MAX 4096
 
@@ -75,6 +75,6 @@ void install_packages_from_toml(const char* argv0);
 char* build_source_with_packages(const char* source, const char* project_dir);
 
 /* --- Compilation (main_compiler.c) --- */
-int compile_file(const char* input_path, const char* output_c_path, bool test_mode);
+int compile_file(const char* input_path, const char* output_c_path, bool test_mode, bool run_optimizer);
 
 #endif /* MAIN_INTERNAL_H */
