@@ -116,6 +116,32 @@ static inline bool json_expect(json_parser_t* p, char c) {
     return false;
 }
 
+static inline int json_hex_value(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+// Append a Unicode code point as UTF-8 bytes.
+static inline void sb_append_utf8(sb_t* sb, unsigned long cp) {
+    if (cp < 0x80) {
+        sb_append_char(sb, (char)cp);
+    } else if (cp < 0x800) {
+        sb_append_char(sb, (char)(0xC0 | (cp >> 6)));
+        sb_append_char(sb, (char)(0x80 | (cp & 0x3F)));
+    } else if (cp < 0x10000) {
+        sb_append_char(sb, (char)(0xE0 | (cp >> 12)));
+        sb_append_char(sb, (char)(0x80 | ((cp >> 6) & 0x3F)));
+        sb_append_char(sb, (char)(0x80 | (cp & 0x3F)));
+    } else {
+        sb_append_char(sb, (char)(0xF0 | (cp >> 18)));
+        sb_append_char(sb, (char)(0x80 | ((cp >> 12) & 0x3F)));
+        sb_append_char(sb, (char)(0x80 | ((cp >> 6) & 0x3F)));
+        sb_append_char(sb, (char)(0x80 | (cp & 0x3F)));
+    }
+}
+
 static inline char* json_parse_string(json_parser_t* p) {
     if (!json_expect(p, '"')) return NULL;
     size_t start = p->pos;
@@ -134,9 +160,44 @@ static inline char* json_parse_string(json_parser_t* p) {
                 case 'r': sb_append_char(&sb, '\r'); break;
                 case 't': sb_append_char(&sb, '\t'); break;
                 case 'u': {
+                    // p->pos points at 'u'; the four hex digits are at p->pos+1..p->pos+4
                     if (p->pos + 4 < p->len) {
-                        sb_append_char(&sb, '?'); // Unicode \uXXXX not fully supported
-                        p->pos += 4;
+                        int v0 = json_hex_value(p->json[p->pos + 1]);
+                        int v1 = json_hex_value(p->json[p->pos + 2]);
+                        int v2 = json_hex_value(p->json[p->pos + 3]);
+                        int v3 = json_hex_value(p->json[p->pos + 4]);
+                        if (v0 >= 0 && v1 >= 0 && v2 >= 0 && v3 >= 0) {
+                            unsigned long cp = (unsigned long)((v0 << 12) | (v1 << 8) | (v2 << 4) | v3);
+                            if (cp >= 0xD800 && cp <= 0xDBFF) {
+                                // High surrogate; expect a following \uDC00-\uDFFF low surrogate.
+                                int lo = -1;
+                                if (p->pos + 10 < p->len && p->json[p->pos + 5] == '\\' && p->json[p->pos + 6] == 'u') {
+                                    int lv0 = json_hex_value(p->json[p->pos + 7]);
+                                    int lv1 = json_hex_value(p->json[p->pos + 8]);
+                                    int lv2 = json_hex_value(p->json[p->pos + 9]);
+                                    int lv3 = json_hex_value(p->json[p->pos + 10]);
+                                    if (lv0 >= 0 && lv1 >= 0 && lv2 >= 0 && lv3 >= 0) {
+                                        int lv = (lv0 << 12) | (lv1 << 8) | (lv2 << 4) | lv3;
+                                        if (lv >= 0xDC00 && lv <= 0xDFFF) {
+                                            lo = lv;
+                                        }
+                                    }
+                                }
+                                if (lo >= 0) {
+                                    cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
+                                    p->pos += 10; // consume through the last low hex digit
+                                } else {
+                                    cp = 0xFFFD; // lone surrogate -> replacement char
+                                    p->pos += 4;
+                                }
+                            } else if (cp >= 0xDC00 && cp <= 0xDFFF) {
+                                cp = 0xFFFD; // lone low surrogate
+                                p->pos += 4;
+                            } else {
+                                p->pos += 4;
+                            }
+                            sb_append_utf8(&sb, cp);
+                        }
                     }
                     break;
                 }

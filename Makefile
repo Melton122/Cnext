@@ -42,7 +42,7 @@ endif
 # Version (single source of truth: include/main_internal.h)
 VERSION := $(shell sed -n 's/.*CNEXT_VERSION "\([^"]*\)".*/\1/p' include/main_internal.h 2>/dev/null)
 ifeq ($(strip $(VERSION)),)
-    VERSION := 9.0.0
+    VERSION := 10.0.0
 endif
 
 # Install layout: exe -> INSTALL_BIN, runtime headers -> INSTALL_INC.

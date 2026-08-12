@@ -24,17 +24,17 @@ Download the latest release for your platform from the [Releases page](https://g
 
 | Platform | Architecture | File |
 |----------|-------------|------|
-| Linux | x86_64 | `cnext-linux-x64-v9.0.0.tar.gz` |
-| Linux | ARM64 | `cnext-linux-arm64-v9.0.0.tar.gz` |
-| macOS | x86_64 | `cnext-macos-x64-v9.0.0.tar.gz` |
-| macOS | ARM64 (Apple Silicon) | `cnext-macos-arm64-v9.0.0.tar.gz` |
-| Windows | x86_64 | `cnext-windows-x64-v9.0.0.zip` |
+| Linux | x86_64 | `cnext-linux-x64-v10.0.0.tar.gz` |
+| Linux | ARM64 | `cnext-linux-arm64-v10.0.0.tar.gz` |
+| macOS | x86_64 | `cnext-macos-x64-v10.0.0.tar.gz` |
+| macOS | ARM64 (Apple Silicon) | `cnext-macos-arm64-v10.0.0.tar.gz` |
+| Windows | x86_64 | `cnext-windows-x64-v10.0.0.zip` |
 
 Then extract and install:
 
 **Linux/macOS:**
 ```bash
-tar -xzf cnext-linux-x64-v9.0.0.tar.gz
+tar -xzf cnext-linux-x64-v10.0.0.tar.gz
 sudo cp cnext /usr/local/bin/
 sudo cp -r include/* /usr/local/include/
 ```
@@ -102,7 +102,7 @@ cnext version
 
 Output should show:
 ```
-Cnext version 9.0.0
+Cnext version 10.0.0
 ```
 
 ## VS Code Extension

@@ -1,6 +1,7 @@
 #include "main_internal.h"
+#include "optimizer.h"
 
-int compile_file(const char* input_path, const char* output_c_path, bool test_mode) {
+int compile_file(const char* input_path, const char* output_c_path, bool test_mode, bool run_optimizer) {
     char* raw_source = read_file(input_path);
     if (!raw_source) return 74;
 
@@ -21,8 +22,13 @@ int compile_file(const char* input_path, const char* output_c_path, bool test_mo
     if (!analyze_semantics(program, !test_mode)) {
         fprintf(stderr, "Semantic analysis failed.\n");
         status = 65;
-    } else if (!generate_c_code(program, output_c_path, test_mode)) {
-        status = 74;
+    } else {
+        if (run_optimizer) {
+            optimize_ast(program);
+        }
+        if (!generate_c_code(program, output_c_path, test_mode)) {
+            status = 74;
+        }
     }
 
     free_ast(program);

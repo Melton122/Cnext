@@ -79,10 +79,87 @@ static bool same_identifier(Token a, Token b) {
     return a.length == b.length && memcmp(a.start, b.start, a.length) == 0;
 }
 
+// Helper to determine if an LHS expression is an Lvalue representing `name`
+static bool is_lvalue_for(ASTNode* lhs, const char* name) {
+    if (!lhs) return false;
+    if (lhs->type == AST_IDENTIFIER) {
+        return lhs->token.length == (int)strlen(name) &&
+               memcmp(lhs->token.start, name, lhs->token.length) == 0;
+    }
+    if (lhs->type == AST_MEMBER_ACCESS || lhs->type == AST_INDEX || lhs->type == AST_SLICE || lhs->type == AST_TUPLE_ACCESS) {
+        return is_lvalue_for(lhs->left, name);
+    }
+    if (lhs->type == AST_TUPLE || lhs->type == AST_DESTRUCTURE) {
+        for (int i = 0; i < lhs->child_count; i++) {
+            if (is_lvalue_for(lhs->children[i], name)) return true;
+        }
+    }
+    return false;
+}
+
+// Helper to check if a variable is mutated in the given AST subtree
+static bool is_mutated(ASTNode* node, const char* name) {
+    if (!node) return false;
+
+    if (node->type == AST_ASSIGN && node->left) {
+        if (is_lvalue_for(node->left, name)) return true;
+    }
+    if (node->type == AST_POSTFIX && node->left) {
+        if (node->token.type == TOKEN_INCREMENT || node->token.type == TOKEN_DECREMENT) {
+            if (is_lvalue_for(node->left, name)) return true;
+        }
+    }
+    if (node->type == AST_UNARY && node->right) {
+        if (node->token.type == TOKEN_INCREMENT || node->token.type == TOKEN_DECREMENT) {
+            if (is_lvalue_for(node->right, name)) return true;
+        }
+    }
+
+    for (int i = 0; i < node->child_count; i++) {
+        if (is_mutated(node->children[i], name)) return true;
+    }
+    if (is_mutated(node->left, name)) return true;
+    if (is_mutated(node->right, name)) return true;
+    if (is_mutated(node->condition, name)) return true;
+    if (is_mutated(node->init, name)) return true;
+    if (is_mutated(node->increment, name)) return true;
+
+    return false;
+}
+
+// Helper to count mutation occurrences of a variable in the given AST subtree
+static int count_mutations(ASTNode* node, const char* name) {
+    if (!node) return 0;
+    int count = 0;
+
+    if (node->type == AST_ASSIGN && node->left) {
+        if (is_lvalue_for(node->left, name)) count++;
+    }
+    if (node->type == AST_POSTFIX && node->left) {
+        if (node->token.type == TOKEN_INCREMENT || node->token.type == TOKEN_DECREMENT) {
+            if (is_lvalue_for(node->left, name)) count++;
+        }
+    }
+    if (node->type == AST_UNARY && node->right) {
+        if (node->token.type == TOKEN_INCREMENT || node->token.type == TOKEN_DECREMENT) {
+            if (is_lvalue_for(node->right, name)) count++;
+        }
+    }
+
+    for (int i = 0; i < node->child_count; i++) {
+        count += count_mutations(node->children[i], name);
+    }
+    count += count_mutations(node->left, name);
+    count += count_mutations(node->right, name);
+    count += count_mutations(node->condition, name);
+    count += count_mutations(node->init, name);
+    count += count_mutations(node->increment, name);
+
+    return count;
+}
+
 // ========================================================================
 // PASS 1: Constant Propagation
-// Track variable assignments where the value is a constant literal.
-// Replace uses of those variables with the constant.
 // ========================================================================
 
 typedef struct ConstEntry {
@@ -103,21 +180,21 @@ static void const_table_push(const char* name, ASTNode* value) {
 
 static ASTNode* const_table_find(const char* name) {
     for (ConstEntry* e = const_table; e; e = e->next) {
-        if (strcmp(e->name, name) == 0) return e->value;
+        if (e->name && strcmp(e->name, name) == 0) return e->value;
     }
     return NULL;
 }
 
 static void const_table_pop_scope(void) {
-    while (const_table && const_table->name == NULL) {
-        ConstEntry* e = const_table;
-        const_table = e->next;
-        free(e);
-    }
-    if (const_table && const_table->name != NULL) {
+    while (const_table && const_table->name != NULL) {
         ConstEntry* e = const_table;
         const_table = e->next;
         free(e->name);
+        free(e);
+    }
+    if (const_table && const_table->name == NULL) {
+        ConstEntry* e = const_table;
+        const_table = e->next;
         free(e);
     }
 }
@@ -139,7 +216,7 @@ static void const_table_clear(void) {
     }
 }
 
-static void propagate_constants(ASTNode* node) {
+static void propagate_constants(ASTNode* node, ASTNode* scope) {
     if (!node) return;
 
     // Push scope on entering blocks
@@ -147,20 +224,49 @@ static void propagate_constants(ASTNode* node) {
     if (node->type == AST_BLOCK || node->type == AST_FUNC_DECL ||
         node->type == AST_MAIN || node->type == AST_IF ||
         node->type == AST_WHILE || node->type == AST_FOR ||
-        node->type == AST_FOR_IN) {
+        node->type == AST_FOR_IN || node->type == AST_LAMBDA ||
+        node->type == AST_COROUTINE_DECL || node->type == AST_ASYNC_FUNC_DECL) {
         const_table_push_scope();
         pushed_scope = true;
     }
 
-    // Recurse into children first
-    for (int i = 0; i < node->child_count; i++) {
-        propagate_constants(node->children[i]);
+    // Determine the next scope pointer
+    ASTNode* next_scope = scope;
+    if (node->type == AST_FUNC_DECL || node->type == AST_LAMBDA ||
+        node->type == AST_COROUTINE_DECL || node->type == AST_ASYNC_FUNC_DECL ||
+        node->type == AST_MAIN) {
+        next_scope = node;
     }
-    propagate_constants(node->left);
-    propagate_constants(node->right);
-    propagate_constants(node->condition);
-    propagate_constants(node->init);
-    propagate_constants(node->increment);
+
+    // Recurse into children first, but skip body for generators/coroutines/async
+    bool skip_body = (node->type == AST_COROUTINE_DECL || node->type == AST_ASYNC_FUNC_DECL ||
+                      (node->type == AST_FUNC_DECL && node->is_generator));
+
+    for (int i = 0; i < node->child_count; i++) {
+        propagate_constants(node->children[i], next_scope);
+    }
+
+    bool skip_left = false;
+    if (node->type == AST_ASSIGN) {
+        skip_left = true;
+    }
+    if (node->type == AST_POSTFIX && (node->token.type == TOKEN_INCREMENT || node->token.type == TOKEN_DECREMENT)) {
+        skip_left = true;
+    }
+    bool skip_right = false;
+    if (node->type == AST_UNARY && (node->token.type == TOKEN_INCREMENT || node->token.type == TOKEN_DECREMENT)) {
+        skip_right = true;
+    }
+
+    if (!skip_body && !skip_left) {
+        propagate_constants(node->left, next_scope);
+    }
+    if (!skip_right) {
+        propagate_constants(node->right, next_scope);
+    }
+    propagate_constants(node->condition, next_scope);
+    propagate_constants(node->init, next_scope);
+    propagate_constants(node->increment, next_scope);
 
     // Track const/var assignments: var x = literal
     if (node->type == AST_VAR_DECL && node->init) {
@@ -169,7 +275,9 @@ static void propagate_constants(ASTNode* node) {
             int nlen = node->token.length < 255 ? node->token.length : 255;
             memcpy(name, node->token.start, nlen);
             name[nlen] = '\0';
-            const_table_push(name, node->init);
+            if (!is_mutated(next_scope, name)) {
+                const_table_push(name, node->init);
+            }
         }
     }
 
@@ -181,10 +289,8 @@ static void propagate_constants(ASTNode* node) {
         name[nlen] = '\0';
         ASTNode* const_val = const_table_find(name);
         if (const_val) {
-            // Replace this identifier node with the literal
             node->type = const_val->type;
             node->token = const_val->token;
-            // Don't free const_val - it's still in the table
             opt_count++;
         }
     }
@@ -197,7 +303,6 @@ static void propagate_constants(ASTNode* node) {
 
 // ========================================================================
 // PASS 2: Copy Propagation
-// Replace y = x; ... use(y) with use(x) when x is a simple identifier.
 // ========================================================================
 
 typedef struct CopyEntry {
@@ -205,14 +310,6 @@ typedef struct CopyEntry {
     char* src;
     struct CopyEntry* next;
 } CopyEntry;
-
-static void copy_table_free_one(CopyEntry* e) {
-    if (e) {
-        free(e->dest);
-        free(e->src);
-        free(e);
-    }
-}
 
 static CopyEntry* copy_table = NULL;
 
@@ -226,22 +323,22 @@ static void copy_table_push(const char* dest, const char* src) {
 
 static const char* copy_table_find(const char* name) {
     for (CopyEntry* e = copy_table; e; e = e->next) {
-        if (strcmp(e->dest, name) == 0) return e->src;
+        if (e->dest && strcmp(e->dest, name) == 0) return e->src;
     }
     return NULL;
 }
 
 static void copy_table_pop_scope(void) {
-    while (copy_table && copy_table->dest == NULL) {
-        CopyEntry* e = copy_table;
-        copy_table = e->next;
-        free(e);
-    }
-    if (copy_table && copy_table->dest != NULL) {
+    while (copy_table && copy_table->dest != NULL) {
         CopyEntry* e = copy_table;
         copy_table = e->next;
         free(e->dest);
         free(e->src);
+        free(e);
+    }
+    if (copy_table && copy_table->dest == NULL) {
+        CopyEntry* e = copy_table;
+        copy_table = e->next;
         free(e);
     }
 }
@@ -264,7 +361,7 @@ static void copy_table_clear(void) {
     }
 }
 
-static void propagate_copies(ASTNode* node) {
+static void propagate_copies(ASTNode* node, ASTNode* scope) {
     if (!node) return;
 
     // Push scope on entering blocks
@@ -272,9 +369,18 @@ static void propagate_copies(ASTNode* node) {
     if (node->type == AST_BLOCK || node->type == AST_FUNC_DECL ||
         node->type == AST_MAIN || node->type == AST_IF ||
         node->type == AST_WHILE || node->type == AST_FOR ||
-        node->type == AST_FOR_IN) {
+        node->type == AST_FOR_IN || node->type == AST_LAMBDA ||
+        node->type == AST_COROUTINE_DECL || node->type == AST_ASYNC_FUNC_DECL) {
         copy_table_push_scope();
         pushed_scope = true;
+    }
+
+    // Determine the next scope pointer
+    ASTNode* next_scope = scope;
+    if (node->type == AST_FUNC_DECL || node->type == AST_LAMBDA ||
+        node->type == AST_COROUTINE_DECL || node->type == AST_ASYNC_FUNC_DECL ||
+        node->type == AST_MAIN) {
+        next_scope = node;
     }
 
     // Track assignments: y = x (where x is a simple identifier)
@@ -287,7 +393,9 @@ static void propagate_copies(ASTNode* node) {
             dest[dlen] = '\0';
             memcpy(src, node->right->token.start, slen);
             src[slen] = '\0';
-            copy_table_push(dest, src);
+            if (count_mutations(next_scope, dest) <= 1 && count_mutations(next_scope, src) == 0) {
+                copy_table_push(dest, src);
+            }
         }
     }
 
@@ -305,15 +413,35 @@ static void propagate_copies(ASTNode* node) {
         }
     }
 
-    // Recurse into children
+    // Recurse into children, but skip body for generators/coroutines/async
+    bool skip_body = (node->type == AST_COROUTINE_DECL || node->type == AST_ASYNC_FUNC_DECL ||
+                      (node->type == AST_FUNC_DECL && node->is_generator));
+
     for (int i = 0; i < node->child_count; i++) {
-        propagate_copies(node->children[i]);
+        propagate_copies(node->children[i], next_scope);
     }
-    propagate_copies(node->left);
-    propagate_copies(node->right);
-    propagate_copies(node->condition);
-    propagate_copies(node->init);
-    propagate_copies(node->increment);
+
+    bool skip_left = false;
+    if (node->type == AST_ASSIGN) {
+        skip_left = true;
+    }
+    if (node->type == AST_POSTFIX && (node->token.type == TOKEN_INCREMENT || node->token.type == TOKEN_DECREMENT)) {
+        skip_left = true;
+    }
+    bool skip_right = false;
+    if (node->type == AST_UNARY && (node->token.type == TOKEN_INCREMENT || node->token.type == TOKEN_DECREMENT)) {
+        skip_right = true;
+    }
+
+    if (!skip_body && !skip_left) {
+        propagate_copies(node->left, next_scope);
+    }
+    if (!skip_right) {
+        propagate_copies(node->right, next_scope);
+    }
+    propagate_copies(node->condition, next_scope);
+    propagate_copies(node->init, next_scope);
+    propagate_copies(node->increment, next_scope);
 
     // Pop scope on leaving blocks
     if (pushed_scope) {
@@ -382,30 +510,17 @@ static ASTNode* eliminate_identities(ASTNode* node) {
             return result;
         }
     }
-    // x * 0 -> 0
-    if (node->token.type == TOKEN_STAR && is_int_literal(right)) {
-        if (parse_int_value(right->token) == 0) {
-            opt_count++;
-            return make_int_literal(0, node->token);
-        }
-    }
-    // 0 * x -> 0
-    if (node->token.type == TOKEN_STAR && is_int_literal(left)) {
-        if (parse_int_value(left->token) == 0) {
-            opt_count++;
-            return make_int_literal(0, node->token);
-        }
-    }
-    // x == x -> true (same identifier)
+
+    // x == x -> true (same identifier, integer type only to avoid NaN issues)
     if (node->token.type == TOKEN_EQ_EQ && left->type == AST_IDENTIFIER && right->type == AST_IDENTIFIER) {
-        if (same_identifier(left->token, right->token)) {
+        if (same_identifier(left->token, right->token) && left->expr_type == TOKEN_INT_TYPE) {
             opt_count++;
             return make_int_literal(1, node->token);
         }
     }
-    // x != x -> false (same identifier)
+    // x != x -> false (same identifier, integer type only)
     if (node->token.type == TOKEN_BANG_EQ && left->type == AST_IDENTIFIER && right->type == AST_IDENTIFIER) {
-        if (same_identifier(left->token, right->token)) {
+        if (same_identifier(left->token, right->token) && left->expr_type == TOKEN_INT_TYPE) {
             opt_count++;
             return make_int_literal(0, node->token);
         }
@@ -415,7 +530,6 @@ static ASTNode* eliminate_identities(ASTNode* node) {
 
 // ========================================================================
 // PASS 4: Peephole Optimization
-// Strength reduction and pattern matching on binary expressions.
 // ========================================================================
 
 static ASTNode* peephole_optimize(ASTNode* node) {
@@ -434,17 +548,13 @@ static ASTNode* peephole_optimize(ASTNode* node) {
             ASTNode* add = create_node(AST_BINARY, t);
             add->left = left;
             node->left = NULL;
-            // Clone the left node for the right side
+            // Free the original right node (the literal '2') to prevent memory leak
+            free_ast(node->right);
+            node->right = NULL;
             add->right = create_node(AST_IDENTIFIER, left->token);
             return add;
         }
     }
-    // x / 2 -> x * 0.5 (when x is int, promote to float)
-    // Skip this - too complex without type tracking
-
-    // x << 1 -> x * 2
-    // Skip - no shift operators yet
-
     return NULL;
 }
 
@@ -624,10 +734,16 @@ static ASTNode* fold_if(ASTNode* node) {
         if (val != 0) {
             folded = node->left;
             node->left = NULL;
+            free_ast(node->right);
+            node->right = NULL;
         } else {
             folded = node->right;
             node->right = NULL;
+            free_ast(node->left);
+            node->left = NULL;
         }
+        free_ast(node->condition);
+        node->condition = NULL;
         opt_count++;
         return folded;
     }
@@ -646,53 +762,6 @@ static ASTNode* fold_while_false(ASTNode* node) {
         }
     }
     return NULL;
-}
-
-// ========================================================================
-// PASS 8: Tail-Call Optimization
-// Detect: func f(args) { ... return f(new_args) }
-// Convert to: while loop with updated arguments
-// ========================================================================
-
-static bool is_tail_call(ASTNode* node, const char* func_name) {
-    if (!node || node->type != AST_RETURN || !node->left) return false;
-    if (node->left->type != AST_CALL || !node->left->left) return false;
-    if (node->left->left->type != AST_IDENTIFIER) return false;
-    return (size_t)node->left->left->token.length == strlen(func_name) &&
-           memcmp(node->left->left->token.start, func_name, strlen(func_name)) == 0;
-}
-
-static void optimize_tail_calls(ASTNode* node) {
-    if (!node) return;
-
-    // Look for function declarations
-    if (node->type == AST_FUNC_DECL) {
-        // Get function name
-        char func_name[256];
-        int nlen = node->token.length < 255 ? node->token.length : 255;
-        memcpy(func_name, node->token.start, nlen);
-        func_name[nlen] = '\0';
-
-        // Check if function body is a block with a tail call
-        ASTNode* body = node->left;
-        if (body && body->type == AST_BLOCK && body->child_count > 0) {
-            ASTNode* last_stmt = body->children[body->child_count - 1];
-            if (is_tail_call(last_stmt, func_name)) {
-                // Mark for tail-call optimization (flag on the node)
-                // The code generator will handle this by converting to a loop
-                node->is_tail_call_optimized = true;
-                opt_count++;
-            }
-        }
-    }
-
-    // Recurse
-    for (int i = 0; i < node->child_count; i++) {
-        optimize_tail_calls(node->children[i]);
-    }
-    optimize_tail_calls(node->left);
-    optimize_tail_calls(node->right);
-    optimize_tail_calls(node->condition);
 }
 
 // ========================================================================
@@ -748,13 +817,30 @@ static void optimize_node(ASTNode* node) {
         if (simplified) {
             node->type = simplified->type;
             node->token = simplified->token;
+            
             node->left = simplified->left;
             node->right = simplified->right;
+            node->children = simplified->children;
+            node->child_count = simplified->child_count;
+            node->child_capacity = simplified->child_capacity;
+            
             simplified->left = NULL;
             simplified->right = NULL;
+            simplified->children = NULL;
+            simplified->child_count = 0;
+            simplified->child_capacity = 0;
+            
+            bool simplified_is_old_left = (simplified == old_left);
+            bool simplified_is_old_right = (simplified == old_right);
+            
             free(simplified);
-            if (old_left != node->left) free_ast(old_left);
-            if (old_right != node->right) free_ast(old_right);
+            
+            if (!simplified_is_old_left) {
+                free_ast(old_left);
+            }
+            if (!simplified_is_old_right) {
+                free_ast(old_right);
+            }
         }
     }
 
@@ -804,6 +890,8 @@ static void optimize_node(ASTNode* node) {
     if (node->type == AST_WHILE) {
         ASTNode* folded = fold_while_false(node);
         if (folded) {
+            free_ast(node->left);
+            free_ast(node->condition);
             node->type = folded->type;
             node->token = folded->token;
             node->left = folded->left;
@@ -821,16 +909,12 @@ static void optimize_node(ASTNode* node) {
 
 // ========================================================================
 // PASS: Loop Optimizations
-// - Loop invariant code motion: move constant expressions out of loops
-// - Strength reduction: x*2 -> x+x, x*0 -> 0
 // ========================================================================
 
 static void optimize_loops(ASTNode* node) {
     if (!node) return;
 
-    // Optimize loop body
     if (node->type == AST_WHILE || node->type == AST_FOR) {
-        // Optimize loop body
         if (node->left) optimize_loops(node->left);
 
         // Strength reduction in loop condition: x * 2 -> x + x
@@ -839,12 +923,10 @@ static void optimize_loops(ASTNode* node) {
             if (cond->token.type == TOKEN_STAR && cond->right && is_int_literal(cond->right)) {
                 long r = parse_int_value(cond->right->token);
                 if (r == 2 && cond->left && !is_literal(cond->left)) {
-                    // x * 2 -> x + x
                     Token t = cond->token;
                     t.type = TOKEN_PLUS;
                     ASTNode* add = create_node(AST_BINARY, t);
                     add->left = cond->left;
-                    // Clone left for right side
                     add->right = create_node(AST_IDENTIFIER, cond->left->token);
                     cond->left = NULL;
                     cond->right = NULL;
@@ -854,13 +936,8 @@ static void optimize_loops(ASTNode* node) {
                 }
             }
         }
-
-        // Loop invariant motion: if loop body is a single expression statement
-        // with a constant subexpression, we can hoist it
-        // (Simplified: just optimize the body)
     }
 
-    // Recurse into children
     for (int i = 0; i < node->child_count; i++) {
         optimize_loops(node->children[i]);
     }
@@ -878,19 +955,16 @@ bool optimize_ast(ASTNode* program) {
 
     // Pass 1: Constant propagation
     const_table_clear();
-    propagate_constants(program);
+    propagate_constants(program, program);
 
     // Pass 2: Copy propagation
     copy_table_clear();
-    propagate_copies(program);
+    propagate_copies(program, program);
 
     // Pass 3-6: Bottom-up optimizations (fold, peephole, identity, DCE, branch)
     optimize_node(program);
 
-    // Pass 7: Tail-call optimization detection
-    optimize_tail_calls(program);
-
-    // Pass 8: Loop optimizations (strength reduction, invariant motion)
+    // Pass 8: Loop optimizations (strength reduction)
     optimize_loops(program);
 
     // Cleanup

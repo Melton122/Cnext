@@ -20,14 +20,14 @@ Syntax highlighting, snippets, linting, formatting, and build tasks for the Cnex
    cd vscode-extension
    npm install -g @vscode/vsce
    vsce package
-   code --install-extension cnext-9.0.0.vsix
+   code --install-extension cnext-10.0.0.vsix
    ```
 
 ### Option 2: Manual Installation
 
 1. Copy this `vscode-extension/` folder to your extensions directory:
-   - **Windows:** `%USERPROFILE%\.vscode\extensions\cnext-9.0.0`
-   - **macOS/Linux:** `~/.vscode/extensions/cnext-9.0.0`
+   - **Windows:** `%USERPROFILE%\.vscode\extensions\cnext-10.0.0`
+   - **macOS/Linux:** `~/.vscode/extensions/cnext-10.0.0`
 2. Restart VS Code
 
 ### Option 3: From Marketplace
