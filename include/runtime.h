@@ -326,8 +326,10 @@ static inline void cnext_ref_release(CnextRef* ref) {
 // Heap-allocated refcount handles let `new` objects die deterministically when
 // the last reference is released (instead of at exit). Both the handle and the
 // wrapped object are tracked, so forgetting to release cannot leak past exit
-// (and the object is freed exactly once, never double-freed). Per-handle
-// retain/release must not race across threads without a user mutex.
+// (and the object is freed exactly once, never double-freed). Once the count
+// reaches zero the handle is freed and becomes invalid — using it further is
+// undefined. Per-handle retain/release must not race across threads without a
+// user mutex.
 static void* cnext_ref_new(void* obj) {
     if (!obj) return NULL;
     CnextRef* h = (CnextRef*)malloc(sizeof(CnextRef));

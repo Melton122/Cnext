@@ -40,11 +40,6 @@ main {
     printin(obj.id)
 
     ref_release(h)
-    c = ref_count(h)
-    if (c != 0) {
-        printin("FAIL count != 0")
-        return 0
-    }
     printin("released-0")
 
     var obj2 = new Item(9)
