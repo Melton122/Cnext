@@ -165,7 +165,7 @@ struct CnextCurlBuffer {
     size_t capacity;
 };
 
-static size_t curl_write_callback(void* contents, size_t size, size_t nmemb, void* userp) {
+static size_t cnext_curl_write_callback(void* contents, size_t size, size_t nmemb, void* userp) {
     struct CnextCurlBuffer* buf = (struct CnextCurlBuffer*)userp;
     size_t total = size * nmemb;
     if (buf->length + total + 1 > buf->capacity) {
@@ -192,7 +192,7 @@ static inline CnextString http_get(CnextString url) {
     buf.data[0] = '\0';
 
     curl_easy_setopt(curl, CURLOPT_URL, url.data);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_callback);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, cnext_curl_write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buf);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
@@ -223,7 +223,7 @@ static inline CnextString http_post(CnextString url, CnextString body) {
     curl_easy_setopt(curl, CURLOPT_POST, 1L);
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.data);
     curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long)body.length);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_callback);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, cnext_curl_write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buf);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
