@@ -461,6 +461,7 @@ int main(int argc, char** argv) {
 #else
         gcc_args[gcc_argc++] = "-lcurl";
         gcc_args[gcc_argc++] = "-lpthread";
+        gcc_args[gcc_argc++] = "-lm";
 #endif
         gcc_args[gcc_argc] = NULL;
 

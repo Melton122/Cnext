@@ -142,6 +142,31 @@ bool build_include_path(const char* argv0, char* include_path, size_t include_pa
                         memcpy(resolved_include_path + parent_len + 1, include_leaf, leaf_len + 1);
                         if (probe_include_path(resolved_include_path)) {
                             include_dir = resolved_include_path;
+                        } else {
+                            /* Try <exe_dir>/../share/cnext/include (POSIX install layout) */
+                            const char* share_leaf = "share";
+                            const char* cnext_leaf = "cnext";
+                            const char* share_include_leaf = "include";
+                            if (parent_len + 1 + strlen(share_leaf) + 1 +
+                                strlen(cnext_leaf) + 1 + strlen(share_include_leaf) + 1 <=
+                                sizeof(resolved_include_path)) {
+                                size_t pos = 0;
+                                memcpy(resolved_include_path + pos, base, parent_len);
+                                pos += parent_len;
+                                resolved_include_path[pos++] = CNEXT_PATH_SEP;
+                                memcpy(resolved_include_path + pos, share_leaf, strlen(share_leaf));
+                                pos += strlen(share_leaf);
+                                resolved_include_path[pos++] = CNEXT_PATH_SEP;
+                                memcpy(resolved_include_path + pos, cnext_leaf, strlen(cnext_leaf));
+                                pos += strlen(cnext_leaf);
+                                resolved_include_path[pos++] = CNEXT_PATH_SEP;
+                                memcpy(resolved_include_path + pos, share_include_leaf, strlen(share_include_leaf));
+                                pos += strlen(share_include_leaf);
+                                resolved_include_path[pos] = '\0';
+                                if (probe_include_path(resolved_include_path)) {
+                                    include_dir = resolved_include_path;
+                                }
+                            }
                         }
                     }
                 }

@@ -123,19 +123,25 @@ check: $(EXEC)
 	@python3 tests/test_lsp.py 2>/dev/null || python tests/test_lsp.py 2>/dev/null || echo "LSP tests skipped"
 
 install: $(EXEC)
+ifdef WINDOWS_BUILD
 	@mkdir -p "$(INSTALL_BIN)" "$(INSTALL_INC)"
 	@cp "$(EXEC)" "$(INSTALL_BIN)/$(EXEC)"
 	@echo "Copying include directory..."
 	@cp -r include/. "$(INSTALL_INC)/"
+else
+	@mkdir -p "$(INSTALL_BIN)" "$(INSTALL_DIR)/share/cnext/include"
+	@cp "$(EXEC)" "$(INSTALL_BIN)/$(EXEC)"
+	@echo "Copying include directory..."
+	@cp -r include/. "$(INSTALL_DIR)/share/cnext/include/"
+endif
 	@echo "Installed $(EXEC) to $(INSTALL_BIN)"
 	@echo "Add $(INSTALL_BIN) to your PATH to use 'cnext' globally."
 
 uninstall:
 	@rm -f "$(INSTALL_BIN)/$(EXEC)"
+	@rm -rf "$(INSTALL_DIR)/share/cnext" 2>/dev/null || true
 ifdef WINDOWS_BUILD
 	@rm -rf "$(INSTALL_INC)" 2>/dev/null || true
-else
-	@echo "Note: kept $(INSTALL_INC) (system header directory)."
 endif
 	@echo "Removed $(EXEC) from $(INSTALL_BIN)"
 

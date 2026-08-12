@@ -157,6 +157,15 @@ jobs:
           echo "::error::Installed version $version_out does not match release $expected"
           exit 1
         fi
+        mkdir -p /tmp/cnext_smoke && cd /tmp/cnext_smoke
+        printf 'main {\n    printin("smoke")\n}\n' > smoke.cn
+        cnext build smoke.cn
+        run_out="$(./smoke)"
+        echo "$run_out"
+        if [ "$run_out" != "smoke" ]; then
+          echo "::error::Installed cnext could not build/run a hello program ($run_out)"
+          exit 1
+        fi
 
     - name: Smoke Test Installer and Binary (Windows)
       if: runner.os == 'Windows'
@@ -170,5 +179,14 @@ jobs:
         Write-Host $versionOut
         if ($versionOut -notmatch $expected) {
           Write-Error "Installed version $versionOut does not match release $expected"
+          exit 1
+        }
+        Set-Location $env:TEMP
+        "main {`n    printin(`"smoke`")`n}" | Out-File -Encoding ascii smoke.cn
+        & "$env:LOCALAPPDATA\Cnext\bin\cnext.exe" build smoke.cn
+        $runOut = & "$env:TEMP\smoke.exe"
+        Write-Host $runOut
+        if ($runOut -ne "smoke") {
+          Write-Error "Installed cnext could not build/run a hello program ($runOut)"
           exit 1
         }

@@ -1,4 +1,4 @@
-// EXPECT: Windows
+// EXPECT: os-ok
 // EXPECT: 1
 // EXPECT: hello
 // EXPECT: 1
@@ -7,7 +7,11 @@ import os
 
 main {
     str name = os_os_name()
-    printin(name)
+    if name == "Windows" || name == "Linux" || name == "macOS" || name == "Darwin" {
+        printin("os-ok")
+    } else {
+        printin("unknown-os")
+    }
 
     str cwd = os_get_cwd()
     printin(len(cwd) > 0)

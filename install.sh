@@ -119,7 +119,7 @@ install_cnext() {
     fi
 
     local bin_dir="${INSTALL_DIR}/bin"
-    local include_dir="${INSTALL_DIR}/include"
+    local include_dir="${INSTALL_DIR}/share/cnext/include"
 
     info "Installing to ${INSTALL_DIR}..."
     sudo mkdir -p "$bin_dir" 2>/dev/null || mkdir -p "$bin_dir"
@@ -173,8 +173,9 @@ install_cnext() {
 uninstall_cnext() {
     info "Removing Cnext..."
     sudo rm -f "${INSTALL_DIR}/bin/cnext" "${INSTALL_DIR}/bin/cnext.exe" 2>/dev/null || true
-    sudo rm -rf "${INSTALL_DIR}/include/runtime.h" 2>/dev/null || true
     sudo rm -rf "${INSTALL_DIR}/share/cnext" 2>/dev/null || true
+    # Legacy: remove headers from previous flat /usr/local/include installs
+    sudo rm -f "${INSTALL_DIR}/include/runtime.h" 2>/dev/null || true
     ok "Cnext removed."
 }
 

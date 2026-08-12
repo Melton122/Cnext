@@ -2,6 +2,27 @@
 
 All notable changes to Cnext will be documented in this file.
 
+## [10.0.2] - 2026
+
+### Fixed
+- **Installers (Linux/macOS):** headers were installed FLAT into `/usr/local/include`,
+  clobbering system headers (`math.h`, `os.h`, `ast.h`, ...) and breaking other
+  toolchains on the machine (a Cnext `math.h` shadowing glibc's causes garbage math
+  results). Headers now install to `/usr/local/share/cnext/include`; the compiler
+  probes `<exe>/../share/cnext/include` for runtime headers
+- **Generated code linking (Linux/macOS):** programs using math functions failed to
+  link (`undefined reference to sqrtf/logf`) because `-lm` was only in the compiler's
+  own link line, not the one used for compiled `.cn` programs
+- **Linux build:** `include/os.h` failed to compile for missing `<errno.h>`,
+  `<dirent.h>`, and `<sys/stat.h>` in the POSIX branch (broke `test_os`/`test_net`)
+- **Portable tests:** `test_os.cn` and `test_math.cn` hardcoded Windows-only
+  expectations (OS name, libc `rand()` sequence); they now assert platform-agnostic
+  results so the suite passes on Linux and macOS
+- **CI:** the Ubuntu `make test` step had been failing on every commit since
+  July 21; the fixes above restore a green `build` matrix alongside the release
+  pipeline's new installer smoke tests (version check + build hello program with
+  the installed compiler)
+
 ## [10.0.1] - 2026
 
 ### Fixed
