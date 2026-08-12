@@ -27,7 +27,7 @@ if not exist "%INSTALL_DIR%\bin" mkdir "%INSTALL_DIR%\bin"
 if not exist "%INSTALL_DIR%\include" mkdir "%INSTALL_DIR%\include"
 
 REM Download
-set "FILENAME=cnext-windows-%ARCH%-%CNEXT_VERSION%.zip"
+set "FILENAME=cnext-windows-%ARCH%-v%CNEXT_VERSION%.zip"
 set "URL=https://github.com/%CNEXT_REPO%/releases/download/v%CNEXT_VERSION%/%FILENAME%"
 set "TMPDIR=%TEMP%\cnext_install_%RANDOM%"
 

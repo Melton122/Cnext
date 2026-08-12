@@ -91,7 +91,7 @@ install_cnext() {
         archive_ext="zip"
     fi
 
-    local filename="cnext-${os}-${arch}-${CNEXT_VERSION}.${archive_ext}"
+    local filename="cnext-${os}-${arch}-v${CNEXT_VERSION}.${archive_ext}"
     local url="https://github.com/${CNEXT_REPO}/releases/download/v${CNEXT_VERSION}/${filename}"
 
     info "Downloading Cnext v${CNEXT_VERSION}..."

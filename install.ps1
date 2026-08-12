@@ -26,7 +26,7 @@ New-Item -ItemType Directory -Force -Path "$INSTALL_DIR\bin" | Out-Null
 New-Item -ItemType Directory -Force -Path "$INSTALL_DIR\include" | Out-Null
 
 # Download
-$FILENAME = "cnext-windows-$ARCH-$CNEXT_VERSION.zip"
+$FILENAME = "cnext-windows-$ARCH-v$CNEXT_VERSION.zip"
 $URL = "https://github.com/$CNEXT_REPO/releases/download/v$CNEXT_VERSION/$FILENAME"
 $TMPDIR = "$env:TEMP\cnext_install_$([System.IO.Path]::GetRandomFileName())"
 
