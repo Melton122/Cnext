@@ -2,6 +2,18 @@
 
 All notable changes to Cnext will be documented in this file.
 
+## [10.0.1] - 2026
+
+### Fixed
+- **Installers:** release assets are named `cnext-<os>-<arch>-v<version>.<ext>`; install.sh,
+  install.bat, and install.ps1 were requesting the version without the `v` prefix, causing
+  404 on every release download
+- **Release workflow:** macOS x64/arm64 assets were both built on the (arm64) `macos-latest`
+  runner and shipped as identical binaries; split onto `macos-26-intel` (x64) and `macos-26`
+  (arm64) with a runner-architecture verification step
+- **Release pipeline:** added a smoke-test job that runs the real installers on Linux and
+  Windows and verifies the installed `cnext version` matches the release tag
+
 ## [10.0.0] - 2026
 
 ### Added

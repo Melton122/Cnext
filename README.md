@@ -101,7 +101,7 @@ Install the Cnext extension for syntax highlighting, snippets, and build tasks:
 cd vscode-extension
 npm install -g @vscode/vsce
 vsce package
-code --install-extension cnext-10.0.0.vsix
+code --install-extension cnext-10.0.1.vsix
 ```
 
 Or search for "Cnext" in the VS Code Extensions panel.

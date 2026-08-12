@@ -17,10 +17,10 @@ jobs:
           - os: ubuntu-latest
             artifact: cnext-linux-x64
             ext: tar.gz
-          - os: macos-latest
+          - os: macos-26-intel
             artifact: cnext-macos-x64
             ext: tar.gz
-          - os: macos-latest
+          - os: macos-26
             artifact: cnext-macos-arm64
             ext: tar.gz
           - os: windows-latest
@@ -31,6 +31,18 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+
+    - name: Verify Runner Architecture
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        actual="$(uname -m)"
+        expected="${{ contains(matrix.artifact, 'arm64') && 'arm64' || 'x86_64' }}"
+        echo "actual: $actual, expected: $expected"
+        if [ "$actual" != "$expected" ]; then
+          echo "::error::Runner arch mismatch: got $actual, expected $expected"
+          exit 1
+        fi
 
     - name: Install Dependencies (Linux)
       if: runner.os == 'Linux'
@@ -119,3 +131,44 @@ jobs:
           cnext-macos-arm64/*.tar.gz
           cnext-windows-x64/*.zip
           checksums.txt
+
+  smoke-test:
+    needs: release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+          - os: windows-latest
+
+    steps:
+    - name: Smoke Test Installer and Binary (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        set -e
+        curl -fsSL "https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh" | bash
+        version_out="$(cnext version)"
+        echo "$version_out"
+        expected="${{ github.ref_name }}"
+        expected="${expected#v}"
+        if ! echo "$version_out" | grep -q "$expected"; then
+          echo "::error::Installed version $version_out does not match release $expected"
+          exit 1
+        fi
+
+    - name: Smoke Test Installer and Binary (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = "Stop"
+        $url = "https://raw.githubusercontent.com/${{ github.repository }}/main/install.ps1"
+        iwr -useb $url | iex
+        $expected = "${{ github.ref_name }}".TrimStart("v")
+        $versionOut = & "$env:LOCALAPPDATA\Cnext\bin\cnext.exe" version
+        Write-Host $versionOut
+        if ($versionOut -notmatch $expected) {
+          Write-Error "Installed version $versionOut does not match release $expected"
+          exit 1
+        }

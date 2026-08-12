@@ -2,7 +2,7 @@
   "name": "cnext",
   "displayName": "Cnext Language Support",
   "description": "Syntax highlighting, snippets, linting, formatting, and build tasks for the Cnext programming language",
-  "version": "10.0.0",
+  "version": "10.0.1",
   "publisher": "MellyTech122",
   "license": "MIT",
   "engines": {

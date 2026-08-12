@@ -39,7 +39,7 @@ int _mkdir(const char* path);
 #include "registry.h"
 #include "docgen.h"
 
-#define CNEXT_VERSION "10.0.0"
+#define CNEXT_VERSION "10.0.1"
 #define CNEXT_TEMP_C "temp_out.c"
 #define CNEXT_PATH_MAX 4096
 
