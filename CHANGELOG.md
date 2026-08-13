@@ -2,6 +2,22 @@
 
 All notable changes to Cnext will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **`#line` debug mapping:** `cnext build --debug` now embeds `#line`
+  directives in the generated C, so debuggers (gdb/lldb) show the original
+  `.cn` source for breakpoints, stepping, and backtraces instead of
+  `temp_out.c`
+
+### Fixed
+- **`defer` never ran on `throw`:** the deferred body was only wired to
+  GNU `cleanup` attributes, which do not fire on `longjmp` (nor on
+  `exit()` for unhandled errors) — so arenas/resources were never cleaned
+  on error paths on any compiler. `defer` bodies are now registered on a
+  runtime stack and executed during unwind (LIFO), before the matching
+  `catch` or before process exit for unhandled errors, on both gcc and clang
+
 ## [10.0.3] - 2026
 
 ### Fixed

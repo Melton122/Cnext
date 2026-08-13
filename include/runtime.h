@@ -397,11 +397,49 @@ static inline void cnext_free(CnextString s) {
 typedef struct {
     jmp_buf buf;
     bool active;
+    int defer_mark;
 } _CnextTryFrame;
 
 static _CnextTryFrame _cnext_try_stack[CNEXT_MAX_TRY_DEPTH];
 static int _cnext_try_depth = 0;
 static CnextString _cnext_error_message = {NULL, 0};
+
+/* Deferred-call registry. Defers are registered here so they run during
+ * unwinding (longjmp does not trigger GCC/Clang cleanup attributes). */
+#define CNEXT_MAX_DEFER_DEPTH 512
+
+typedef void (*_CnextDeferFn)(void*);
+
+static _CnextDeferFn _cnext_defer_stack[CNEXT_MAX_DEFER_DEPTH];
+static void* _cnext_defer_arg_stack[CNEXT_MAX_DEFER_DEPTH];
+static int _cnext_defer_count = 0;
+static int _cnext_unwinding = 0;
+
+static inline void _cnext_defer_push(_CnextDeferFn fn, void* arg) {
+    if (_cnext_defer_count >= CNEXT_MAX_DEFER_DEPTH) {
+        fprintf(stderr, "Cnext runtime: defer nesting too deep.\n");
+        exit(70);
+    }
+    _cnext_defer_stack[_cnext_defer_count] = fn;
+    _cnext_defer_arg_stack[_cnext_defer_count] = arg;
+    _cnext_defer_count++;
+}
+
+static inline void _cnext_defer_release(int mark) {
+    if (mark >= 0 && mark < _cnext_defer_count) {
+        _cnext_defer_count = mark;
+    }
+}
+
+static inline void _cnext_defer_run_to(int mark) {
+    int prev_unwinding = _cnext_unwinding;
+    _cnext_unwinding = 1;
+    while (_cnext_defer_count > mark) {
+        _cnext_defer_count--;
+        _cnext_defer_stack[_cnext_defer_count](_cnext_defer_arg_stack[_cnext_defer_count]);
+    }
+    _cnext_unwinding = prev_unwinding;
+}
 
 static inline void _cnext_push_try(void) {
     if (_cnext_try_depth >= CNEXT_MAX_TRY_DEPTH) {
@@ -409,6 +447,7 @@ static inline void _cnext_push_try(void) {
         exit(70);
     }
     _cnext_try_stack[_cnext_try_depth].active = true;
+    _cnext_try_stack[_cnext_try_depth].defer_mark = _cnext_defer_count;
     _cnext_try_depth++;
 }
 
@@ -422,9 +461,11 @@ static inline void _cnext_pop_try(void) {
 static inline _Noreturn void cnext_throw(CnextString message) {
     _cnext_error_message = message;
     if (_cnext_try_depth > 0) {
+        _cnext_defer_run_to(_cnext_try_stack[_cnext_try_depth - 1].defer_mark);
         _cnext_try_depth--;
         longjmp(_cnext_try_stack[_cnext_try_depth].buf, 1);
     } else {
+        _cnext_defer_run_to(0);
         fprintf(stderr, "\033[31m\033[1mUnhandled error:\033[0m %s\n",
                 message.data ? message.data : "(null)");
         _cnext_free_all();

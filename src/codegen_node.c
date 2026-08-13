@@ -786,7 +786,7 @@ void generate_node(ASTNode* node) {
         case AST_DEFER: {
             int d = defer_counter++;
             write_indent();
-            fprintf(out, "void _cnext_defer_fn_%d(void* _d) { ", d);
+            fprintf(out, "void _cnext_defer_fn_%d(void* _d) { unsigned int* _f_%d = (unsigned int*)_d; if (*_f_%d & 1) { return; } ", d, d, d);
             if (node->left) {
                 if (node->left->type == AST_BLOCK) {
                     // Block form: defer { ... }
@@ -797,7 +797,7 @@ void generate_node(ASTNode* node) {
                     fprintf(out, ";");
                 }
             }
-            fprintf(out, " }\n");
+            fprintf(out, " *_f_%d |= 1; if (!_cnext_unwinding) { _cnext_defer_release((int)(*_f_%d >> 1)); } }\n", d, d);
             write_indent();
 #ifdef _MSC_VER
             fprintf(out, "volatile int _cnext_defer_done_%d = 0;\n", d);
@@ -815,11 +815,10 @@ void generate_node(ASTNode* node) {
             }
             fprintf(out, " } }\n");
 #else
-            fprintf(out, "volatile int _cnext_defer_done_%d = 0;\n", d);
             write_indent();
-            fprintf(out, "char _cnext_defer_cleanup_%d __attribute__((cleanup(_cnext_defer_fn_%d))) = 0;\n", d, d);
+            fprintf(out, "unsigned int _cnext_defer_flag_%d __attribute__((cleanup(_cnext_defer_fn_%d))) = (_cnext_defer_count << 1);\n", d, d);
             write_indent();
-            fprintf(out, "_cnext_defer_done_%d = 1;\n", d);
+            fprintf(out, "_cnext_defer_push(_cnext_defer_fn_%d, &_cnext_defer_flag_%d);\n", d, d);
 #endif
             break;
         }
