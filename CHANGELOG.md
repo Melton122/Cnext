@@ -13,6 +13,12 @@ All notable changes to Cnext will be documented in this file.
 - **Link flags for plain programs (Linux/macOS):** `-lcurl` is now only added
   when the compiled program actually uses networking (`http_get`/`http_post`),
   so hello-world programs no longer require the libcurl development package
+- **Compiling from PATH (all platforms):** running `cnext build`/`run` as a
+  bare name via PATH (the normal installed case) looked for runtime headers
+  relative to the current directory, failing with
+  `fatal error: runtime.h: No such file or directory`; the compiler now
+  resolves its own executable location (`/proc/self/exe`, `_NSGetExecutablePath`,
+  `GetModuleFileNameA`) to find installed headers
 
 ## [10.0.2] - 2026
 

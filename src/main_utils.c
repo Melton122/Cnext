@@ -83,6 +83,28 @@ bool has_path_separator(const char* path) {
     return strchr(path, '/') != NULL || strchr(path, '\\') != NULL;
 }
 
+#if defined(_WIN32)
+static bool resolve_executable_path(char* out, size_t size) {
+    DWORD n = GetModuleFileNameA(NULL, out, (DWORD)size);
+    return n > 0 && n < (DWORD)size;
+}
+#elif defined(__APPLE__)
+#include <mach-o/dyld.h>
+static bool resolve_executable_path(char* out, size_t size) {
+    uint32_t sz = (uint32_t)size;
+    return _NSGetExecutablePath(out, &sz) == 0;
+}
+#else
+#include <limits.h>
+#include <unistd.h>
+static bool resolve_executable_path(char* out, size_t size) {
+    ssize_t n = readlink("/proc/self/exe", out, size - 1);
+    if (n <= 0) return false;
+    out[n] = '\0';
+    return true;
+}
+#endif
+
 bool dirname_from_path(const char* path, char* buffer, size_t buffer_size) {
     const char* last_slash = strrchr(path, '/');
     const char* last_backslash = strrchr(path, '\\');
@@ -114,8 +136,15 @@ static bool probe_include_path(const char* dir_path) {
 
 bool build_include_path(const char* argv0, char* include_path, size_t include_path_size) {
     char base[CNEXT_PATH_MAX];
+    char exe_resolved[CNEXT_PATH_MAX];
     const char* include_dir = "include";
     char resolved_include_path[CNEXT_PATH_MAX];
+
+    // `cnext` invoked via PATH yields a bare argv[0] with no directory —
+    // resolve the real executable location so the installed-header probe works
+    if (!has_path_separator(argv0) && resolve_executable_path(exe_resolved, sizeof(exe_resolved))) {
+        argv0 = exe_resolved;
+    }
 
     if (dirname_from_path(argv0, base, sizeof(base))) {
         size_t base_len = strlen(base);
