@@ -454,6 +454,8 @@ void register_all_builtins(Token module) {
         {"str_to_int", 10}, {"str_to_float", 12},
         {"str_count", 9}, {"str_is_empty", 12},
         {"str_char_at", 11}, {"str_find", 8},
+        {"str_char_count", 14}, {"str_codepoint_at", 16},
+        {"str_sub_chars", 13},
         {"str_to_upper", 12}, {"str_to_lower", 12},
         /* Math */
         {"math_abs", 8}, {"math_min", 8}, {"math_max", 8},

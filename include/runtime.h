@@ -896,12 +896,20 @@ static inline CnextString cnext_str_join(CnextStringArray parts, CnextString del
 }
 
 static inline CnextString cnext_str_reverse(CnextString s) {
+    if (!s.data) return (CnextString){NULL, 0};
     char* result = (char*)malloc(s.length + 1);
     if (!result) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
-    for (size_t i = 0; i < s.length; i++) {
-        result[i] = s.data[s.length - 1 - i];
+    size_t out = 0;
+    for (size_t i = s.length; i > 0;) {
+        size_t start = i;
+        while (start > 0 && ((unsigned char)s.data[start - 1] & 0xC0) == 0x80) start--;
+        size_t begin = start > 0 ? start - 1 : 0;
+        for (size_t k = begin; k < i; k++) {
+            result[out++] = s.data[k];
+        }
+        i = begin;
     }
-    result[s.length] = '\0';
+    result[out] = '\0';
     _cnext_track(result);
     return (CnextString){result, s.length};
 }
@@ -931,6 +939,72 @@ static inline float cnext_str_parse_float(CnextString s) {
 static inline int cnext_str_char_at(CnextString s, int index) {
     if (!s.data || index < 0 || (size_t)index >= s.length) return -1;
     return (unsigned char)s.data[index];
+}
+
+static inline int cnext_str_utf8_width(unsigned char lead) {
+    if ((lead & 0xE0) == 0xC0) return 2;
+    if ((lead & 0xF0) == 0xE0) return 3;
+    if ((lead & 0xF8) == 0xF0) return 4;
+    return 1;
+}
+
+static inline int cnext_str_char_count(CnextString s) {
+    if (!s.data) return 0;
+    int count = 0;
+    for (size_t i = 0; i < s.length; i++) {
+        if (((unsigned char)s.data[i] & 0xC0) != 0x80) count++;
+    }
+    return count;
+}
+
+/* Codepoint at char index (UTF-8 aware), -1 if out of range */
+static inline int cnext_str_codepoint_at(CnextString s, int char_index) {
+    if (!s.data || char_index < 0) return -1;
+    size_t i = 0;
+    int seen = 0;
+    while (i < s.length) {
+        unsigned char lead = (unsigned char)s.data[i];
+        int width = cnext_str_utf8_width(lead);
+        if (i + (size_t)width > s.length) return -1;
+        if (seen == char_index) {
+            int cp = lead;
+            if (width > 1) {
+                cp = lead & (0xFF >> (width + 1));
+                for (int k = 1; k < width; k++) {
+                    if (((unsigned char)s.data[i + k] & 0xC0) != 0x80) return -1;
+                    cp = (cp << 6) | ((unsigned char)s.data[i + k] & 0x3F);
+                }
+            }
+            return cp;
+        }
+        i += (size_t)width;
+        seen++;
+    }
+    return -1;
+}
+
+/** Substring by character offsets (UTF-8 aware); returns a view,
+ *  byte-based positions otherwise (like str_substring). */
+static inline CnextString cnext_str_sub_chars(CnextString s, int char_start, int char_len) {
+    if (!s.data || char_start < 0 || char_len <= 0) return (CnextString){NULL, 0};
+    size_t byte_start = 0;
+    int seen = 0;
+    while (byte_start < s.length && seen < char_start) {
+        int w = cnext_str_utf8_width((unsigned char)s.data[byte_start]);
+        if (byte_start + (size_t)w > s.length) return (CnextString){NULL, 0};
+        byte_start += (size_t)w;
+        seen++;
+    }
+    if (seen < char_start) return (CnextString){NULL, 0};
+    size_t byte_end = byte_start;
+    int taken = 0;
+    while (byte_end < s.length && taken < char_len) {
+        int w = cnext_str_utf8_width((unsigned char)s.data[byte_end]);
+        if (byte_end + (size_t)w > s.length) break;
+        byte_end += (size_t)w;
+        taken++;
+    }
+    return (CnextString){s.data + byte_start, byte_end - byte_start};
 }
 
 static inline int cnext_str_index_of_char(CnextString s, char c) {

@@ -1,0 +1,31 @@
+// UTF-8-aware string builtins: str_char_count, str_codepoint_at,
+// str_sub_chars, and UTF-8-safe str_reverse.
+// EXPECT: bytes: 18
+// EXPECT: chars: 13
+// EXPECT: cp4: 111
+// EXPECT: cp12: 128077
+// EXPECT: oob: -1
+// EXPECT: sub: örld 👍
+// EXPECT: rev: 👍 dlröw olléh
+// EXPECT: char_at: 195
+main {
+    var s = "héllo wörld 👍"
+
+    // str_char_count counts code points, not bytes
+    printin("bytes: " + to_str(len(s)))
+    printin("chars: " + to_str(str_char_count(s)))
+
+    // codepoint at character index; -1 when out of bounds
+    printin("cp4: " + to_str(str_codepoint_at(s, 4)))
+    printin("cp12: " + to_str(str_codepoint_at(s, 12)))
+    printin("oob: " + to_str(str_codepoint_at(s, 99)))
+
+    // substring by character offsets keeps multi-byte chars intact
+    printin("sub: " + str_sub_chars(s, 7, 6))
+
+    // reverse operates on code points, not bytes
+    printin("rev: " + str_reverse(s))
+
+    // str_char_at remains byte-based
+    printin("char_at: " + to_str(str_char_at(s, 1)))
+}
