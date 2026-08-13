@@ -5,7 +5,7 @@ REM For PowerShell: iwr -useb https://raw.githubusercontent.com/Melton122/Cnext/
 
 setlocal enabledelayedexpansion
 
-set "CNEXT_VERSION=10.0.1"
+set "CNEXT_VERSION=10.0.2"
 set "CNEXT_REPO=Melton122/Cnext"
 set "INSTALL_DIR=%LOCALAPPDATA%\Cnext"
 
