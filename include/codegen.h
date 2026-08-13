@@ -9,5 +9,6 @@ bool generate_c_code(ASTNode* program, const char* output_filename, bool test_mo
 void reset_codegen_state(void);
 void set_codegen_profile_mode(bool enabled);
 void set_codegen_sourcemap(SourceMap* map);
+void codegen_set_debug_source(const char* source_path);
 
 #endif // CODEGEN_H

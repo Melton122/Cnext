@@ -33,6 +33,31 @@ ClassSpecWork* class_spec_last = NULL;
 
 static void generate_runtime_preamble(void) {
     fprintf(out, "#include \"runtime.h\"\n\n");
+    if (codegen_emit_lines && codegen_debug_source) {
+        fprintf(out, "#line 1 \"%s\"\n", codegen_debug_source);
+    }
+}
+
+void codegen_set_debug_source(const char* source_path) {
+    free(codegen_debug_source);
+    codegen_debug_source = NULL;
+    codegen_emit_lines = false;
+    codegen_last_emit_line = -1;
+    if (!source_path || !source_path[0]) return;
+
+    size_t len = strlen(source_path);
+    char* escaped = (char*)checked_malloc(len * 2 + 1);
+    if (!escaped) return;
+    size_t j = 0;
+    for (size_t i = 0; i < len; i++) {
+        if (source_path[i] == '\\' || source_path[i] == '"') {
+            escaped[j++] = '\\';
+        }
+        escaped[j++] = source_path[i];
+    }
+    escaped[j] = '\0';
+    codegen_debug_source = escaped;
+    codegen_emit_lines = true;
 }
 
 void set_codegen_sourcemap(SourceMap* map) {
@@ -53,6 +78,7 @@ void reset_codegen_state(void) {
     codegen_sourcemap = NULL;
     codegen_gen_line = 1;
     codegen_last_src_line = -1;
+    codegen_last_emit_line = -1;
     bench_counter = 0;
     loop_counter = 0;
     try_counter = 0;
@@ -100,6 +126,7 @@ bool generate_c_code(ASTNode* program, const char* output_filename, bool test_mo
     codegen_test_mode = test_mode;
     codegen_in_test = false;
     program_node = program;
+    codegen_last_emit_line = -1;
     clear_type_subst();
     free_gen_specs();
 

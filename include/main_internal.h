@@ -75,6 +75,6 @@ void install_packages_from_toml(const char* argv0);
 char* build_source_with_packages(const char* source, const char* project_dir);
 
 /* --- Compilation (main_compiler.c) --- */
-int compile_file(const char* input_path, const char* output_c_path, bool test_mode, bool run_optimizer);
+int compile_file(const char* input_path, const char* output_c_path, bool test_mode, bool run_optimizer, bool emit_debug_lines);
 
 #endif /* MAIN_INTERNAL_H */

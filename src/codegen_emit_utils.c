@@ -55,6 +55,13 @@ void track_source_line(int src_line) {
     }
 }
 
+void emit_line_directive(int src_line) {
+    if (!codegen_emit_lines || !codegen_debug_source) return;
+    if (src_line < 1 || src_line == codegen_last_emit_line) return;
+    fprintf(out, "#line %d \"%s\"\n", src_line, codegen_debug_source);
+    codegen_last_emit_line = src_line;
+}
+
 void write_indent(void) {
     if (!out) return;
     for (int i = 0; i < indent_level; i++) {
@@ -234,6 +241,7 @@ void generate_string_interpolation(const char* start, int length) {
 }
 
 void generate_function(ASTNode* node, const char* prefix) {
+    emit_line_directive(node->token.line);
     if (node->is_generator) {
         char func_name[256];
         if (prefix) {

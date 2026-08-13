@@ -14,6 +14,7 @@ void generate_block(ASTNode* node) {
     codegen_gen_line++;
     indent_level++;
     for (int i = 0; i < node->child_count; i++) {
+        emit_line_directive(node->children[i]->token.line);
         write_indent();
         generate_node(node->children[i]);
     }

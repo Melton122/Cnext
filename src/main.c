@@ -403,7 +403,8 @@ int main(int argc, char** argv) {
 
         remove(CNEXT_TEMP_C);
         int compile_status = compile_file(opts.input_path, CNEXT_TEMP_C, false,
-                                      opts.enable_optimize && !opts.no_optimize);
+                                      opts.enable_optimize && !opts.no_optimize,
+                                      opts.debug);
         if (compile_status != 0) {
             remove(CNEXT_TEMP_C);
             return compile_status;

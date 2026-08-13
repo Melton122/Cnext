@@ -30,6 +30,9 @@ typedef struct CodeGenContext {
     SourceMap* sourcemap;
     int gen_line;
     int last_src_line;
+    bool emit_lines;
+    char* debug_source;
+    int last_emit_line;
 } CodeGenContext;
 
 extern CodeGenContext g_codegen;
@@ -52,6 +55,9 @@ extern CodeGenContext g_codegen;
 #define codegen_sourcemap       g_codegen.sourcemap
 #define codegen_gen_line        g_codegen.gen_line
 #define codegen_last_src_line   g_codegen.last_src_line
+#define codegen_emit_lines      g_codegen.emit_lines
+#define codegen_debug_source    g_codegen.debug_source
+#define codegen_last_emit_line  g_codegen.last_emit_line
 #endif
 
 /* --- Counters (defined in codegen_node.c) --- */
@@ -71,6 +77,7 @@ void generate_block(ASTNode* node);
 void generate_expression(ASTNode* node);
 void generate_node(ASTNode* node);
 void generate_function(ASTNode* node, const char* prefix);
+void emit_line_directive(int src_line);
 ASTNode* find_func_decl(ASTNode* prog, const char* name);
 ASTNode* find_class_decl(ASTNode* prog, const char* name);
 
