@@ -1,8 +1,8 @@
 {
   "name": "cnext",
   "displayName": "Cnext Language Support",
-  "description": "Syntax highlighting, snippets, linting, formatting, and build tasks for the Cnext programming language",
-  "version": "10.0.1",
+  "description": "Full language support for Cnext: syntax highlighting, IntelliSense (LSP), diagnostics, snippets, formatting, and build tasks",
+  "version": "10.0.2",
   "publisher": "MellyTech122",
   "license": "MIT",
   "engines": {
@@ -18,9 +18,13 @@
     "language",
     "transpiler",
     "compiler",
-    "programming language"
+    "programming language",
+    "lsp"
   ],
   "main": "./extension.js",
+  "activationEvents": [
+    "onLanguage:cnext"
+  ],
   "contributes": {
     "languages": [
       {
@@ -93,8 +97,77 @@
         "command": "cnext.repl",
         "title": "Cnext: Start REPL",
         "icon": "$(terminal)"
+      },
+      {
+        "command": "cnext.restartLanguageServer",
+        "title": "Cnext: Restart Language Server",
+        "icon": "$(debug-restart)"
+      },
+      {
+        "command": "cnext.showLspLog",
+        "title": "Cnext: Show LSP Log",
+        "icon": "$(output)"
       }
     ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "cnext.run",
+          "when": "editorLangId == cnext",
+          "group": "cnext@1"
+        },
+        {
+          "command": "cnext.build",
+          "when": "editorLangId == cnext",
+          "group": "cnext@2"
+        },
+        {
+          "command": "cnext.buildRelease",
+          "when": "editorLangId == cnext",
+          "group": "cnext@2"
+        },
+        {
+          "command": "cnext.lint",
+          "when": "editorLangId == cnext",
+          "group": "cnext@3"
+        },
+        {
+          "command": "cnext.format",
+          "when": "editorLangId == cnext",
+          "group": "cnext@3"
+        },
+        {
+          "command": "cnext.repl",
+          "when": "editorLangId == cnext",
+          "group": "cnext@3"
+        }
+      ],
+      "editor/title/context": [
+        {
+          "command": "cnext.run",
+          "when": "resourceLangId == cnext",
+          "group": "navigation@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "cnext.run",
+          "when": "editorLangId == cnext"
+        },
+        {
+          "command": "cnext.build",
+          "when": "editorLangId == cnext"
+        },
+        {
+          "command": "cnext.format",
+          "when": "editorLangId == cnext"
+        },
+        {
+          "command": "cnext.test",
+          "when": "editorLangId == cnext"
+        }
+      ]
+    },
     "keybindings": [
       {
         "command": "cnext.run",
@@ -156,6 +229,21 @@
           "type": "boolean",
           "default": false,
           "description": "Automatically format file after save"
+        },
+        "cnext.lsp.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable the Cnext language server (completion, hover, go-to-definition, diagnostics, formatting)"
+        },
+        "cnext.lsp.pythonPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the Python interpreter used to run the language server (defaults to python/python3/py on PATH)"
+        },
+        "cnext.lsp.serverPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the language server script (defaults to the bundled lsp/server.py)"
         }
       }
     }

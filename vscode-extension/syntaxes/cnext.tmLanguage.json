@@ -8,7 +8,9 @@
     { "include": "#numbers" },
     { "include": "#keywords" },
     { "include": "#types" },
+    { "include": "#variables" },
     { "include": "#functions" },
+    { "include": "#properties" },
     { "include": "#constants" },
     { "include": "#operators" },
     { "include": "#punctuation" }
@@ -16,6 +18,10 @@
   "repository": {
     "comments": {
       "patterns": [
+        {
+          "name": "comment.line.documentation.cnext",
+          "match": "//[!/].*$"
+        },
         {
           "name": "comment.line.double-slash.cnext",
           "match": "//.*$"
@@ -39,14 +45,20 @@
           "patterns": [
             {
               "name": "constant.character.escape.cnext",
-              "match": "\\\\(?:[\"\\\\nrt]|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4})"
+              "match": "\\\\(?:[\\\\\"'nrt{}]|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4})"
             },
             {
               "name": "variable.other.interpolated.cnext",
               "begin": "\\{",
               "end": "\\}",
               "patterns": [
-                { "include": "source.cnext" }
+                { "include": "#numbers" },
+                { "include": "#keywords" },
+                { "include": "#types" },
+                { "include": "#functions" },
+                { "include": "#constants" },
+                { "include": "#variables" },
+                { "include": "#operators" }
               ]
             }
           ]
@@ -58,7 +70,7 @@
           "patterns": [
             {
               "name": "constant.character.escape.cnext",
-              "match": "\\\\(?:['\\\\nrt]|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4})"
+              "match": "\\\\(?:[\\\\\"'nrt{}]|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4})"
             }
           ]
         }
@@ -71,7 +83,7 @@
           "match": "\\b\\d+\\.\\d+([eE][+-]?\\d+)?\\b"
         },
         {
-          "name": "constant.numeric.integer.cnext",
+          "name": "constant.numeric.float.cnext",
           "match": "\\b\\d+[eE][+-]?\\d+\\b"
         },
         {
@@ -88,15 +100,19 @@
       "patterns": [
         {
           "name": "keyword.control.cnext",
-          "match": "\\b(if|else|while|for|switch|case|default|break|continue|return|yield|match|throw|try|catch|finally)\\b"
+          "match": "\\b(if|else|while|for|switch|case|default|break|continue|return|yield|match|when|throw|try|catch|finally|defer)\\b"
         },
         {
           "name": "keyword.declaration.cnext",
-          "match": "\\b(var|const|func|class|struct|enum|interface|trait|import|extends|implements|override|new|super|this|extern)\\b"
+          "match": "\\b(var|const|func|class|struct|enum|interface|trait|import|extends|implements|override|new|super|this|extern|abstract|final|static|type)\\b"
+        },
+        {
+          "name": "keyword.control.main.cnext",
+          "match": "\\b(main|test)\\b"
         },
         {
           "name": "keyword.other.cnext",
-          "match": "\\b(main|test|assert|typeof|as|in|is|null|true|false|constexpr|own)\\b"
+          "match": "\\b(assert|typeof|as|in|is|null|none|constexpr|own|exit)\\b"
         },
         {
           "name": "keyword.coroutine.cnext",
@@ -109,10 +125,6 @@
         {
           "name": "keyword.async.cnext",
           "match": "\\b(async|await|run_async)\\b"
-        },
-        {
-          "name": "keyword.threading.cnext",
-          "match": "\\b(thread|spawn|mutex|channel|lock|unlock|send|recv)\\b"
         },
         {
           "name": "keyword.operator.declaration.cnext",
@@ -128,11 +140,11 @@
       "patterns": [
         {
           "name": "support.type.primitive.cnext",
-          "match": "\\b(int|long|float|double|str|bool|char|byte|void|uint|ulong|ushort|ubyte|short)\\b"
+          "match": "\\b(int|long|float|double|str|bool|char|byte|uint|ulong|ushort|ubyte|void)\\b"
         },
         {
           "name": "support.type.iter.cnext",
-          "match": "\\b(iter|Option|Result)\\b"
+          "match": "\\b(iter)\\b"
         },
         {
           "name": "entity.name.type.class.cnext",
@@ -140,15 +152,54 @@
         }
       ]
     },
+    "variables": {
+      "patterns": [
+        {
+          "name": "variable.other.cnext",
+          "captures": {
+            "2": { "name": "variable.other.cnext" }
+          },
+          "match": "\\b(var|const)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\b"
+        }
+      ]
+    },
     "functions": {
       "patterns": [
         {
-          "name": "entity.name.function.cnext",
-          "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()"
+          "name": "meta.function.cnext",
+          "captures": {
+            "1": { "name": "storage.type.function.cnext" },
+            "2": { "name": "entity.name.function.cnext" }
+          },
+          "match": "\\b(func)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\("
         },
         {
           "name": "support.function.builtin.cnext",
-          "match": "\\b(printin|input|free|assert)\\b"
+          "match": "\\b(?:str_upper|str_lower|str_to_upper|str_to_lower|str_trim|str_split|str_join|str_replace|str_contains|str_starts_with|str_ends_with|str_substring|str_sub_chars|str_index_of|str_last_index_of|str_char_at|str_char_count|str_codepoint_at|str_find|str_reverse|str_repeat|str_capitalize|str_title|str_pad_left|str_pad_right|str_remove|str_insert|str_to_int|str_to_float|str_count|str_is_empty)\\b"
+        },
+        {
+          "name": "support.function.builtin.cnext",
+          "match": "\\b(?:math_clamp_int|math_random_int|math_random_range|math_factorial|math_fibonacci|math_abs|math_min|math_max|math_clamp|math_round|math_floor|math_ceil|math_sqrt|math_pow|math_log10|math_logb|math_log|math_exp|math_sin|math_cos|math_tan|math_atan|math_sinh|math_fmod|math_lerp|math_random|math_gcd|math_lcm)\\b"
+        },
+        {
+          "name": "support.function.builtin.cnext",
+          "match": "\\b(?:time_stopwatch_start|time_stopwatch_stop|time_format_time|time_timestamp|time_sleep|time_now|time_date|time_time|read_file|write_file|append_file|delete_file|copy_file|move_file|file_exists|file_size|sys_args_count|sys_arg_at|cpu_count|disk_usage|sys_args|sys_shell|sys_exec|memory_usage|base64_encode|base64_decode|json_parse|json_stringify)\\b"
+        },
+        {
+          "name": "support.function.builtin.cnext",
+          "match": "\\b(?:array_unique|array_shuffle|array_filter|array_reduce|array_index|array_first|array_last|array_slice|array_map|array_find|reverse_array|contains_item|insert_at|remove_at|benchmark|stacktrace|mem_arena_create|mem_arena_alloc|mem_arena_free|mem_arena_destroy|mem_arena_usage|mem_scope_begin|mem_scope_end|mem_scope_usage|ref_new|ref_retain|ref_release|ref_count|sha256|parse_int|parse_float|swap_values|to_char|to_int|to_float|to_str|to_bool|cwd|chdir|platform|getenv|setenv|hostname|username|temp_dir|home_dir|md5|sha1|uuid|debug|gc|ord|bytes|char|len|push|pop|shift|unshift|clear|sort|clone|free|panic|exit|printin|print|input|assert|typeof)\\b"
+        },
+        {
+          "name": "entity.name.function.cnext",
+          "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()"
+        }
+      ]
+    },
+    "properties": {
+      "patterns": [
+        {
+          "name": "variable.other.property.cnext",
+          "match": "\\.([a-zA-Z_][a-zA-Z0-9_]*)\\b"
         }
       ]
     },
@@ -156,39 +207,51 @@
       "patterns": [
         {
           "name": "variable.language.self.cnext",
-          "match": "\\b(self|this)\\b"
+          "match": "\\b(self|this|super)\\b"
         },
         {
           "name": "constant.language.cnext",
-          "match": "\\b(true|false|null)\\b"
+          "match": "\\b(true|false|null|none)\\b"
         }
       ]
     },
     "operators": {
       "patterns": [
         {
-          "name": "keyword.operator.arithmetic.cnext",
-          "match": "\\+|-|\\*|/|%|\\+\\+|--"
+          "name": "keyword.operator.arrow.cnext",
+          "match": "->|=>"
         },
         {
-          "name": "keyword.operator.assignment.cnext",
-          "match": "=|\\+=|-=|\\*=|/="
+          "name": "keyword.operator.assignment.compound.cnext",
+          "match": "\\+=|-=|\\*=|/=|%=|<<=|>>=|&=|\\|=|\\^="
         },
         {
           "name": "keyword.operator.comparison.cnext",
-          "match": "==|!=|<|>|<=|>="
+          "match": "==|!=|<=|>=|<|>"
         },
         {
           "name": "keyword.operator.logical.cnext",
-          "match": "&&|\\||!"
+          "match": "&&|\\|\\||!"
+        },
+        {
+          "name": "keyword.operator.bitwise.cnext",
+          "match": "<<|>>|&|\\||\\^|~"
         },
         {
           "name": "keyword.operator.null.cnext",
           "match": "\\?\\?|\\?\\.|\\?"
         },
         {
-          "name": "keyword.operator.arrow.cnext",
-          "match": "->|=>"
+          "name": "keyword.operator.increment.cnext",
+          "match": "\\+\\+|--"
+        },
+        {
+          "name": "keyword.operator.arithmetic.cnext",
+          "match": "\\+|\\-|\\*|/|%"
+        },
+        {
+          "name": "keyword.operator.assignment.cnext",
+          "match": "="
         },
         {
           "name": "keyword.operator.ffi.cnext",
@@ -221,6 +284,10 @@
         {
           "name": "punctuation.definition.array.end.cnext",
           "match": "\\]"
+        },
+        {
+          "name": "punctuation.separator.type.cnext",
+          "match": ":+(?![=])"
         },
         {
           "name": "punctuation.terminator.cnext",

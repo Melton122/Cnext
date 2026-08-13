@@ -20,13 +20,13 @@ Syntax highlighting, snippets, linting, formatting, and build tasks for the Cnex
    cd vscode-extension
    npm install -g @vscode/vsce
    vsce package
-   code --install-extension cnext-10.0.0.vsix
+   code --install-extension cnext-10.0.2.vsix
    ```
 
 ### Option 2: Manual Installation
 
 1. Copy this `vscode-extension/` folder to your extensions directory:
-   - **Windows:** `%USERPROFILE%\.vscode\extensions\cnext-10.0.0`
+   - **Windows:** `%USERPROFILE%\.vscode\extensions\cnext-10.0.2`
    - **macOS/Linux:** `~/.vscode/extensions/cnext-10.0.0`
 2. Restart VS Code
 
@@ -36,14 +36,28 @@ Search for "Cnext" in the VS Code Extensions panel (Ctrl+Shift+X).
 
 ## Features
 
-- **Syntax Highlighting** — Full syntax highlighting for all Cnext language features
+- **Syntax Highlighting** — Full syntax highlighting for all Cnext language features (keywords, types, builtins, string interpolation, doc comments)
 - **Code Snippets** — 25+ snippets for common patterns (classes, functions, closures, etc.)
+- **IntelliSense (LSP)** — Real-time diagnostics, autocomplete, hover docs, and go-to-definition via the bundled language server
+- **Format** — Format on save or with `Shift+Alt+F` (LSP for in-place edits, compiler fallback)
 - **Build Tasks** — Run, build, and test Cnext files with keyboard shortcuts
-- **Format** — Auto-format your code with `Shift+Alt+F`
-- **Lint** — Check for common issues
 - **New Project** — Create a new Cnext project from VS Code
 - **REPL** — Start an interactive REPL from the command palette
 - **Doctor** — Check your environment for common issues
+- **Status Bar** — Shows the language server status; click to run the environment check
+
+## Language Server (LSP)
+
+The extension ships a Python-based language server (`lsp/server.py`) that provides:
+
+- **Diagnostics** — compile errors/warnings from the Cnext compiler appear as you type (debounced)
+- **Autocomplete** — keywords, types, ~150 builtins, and identifiers from the open file
+- **Hover** — quick docs for keywords, types, and builtins
+- **Go to Definition** — jump to declarations in the current file
+- **Format Document** — in-place formatting (no revert-and-reopen)
+
+Requires a Python 3 interpreter on your `PATH` (or set `cnext.lsp.pythonPath`).
+If Python is unavailable, all other features still work.
 
 ## Commands
 
@@ -60,6 +74,8 @@ Open the Command Palette (Ctrl+Shift+P) and type "Cnext":
 | Cnext: New Project | Create a new project | - |
 | Cnext: Doctor | Check environment | - |
 | Cnext: Start REPL | Start interactive REPL | - |
+| Cnext: Restart Language Server | Restart the LSP server | - |
+| Cnext: Show LSP Log | Show LSP activity in the output panel | - |
 
 ## Snippets
 
@@ -97,6 +113,9 @@ Open Settings (Ctrl+,) and search for "Cnext":
 | `cnext.compilerPath` | `cnext` | Path to the Cnext compiler |
 | `cnext.autoRun` | `false` | Automatically run file after save |
 | `cnext.autoFormat` | `false` | Automatically format file after save |
+| `cnext.lsp.enable` | `true` | Enable the language server |
+| `cnext.lsp.pythonPath` | `(auto)` | Python interpreter for the language server |
+| `cnext.lsp.serverPath` | `(bundled)` | Path to the language server script |
 
 ## Requirements
 

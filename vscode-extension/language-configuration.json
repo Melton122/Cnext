@@ -13,7 +13,8 @@
     { "open": "[", "close": "]" },
     { "open": "(", "close": ")" },
     { "open": "\"", "close": "\"", "notIn": ["string"] },
-    { "open": "'", "close": "'", "notIn": ["string", "comment"] }
+    { "open": "'", "close": "'", "notIn": ["string", "comment"] },
+    { "open": "/*", "close": " */", "notIn": ["string", "comment"] }
   ],
   "surroundingPairs": [
     ["{", "}"],
@@ -30,7 +31,7 @@
   },
   "wordPattern": "(-?\\d*\\.\\d\\w*)|([^\\`\\~\\!\\@\\#\\%\\^\\&\\*\\(\\)\\=\\+\\{\\}\\\\\\|\\;\\:\\'\\\"\\,\\.\\<\\>\\/\\?\\s]+)",
   "indentationRules": {
-    "increaseIndentPattern": "^\\s*(class|func|if|else|while|for|switch|case|default|struct|enum|trait|interface|main)\\b.*\\{",
+    "increaseIndentPattern": "^\\s*(class|func|if|else|while|for|switch|case|default|struct|enum|trait|interface|main|test|match|try|catch|finally|defer|with|coroutine|thread)\\b.*\\{",
     "decreaseIndentPattern": "^\\s*\\}"
   },
   "onEnterRules": [
@@ -43,7 +44,14 @@
       }
     },
     {
-      "beforeText": "^\\s*(class|func|if|else|while|for|switch|case|default|struct|enum|trait|interface|main)\\b.*\\{\\s*$",
+      "beforeText": "^\\s*(class|func|if|else|while|for|switch|case|default|struct|enum|trait|interface|main|test|match|try|catch|finally|defer|with|coroutine|thread)\\b.*\\{\\s*$",
+      "action": {
+        "indent": "indent",
+        "appendText": ""
+      }
+    },
+    {
+      "beforeText": "^\\s*(func)\\b[^\\{]*$",
       "action": {
         "indent": "indent",
         "appendText": ""
