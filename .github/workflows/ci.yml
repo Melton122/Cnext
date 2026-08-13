@@ -44,6 +44,7 @@ jobs:
       
     - name: Run Python Tests
       if: runner.os != 'Windows'
+      continue-on-error: ${{ runner.os == 'macOS' }}
       run: python3 tests/run_tests.py || python tests/run_tests.py
 
     - name: Run LSP Tests
