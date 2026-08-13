@@ -459,7 +459,21 @@ int main(int argc, char** argv) {
         gcc_args[gcc_argc++] = "-lwinhttp";
         gcc_args[gcc_argc++] = "-lws2_32";
 #else
-        gcc_args[gcc_argc++] = "-lcurl";
+        // libcurl is only needed when the program actually uses networking
+        // (http_get/http_post emit curl_easy_* calls); linking it unconditionally
+        // breaks every build on machines without the libcurl dev package
+        FILE* gen = fopen(CNEXT_TEMP_C, "r");
+        bool needs_curl = false;
+        if (gen) {
+            char scan[4096];
+            while (fgets(scan, sizeof(scan), gen)) {
+                if (strstr(scan, "curl_easy_")) { needs_curl = true; break; }
+            }
+            fclose(gen);
+        }
+        if (needs_curl) {
+            gcc_args[gcc_argc++] = "-lcurl";
+        }
         gcc_args[gcc_argc++] = "-lpthread";
         gcc_args[gcc_argc++] = "-lm";
 #endif

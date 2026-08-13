@@ -56,10 +56,12 @@ jobs:
       if: runner.os == 'Windows'
       uses: msys2/setup-msys2@v2
       with:
-        msystem: MSYS
+        # UCRT64 (MinGW target) — MSYS (POSIX) builds leave _WIN32 undefined,
+        # making the compiler emit POSIX link flags (-lcurl) for user programs
+        msystem: UCRT64
         install: >-
-          gcc
-          make
+          mingw-w64-ucrt-x86_64-gcc
+          mingw-w64-ucrt-x86_64-make
           zip
 
     - name: Build (Unix)
@@ -159,7 +161,7 @@ jobs:
         fi
         mkdir -p /tmp/cnext_smoke && cd /tmp/cnext_smoke
         printf 'main {\n    printin("smoke")\n}\n' > smoke.cn
-        cnext build smoke.cn
+        cnext build smoke.cn -o smoke
         run_out="$(./smoke)"
         echo "$run_out"
         if [ "$run_out" != "smoke" ]; then
@@ -183,7 +185,7 @@ jobs:
         }
         Set-Location $env:TEMP
         "main {`n    printin(`"smoke`")`n}" | Out-File -Encoding ascii smoke.cn
-        & "$env:LOCALAPPDATA\Cnext\bin\cnext.exe" build smoke.cn
+        & "$env:LOCALAPPDATA\Cnext\bin\cnext.exe" build smoke.cn -o smoke.exe
         $runOut = & "$env:TEMP\smoke.exe"
         Write-Host $runOut
         if ($runOut -ne "smoke") {

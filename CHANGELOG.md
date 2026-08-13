@@ -2,6 +2,18 @@
 
 All notable changes to Cnext will be documented in this file.
 
+## [10.0.3] - 2026
+
+### Fixed
+- **Windows release binaries (v10.0.2):** the release workflow built with the
+  MSYS *POSIX* toolchain (`msystem: MSYS`), which leaves `_WIN32` undefined —
+  the shipped `cnext.exe` emitted POSIX link flags (`-lcurl`) for every user
+  program, so nothing could compile. Release builds now use the MinGW64 UCRT
+  toolchain and link `-lwinhttp -lws2_32` like the CI builds
+- **Link flags for plain programs (Linux/macOS):** `-lcurl` is now only added
+  when the compiled program actually uses networking (`http_get`/`http_post`),
+  so hello-world programs no longer require the libcurl development package
+
 ## [10.0.2] - 2026
 
 ### Added
