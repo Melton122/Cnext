@@ -162,7 +162,14 @@ jobs:
         fi
         mkdir -p /tmp/cnext_smoke && cd /tmp/cnext_smoke
         printf 'main {\n    printin("smoke")\n}\n' > smoke.cn
-        cnext build smoke.cn -o smoke
+        set +e
+        cnext build smoke.cn -o smoke 2>build_err.txt
+        rc=$?
+        set -e
+        if [ $rc -ne 0 ]; then
+          echo "::error::build rc=$rc: $(tail -5 build_err.txt)"
+          exit $rc
+        fi
         run_out="$(./smoke)"
         echo "$run_out"
         if [ "$run_out" != "smoke" ]; then
