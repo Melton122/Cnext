@@ -2,7 +2,7 @@
   "name": "cnext",
   "displayName": "Cnext Language Support",
   "description": "Full language support for Cnext: syntax highlighting, IntelliSense (LSP), diagnostics, snippets, formatting, and build tasks",
-  "version": "10.0.2",
+  "version": "10.0.3",
   "publisher": "MellyTech122",
   "license": "MIT",
   "engines": {
@@ -50,6 +50,13 @@
       {
         "language": "cnext",
         "path": "./snippets/cnext.json"
+      }
+    ],
+    "iconThemes": [
+      {
+        "id": "cnext",
+        "label": "Cnext",
+        "path": "./icon-themes/cnext-icon-theme.json"
       }
     ],
     "commands": [

@@ -30,7 +30,7 @@ _buf = bytearray()
 
 def _fill():
     """Read more into the internal buffer. Return False on EOF."""
-    chunk = sys.stdin.buffer.read(4096)
+    chunk = os.read(0, 4096)
     if not chunk:
         return False
     _buf.extend(chunk)
@@ -203,10 +203,22 @@ CNEXT_MEMORY_BUILTINS = [
     'ref_release', 'ref_count',
 ]
 
-def get_cnext_path():
+def get_cnext_path(configured=None):
     """Get the path to the cnext compiler."""
-    # Try common locations
-    for path in ['cnext', './cnext', '../cnext', 'cnext.exe']:
+    candidates = []
+    if configured:
+        candidates.append(configured)
+    candidates += ['cnext', 'cnext.exe']
+    if sys.platform == 'win32':
+        local = os.environ.get('LOCALAPPDATA')
+        if local:
+            candidates.append(os.path.join(local, 'Cnext', 'bin', 'cnext.exe'))
+    candidates += ['./cnext', '../cnext']
+    seen = set()
+    for path in candidates:
+        if path in seen:
+            continue
+        seen.add(path)
         try:
             result = subprocess.run([path, 'version'], capture_output=True, timeout=5)
             if result.returncode == 0:
@@ -248,7 +260,7 @@ class CnextLSP:
     def __init__(self):
         self.root_uri = None
         self.documents: Dict[str, str] = {}
-        self.cnext_path = get_cnext_path()
+        self.cnext_path = None
         self._publish_uris = set()
         self._publish_lock = threading.Lock()
         self._publish_timer: Optional[threading.Timer] = None
@@ -276,6 +288,8 @@ class CnextLSP:
 
     def handle_initialize(self, id, params):
         self.root_uri = params.get('rootUri')
+        opts = params.get('initializationOptions') or {}
+        self.cnext_path = get_cnext_path(opts.get('compilerPath'))
         send_response(id, {
             'capabilities': {
                 'textDocumentSync': 1,  # Full sync
@@ -489,10 +503,12 @@ class CnextLSP:
                 with open(tmp_path, 'r') as f:
                     formatted = f.read()
                 if formatted != text:
+                    lines = text.split('\n')
+                    last_line = max(0, len(lines) - 1)
                     send_response(id, [{
                         'range': {
                             'start': {'line': 0, 'character': 0},
-                            'end': {'line': len(text.split('\n')), 'character': 0}
+                            'end': {'line': last_line, 'character': len(lines[last_line])}
                         },
                         'newText': formatted
                     }])

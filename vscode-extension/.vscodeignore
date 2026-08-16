@@ -6,3 +6,5 @@ src/**
 **/node_modules/**
 **/*.map
 **/*.vsix
+**/__pycache__/**
+**/*.pyc

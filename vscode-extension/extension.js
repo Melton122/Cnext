@@ -113,6 +113,7 @@ class LspClient {
         try {
             await this.request('initialize', {
                 rootUri: this.rootUri(),
+                initializationOptions: { compilerPath: config.get('compilerPath', 'cnext') },
                 capabilities: {
                     textDocument: { synchronization: { didSave: true } }
                 }
@@ -221,7 +222,7 @@ class LspClient {
 
     request(method, params, timeoutMs) {
         return new Promise((resolve, reject) => {
-            if (!this.running) {
+            if (!this.process) {
                 reject(new Error('Language server is not running'));
                 return;
             }

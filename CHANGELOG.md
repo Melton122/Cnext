@@ -26,6 +26,15 @@ All notable changes to Cnext will be documented in this file.
   on error paths on any compiler. `defer` bodies are now registered on a
   runtime stack and executed during unwind (LIFO), before the matching
   `catch` or before process exit for unhandled errors, on both gcc and clang
+- **LSP server froze on Windows:** `server.py` read stdin through
+  `sys.stdin.buffer.read(4096)`, which on Windows pipes blocks until the
+  buffer is full or EOF — the language server never processed any message, so
+  completion/hover/diagnostics/formatting were dead and the client showed
+  "LSP failed" after the initialize timeout. The reader now uses `os.read(0)`,
+  which returns data as it arrives on all platforms. The server also honors
+  the extension's `cnext.compilerPath` setting (passed via
+  `initializationOptions`) and probes `%LOCALAPPDATA%\Cnext\bin\cnext.exe` on
+  Windows; formatting edits now use a valid end range
 
 ## [10.0.3] - 2026
 

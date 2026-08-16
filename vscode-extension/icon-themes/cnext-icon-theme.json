@@ -1,0 +1,15 @@
+{
+  "iconDefinitions": {
+    "_cnext_file": { "iconPath": "./icons/cnext-file.svg" },
+    "_cnext_brand": { "iconPath": "./icons/cnext-brand.svg" },
+    "_cnext_folder": { "iconPath": "./icons/cnext-folder.svg" },
+    "_cnext_folder_open": { "iconPath": "./icons/cnext-folder-open.svg" }
+  },
+  "file": "_cnext_file",
+  "fileExtensions": {
+    "cn": "_cnext_brand",
+    "cnext": "_cnext_brand"
+  },
+  "folder": "_cnext_folder",
+  "folderExpanded": "_cnext_folder_open"
+}
