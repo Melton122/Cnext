@@ -838,22 +838,25 @@ static inline bool cnext_str_is_empty(CnextString s) {
 /* --- String Split/Join --- */
 
 typedef struct {
-    CnextString* items;
-    int length;
+    CnextString* data;
+    size_t length;
 } CnextStringArray;
 
 static inline CnextStringArray cnext_str_split(CnextString s, CnextString delim) {
     if (!s.data || s.length == 0) { CnextStringArray r = {NULL, 0}; return r; }
     if (!delim.data || delim.length == 0) {
-        CnextStringArray r = (CnextStringArray){(CnextString*)malloc(sizeof(CnextString) * s.length), (int)s.length};
+        CnextStringArray r = (CnextStringArray){(CnextString*)malloc(sizeof(CnextString) * s.length), s.length};
+        if (!r.data) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
         for (size_t i = 0; i < s.length; i++) {
-            r.items[i] = (CnextString){s.data + i, 1};
+            r.data[i] = (CnextString){s.data + i, 1};
         }
+        _cnext_track(r.data);
         return r;
     }
-    int cap = 8;
-    int count = 0;
+    size_t cap = 8;
+    size_t count = 0;
     CnextString* items = (CnextString*)malloc(sizeof(CnextString) * cap);
+    if (!items) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
     size_t pos = 0;
     while (pos <= s.length) {
         int found = -1;
@@ -863,11 +866,11 @@ static inline CnextStringArray cnext_str_split(CnextString s, CnextString delim)
             }
         }
         if (found >= 0) {
-            if (count >= cap) { cap *= 2; _cnext_untrack(items); items = (CnextString*)realloc(items, sizeof(CnextString) * cap); _cnext_track(items); }
+            if (count >= cap) { cap *= 2; _cnext_untrack(items); items = (CnextString*)realloc(items, sizeof(CnextString) * cap); if (!items) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); } _cnext_track(items); }
             items[count++] = (CnextString){s.data + pos, (size_t)found};
-            pos += found + delim.length;
+            pos += (size_t)found + delim.length;
         } else {
-            if (count >= cap) { cap *= 2; _cnext_untrack(items); items = (CnextString*)realloc(items, sizeof(CnextString) * cap); _cnext_track(items); }
+            if (count >= cap) { cap *= 2; _cnext_untrack(items); items = (CnextString*)realloc(items, sizeof(CnextString) * cap); if (!items) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); } _cnext_track(items); }
             items[count++] = (CnextString){s.data + pos, s.length - pos};
             break;
         }
@@ -879,16 +882,16 @@ static inline CnextStringArray cnext_str_split(CnextString s, CnextString delim)
 
 static inline CnextString cnext_str_join(CnextStringArray parts, CnextString delim) {
     if (parts.length == 0) return (CnextString){NULL, 0};
-    if (parts.length == 1) return parts.items[0];
+    if (parts.length == 1) return parts.data[0];
     size_t total = 0;
-    for (int i = 0; i < parts.length; i++) { total += parts.items[i].length; }
-    if (delim.length > 0) total += (size_t)(parts.length - 1) * delim.length;
+    for (size_t i = 0; i < parts.length; i++) { total += parts.data[i].length; }
+    if (delim.length > 0) total += (parts.length - 1) * delim.length;
     char* buf = (char*)malloc(total + 1);
     if (!buf) return (CnextString){NULL, 0};
     size_t w = 0;
-    for (int i = 0; i < parts.length; i++) {
+    for (size_t i = 0; i < parts.length; i++) {
         if (i > 0 && delim.data) { memcpy(buf + w, delim.data, delim.length); w += delim.length; }
-        if (parts.items[i].data) { memcpy(buf + w, parts.items[i].data, parts.items[i].length); w += parts.items[i].length; }
+        if (parts.data[i].data) { memcpy(buf + w, parts.data[i].data, parts.data[i].length); w += parts.data[i].length; }
     }
     buf[w] = '\0';
     _cnext_track(buf);

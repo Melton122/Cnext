@@ -1,0 +1,31 @@
+// str_split returns a first-class string array: it must be indexable,
+// iterable with `for..in`, readable via .length, and consumable by str_join.
+// This used to fail to compile because the runtime returned a struct whose
+// element field was named `items` while every other array uses `data`.
+// EXPECT: arr[1]: b
+// EXPECT: parts.length: 3
+// EXPECT: parts[1]: b
+// EXPECT: joined: a-b-c
+// EXPECT: empty_split len: 5
+// EXPECT: empty delim [0]: a
+// EXPECT: iter: [a][b][c]
+main {
+    str[] arr = {"a", "b", "c"}
+    printin("arr[1]: " + arr[1])
+
+    var parts = str_split("a,b,c", ",")
+    printin("parts.length: " + to_str(parts.length))
+    printin("parts[1]: " + parts[1])
+
+    printin("joined: " + str_join(parts, "-"))
+
+    var chars = str_split("a,b,c", "")
+    printin("empty_split len: " + to_str(chars.length))
+    printin("empty delim [0]: " + chars[0])
+
+    var total = ""
+    for p in parts {
+        total = total + "[" + p + "]"
+    }
+    printin("iter: " + total)
+}

@@ -11,6 +11,15 @@ All notable changes to Cnext will be documented in this file.
   `temp_out.c`
 
 ### Fixed
+- **`str_split` results were unusable:** `str_split` returned a runtime
+  struct whose element field was named `items`, while every other array in
+  the language uses `data` — so `parts[i]` and `for x in parts` did not compile
+  against a split result (only `.length` worked). The internal array type is
+  now unified with the language's `{data, length}` shape, so split results are
+  indexable and iterable, and `str_join` consumes them. Also fixed a leak: the
+  empty-delimiter path of `str_split` (character splitting) never tracked its
+  allocation, so it was silently leaked (it is now tracked like every other
+  runtime allocation)
 - **`defer` never ran on `throw`:** the deferred body was only wired to
   GNU `cleanup` attributes, which do not fire on `longjmp` (nor on
   `exit()` for unhandled errors) — so arenas/resources were never cleaned
