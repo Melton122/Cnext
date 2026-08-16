@@ -438,7 +438,7 @@ int main(int argc, char** argv) {
         }
 
         // Build GCC arguments array (avoids shell injection via system())
-        char* gcc_args[32];
+        const char* gcc_args[32];
         int gcc_argc = 0;
         gcc_args[gcc_argc++] = "gcc";
         gcc_args[gcc_argc++] = "-std=gnu11";
@@ -491,7 +491,7 @@ int main(int argc, char** argv) {
         if (strcmp(command, "run") == 0) {
             char executable_buffer[CNEXT_PATH_MAX];
             const char* executable = executable_command(opts.output_exe, executable_buffer, sizeof(executable_buffer));
-            char* run_args[] = {(char*)executable, NULL};
+            const char* run_args[] = {executable, NULL};
             return run_process(executable, run_args);
         }
 
@@ -581,7 +581,7 @@ int main(int argc, char** argv) {
             const char* build_argv[] = {
                 argv[0], "build", input_path, "-o", output_path, NULL
             };
-            int build_status = run_process(argv[0], (char* const*)build_argv);
+            int build_status = run_process(argv[0], build_argv);
 
             if (build_status != 0) {
                 printf("  SKIP: %s (compile error)\n", test_file);
@@ -595,7 +595,7 @@ int main(int argc, char** argv) {
             if (expect_count > 0) {
                 char captured[65536];
                 const char* run_argv[] = { output_path, NULL };
-                run_process_captured(output_path, (char* const*)run_argv, captured, sizeof(captured));
+                run_process_captured(output_path, run_argv, captured, sizeof(captured));
 
                 bool all_found = true;
                 for (int e = 0; e < expect_count; e++) {
@@ -613,7 +613,7 @@ int main(int argc, char** argv) {
                 }
             } else {
                 const char* run_argv[] = { output_path, NULL };
-                int run_ok = run_process(output_path, (char* const*)run_argv) == 0;
+                int run_ok = run_process(output_path, run_argv) == 0;
                 if (run_ok) {
                     printf("  PASS: %s\n", test_file);
                     passed++;

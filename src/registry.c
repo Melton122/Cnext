@@ -5,8 +5,8 @@
 #include <ctype.h>
 #include <errno.h>
 
-extern int run_process(const char* program, char* const args[]);
-extern int run_process_captured(const char* program, char* const args[], char* output_buf, size_t output_buf_size);
+extern int run_process(const char* program, const char* const args[]);
+extern int run_process_captured(const char* program, const char* const args[], char* output_buf, size_t output_buf_size);
 
 #ifdef _WIN32
 #define CNEXT_PATH_SEP '\\'
@@ -80,7 +80,7 @@ static bool http_get(const char* url, char** out_body, long* out_status, long* o
 
     // Use argument array instead of shell command (no shell injection)
     char stdout_buf[64] = "";
-    char* curl_args[] = {"curl", "-s", "-w", "%{http_code}", "-o", tmpfile_path, (char*)url, NULL};
+    const char* const curl_args[] = {"curl", "-s", "-w", "%{http_code}", "-o", tmpfile_path, url, NULL};
     run_process_captured("curl", curl_args, stdout_buf, sizeof(stdout_buf));
 
     *out_status = atol(stdout_buf);
@@ -128,7 +128,7 @@ static bool http_post(const char* url, const char* body, const char* token, long
     }
 
     // Build curl args array (no shell interpretation)
-    char* curl_args[16];
+    const char* curl_args[16];
     int argc = 0;
     curl_args[argc++] = "curl";
     curl_args[argc++] = "-s";
@@ -151,7 +151,7 @@ static bool http_post(const char* url, const char* body, const char* token, long
         snprintf(data_arg, sizeof(data_arg), "-d@%s", body_tmpfile);
         curl_args[argc++] = data_arg;
     }
-    curl_args[argc++] = (char*)url;
+    curl_args[argc++] = url;
     curl_args[argc] = NULL;
 
     char stdout_buf[64] = "";
@@ -359,7 +359,7 @@ bool registry_download(const char* url, const char* dest_path) {
     return true;
 }
 
-static int run_process_registry(const char* program, char* const args[]) {
+static int run_process_registry(const char* program, const char* const args[]) {
 #ifdef _WIN32
     intptr_t result = _spawnvp(_P_WAIT, program, (const char* const*)args);
     if (result == -1) {
@@ -374,7 +374,7 @@ static int run_process_registry(const char* program, char* const args[]) {
         return 127;
     }
     if (pid == 0) {
-        execvp(program, args);
+        execvp(program, (char* const*)args);
         fprintf(stderr, "Could not start %s: %s\n", program, strerror(errno));
         _exit(127);
     }
@@ -430,7 +430,7 @@ bool registry_publish(const char* package_dir, const char* token) {
     char pkg_dir_buf[1024];
     strncpy(pkg_dir_buf, package_dir, sizeof(pkg_dir_buf) - 1);
     pkg_dir_buf[sizeof(pkg_dir_buf) - 1] = '\0';
-    char* tar_args[] = {"tar", "-czf", tarball, "-C", pkg_dir_buf, ".", NULL};
+    const char* const tar_args[] = {"tar", "-czf", tarball, "-C", pkg_dir_buf, ".", NULL};
     int status = run_process_registry("tar", tar_args);
     if (status != 0) {
         fprintf(stderr, "Failed to create package tarball.\n");

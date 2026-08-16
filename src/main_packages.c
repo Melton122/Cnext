@@ -85,14 +85,14 @@ bool download_package(const char* name, const char* url) {
 
     // Try curl with safe argument array (no shell injection)
     {
-        char* curl_args[] = {"curl", "-fsSL", url, "-o", out_path, NULL};
+        const char* const curl_args[] = {"curl", "-fsSL", url, "-o", out_path, NULL};
         int res = run_process("curl", curl_args);
         if (res == 0) return true;
     }
 
     // Try wget
     {
-        char* wget_args[] = {"wget", "-q", url, "-O", out_path, NULL};
+        const char* const wget_args[] = {"wget", "-q", url, "-O", out_path, NULL};
         int res = run_process("wget", wget_args);
         if (res == 0) return true;
     }
@@ -100,11 +100,11 @@ bool download_package(const char* name, const char* url) {
 #ifdef _WIN32
     // Try PowerShell Invoke-WebRequest
     {
-        char ps_uri[2048];
-        char ps_out[2048];
+        char ps_uri[CNEXT_PATH_MAX + 64];
+        char ps_out[CNEXT_PATH_MAX + 64];
         snprintf(ps_uri, sizeof(ps_uri), "Invoke-WebRequest -Uri '%s'", url);
         snprintf(ps_out, sizeof(ps_out), "-OutFile '%s'", out_path);
-        char* ps_args[] = {"powershell", "-Command", ps_uri, ps_out, NULL};
+        const char* const ps_args[] = {"powershell", "-Command", ps_uri, ps_out, NULL};
         int res = run_process("powershell", ps_args);
         if (res == 0) return true;
     }

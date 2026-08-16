@@ -211,7 +211,7 @@ bool build_include_path(const char* argv0, char* include_path, size_t include_pa
     return true;
 }
 
-int run_process(const char* program, char* const args[]) {
+int run_process(const char* program, const char* const args[]) {
 #ifdef _WIN32
     intptr_t result = _spawnvp(_P_WAIT, program, (const char* const*)args);
     if (result == -1) {
@@ -226,7 +226,7 @@ int run_process(const char* program, char* const args[]) {
         return 127;
     }
     if (pid == 0) {
-        execvp(program, args);
+        execvp(program, (char* const*)args);
         fprintf(stderr, "Could not start %s: %s\n", program, strerror(errno));
         _exit(127);
     }
@@ -297,7 +297,7 @@ int parse_expect_lines(const char* source_path, ExpectedLine* out, int max) {
     return count;
 }
 
-int run_process_captured(const char* program, char* const args[], char* output_buf, size_t output_buf_size) {
+int run_process_captured(const char* program, const char* const args[], char* output_buf, size_t output_buf_size) {
     output_buf[0] = '\0';
 
 #ifdef _WIN32
@@ -376,7 +376,7 @@ int run_process_captured(const char* program, char* const args[], char* output_b
         dup2(pipefd[1], STDOUT_FILENO);
         dup2(pipefd[1], STDERR_FILENO);
         close(pipefd[1]);
-        execvp(program, args);
+        execvp(program, (char* const*)args);
         _exit(127);
     }
 

@@ -17,32 +17,18 @@ endif
 ifdef WINDOWS_BUILD
     EXEC = cnext.exe
     PLATFORM_LIBS = -lwinhttp -lws2_32
-    INSTALL_DIR = $(LOCALAPPDATA)/Cnext/bin
-    RM = del /f /q
-    RMDIR = rmdir /s /q
-    MKDIR = mkdir
-    SEP = \\
 else ifeq ($(UNAME_S),Darwin)
     EXEC = cnext
     PLATFORM_LIBS = -lcurl -lpthread
-    INSTALL_DIR = /usr/local/bin
-    RM = rm -f
-    RMDIR = rm -rf
-    MKDIR = mkdir -p
-    SEP = /
 else
     EXEC = cnext
     PLATFORM_LIBS = -lcurl -lpthread
-    INSTALL_DIR = /usr/local/bin
-    RM = rm -f
-    RMDIR = rm -rf
-    MKDIR = mkdir -p
-    SEP = /
 endif
+
 # Version (single source of truth: include/main_internal.h)
 VERSION := $(shell sed -n 's/.*CNEXT_VERSION "\([^"]*\)".*/\1/p' include/main_internal.h 2>/dev/null)
 ifeq ($(strip $(VERSION)),)
-    VERSION := 10.0.1
+    VERSION := 10.0.3
 endif
 
 # Install layout: exe -> INSTALL_BIN, runtime headers -> INSTALL_INC.
@@ -189,7 +175,7 @@ endif
 	@echo "GitHub Actions will build for all platforms automatically."
 
 help:
-	@echo "Cnext Compiler Build System v9.0"
+	@echo "Cnext Compiler Build System v10.0"
 	@echo ""
 	@echo "Targets:"
 	@echo "  all        Build the compiler (default)"
