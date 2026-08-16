@@ -2,7 +2,7 @@
 
 All notable changes to Cnext will be documented in this file.
 
-## [Unreleased]
+## [10.0.4] - 2026
 
 ### Added
 - **`#line` debug mapping:** `cnext build --debug` now embeds `#line`
