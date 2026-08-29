@@ -1,7 +1,7 @@
 // EXPECT: 1
 // EXPECT: 1
-// EXPECT: 1
 // EXPECT: hello_env_val
+// EXPECT: true
 main {
     // platform returns a non-empty string
     str p = platform()

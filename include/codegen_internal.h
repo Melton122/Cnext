@@ -135,6 +135,7 @@ typedef struct GenLocal {
     CnextTokenType type;
     bool is_pointer;
     bool is_class;
+    bool by_reference;
     struct GenLocal* next;
 } GenLocal;
 
@@ -148,6 +149,7 @@ typedef struct CapturedVar {
     CnextTokenType type;
     bool is_pointer;
     bool is_class;
+    bool by_reference;
     struct CapturedVar* next;
 } CapturedVar;
 

@@ -40,7 +40,9 @@ static ASTNode* make_int_literal(long value, Token token) {
     t.start = text;
     t.length = len;
     t.type = TOKEN_NUMBER;
-    return create_node(AST_LITERAL, t);
+    ASTNode* node = create_node(AST_LITERAL, t);
+    node->owned_token_text = text;
+    return node;
 }
 
 static ASTNode* make_float_literal(double value, Token token) {
@@ -53,7 +55,15 @@ static ASTNode* make_float_literal(double value, Token token) {
     t.start = text;
     t.length = len;
     t.type = TOKEN_FLOAT_LITERAL;
-    return create_node(AST_LITERAL, t);
+    ASTNode* node = create_node(AST_LITERAL, t);
+    node->owned_token_text = text;
+    return node;
+}
+
+static void replace_node_token(ASTNode* node, Token token, char* owned_text) {
+    free(node->owned_token_text);
+    node->owned_token_text = owned_text;
+    node->token = token;
 }
 
 // Check if a node is a compile-time constant integer literal
@@ -290,7 +300,7 @@ static void propagate_constants(ASTNode* node, ASTNode* scope) {
         ASTNode* const_val = const_table_find(name);
         if (const_val) {
             node->type = const_val->type;
-            node->token = const_val->token;
+            replace_node_token(node, const_val->token, NULL);
             opt_count++;
         }
     }
@@ -407,8 +417,11 @@ static void propagate_copies(ASTNode* node, ASTNode* scope) {
         name[nlen] = '\0';
         const char* src = copy_table_find(name);
         if (src) {
-            node->token.start = checked_strdup(src);
-            node->token.length = (int)strlen(src);
+            char* copy = checked_strdup(src);
+            Token replacement = node->token;
+            replacement.start = copy;
+            replacement.length = (int)strlen(copy);
+            replace_node_token(node, replacement, copy);
             opt_count++;
         }
     }
@@ -786,7 +799,8 @@ static void optimize_node(ASTNode* node) {
         ASTNode* folded = fold_binary(node);
         if (folded) {
             node->type = folded->type;
-            node->token = folded->token;
+            replace_node_token(node, folded->token, folded->owned_token_text);
+            folded->owned_token_text = NULL;
             free_ast(node->left);
             free_ast(node->right);
             node->left = NULL;
@@ -800,7 +814,8 @@ static void optimize_node(ASTNode* node) {
         ASTNode* reduced = peephole_optimize(node);
         if (reduced) {
             node->type = reduced->type;
-            node->token = reduced->token;
+            replace_node_token(node, reduced->token, reduced->owned_token_text);
+            reduced->owned_token_text = NULL;
             node->left = reduced->left;
             node->right = reduced->right;
             reduced->left = NULL;
@@ -816,7 +831,8 @@ static void optimize_node(ASTNode* node) {
         ASTNode* simplified = eliminate_identities(node);
         if (simplified) {
             node->type = simplified->type;
-            node->token = simplified->token;
+            replace_node_token(node, simplified->token, simplified->owned_token_text);
+            simplified->owned_token_text = NULL;
             
             node->left = simplified->left;
             node->right = simplified->right;
@@ -849,7 +865,8 @@ static void optimize_node(ASTNode* node) {
         ASTNode* folded = fold_unary(node);
         if (folded) {
             node->type = folded->type;
-            node->token = folded->token;
+            replace_node_token(node, folded->token, folded->owned_token_text);
+            folded->owned_token_text = NULL;
             free_ast(node->right);
             node->right = NULL;
             free(folded);
@@ -861,7 +878,8 @@ static void optimize_node(ASTNode* node) {
         ASTNode* folded = fold_if(node);
         if (folded) {
             node->type = folded->type;
-            node->token = folded->token;
+            replace_node_token(node, folded->token, folded->owned_token_text);
+            folded->owned_token_text = NULL;
             node->left = folded->left;
             node->right = folded->right;
             node->condition = folded->condition;
@@ -893,7 +911,8 @@ static void optimize_node(ASTNode* node) {
             free_ast(node->left);
             free_ast(node->condition);
             node->type = folded->type;
-            node->token = folded->token;
+            replace_node_token(node, folded->token, folded->owned_token_text);
+            folded->owned_token_text = NULL;
             node->left = folded->left;
             node->right = folded->right;
             node->condition = NULL;

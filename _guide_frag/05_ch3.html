@@ -1,0 +1,93 @@
+<div class="page-break"></div>
+<!-- ==================== CHAPTER 3 ==================== -->
+<section id="ch3">
+<h1>3. Your First Program</h1>
+<p><span class="tag beg">BEGINNER</span></p>
+
+<h2>3.1 Hello, World!</h2>
+<p>Create a file named <code>hello.cn</code>:</p>
+<pre><code>// The classic first program
+main {
+    printin("Hello, World!")
+}</code></pre>
+<p>Run it from a terminal in the same folder:</p>
+<pre><code>cnext run hello.cn</code></pre>
+<p>You should see <code>Hello, World!</code> printed to the screen.</p>
+
+<div class="callout key"><span class="cl">Key point</span>
+  <code>main { ... }</code> is where every standalone program begins. Everything
+  between the braces runs, top to bottom, when the program starts.
+</div>
+
+<h2>3.2 Understand Every Line</h2>
+<table>
+  <tr><th>Piece</th><th>Meaning</th></tr>
+  <tr><td><code>// ...</code></td><td>A comment. The compiler ignores it; it is a note for humans.</td></tr>
+  <tr><td><code>main</code></td><td>The entry-point function, run automatically.</td></tr>
+  <tr><td><code>{ ... }</code></td><td>A block &mdash; groups statements together.</td></tr>
+  <tr><td><code>printin(...)</code></td><td>A built-in function that prints text and then a new line.</td></tr>
+  <tr><td><code>"Hello, World!"</code></td><td>A string literal &mdash; a sequence of characters.</td></tr>
+</table>
+
+<div class="callout theory"><span class="cl">Theory &mdash; What "running" a program means</span>
+  When you type <code>cnext run hello.cn</code>, the compiler does the five
+  jobs from Chapter 1 (lex, parse, analyze, generate C, compile to native) and
+  then executes the result. The operating system loads your program into
+  memory, hands it to the CPU, and the instructions in <code>main</code> run
+  in order &mdash; exactly once.
+</div>
+
+<h2>3.3 Create a Real Project Folder</h2>
+<p>Instead of a loose file, scaffold a project:</p>
+<pre><code>cnext new my_first_app
+cd my_first_app
+cnext run src/main.cn</code></pre>
+<p>
+  This creates a tidy layout &mdash; source in <code>src/</code>, a
+  <code>cnext.toml</code> configuration, and space for packages and tests.
+  Professional codebases organize files like this from day one.
+</p>
+
+<h2>3.4 run vs. build</h2>
+<p>
+  <code>cnext run file.cn</code> compiles <em>and immediately runs</em> your
+  program &mdash; perfect for iterating. <code>cnext build file.cn</code>
+  compiles and leaves a standalone executable you can ship or run later, which
+  is what release software does.
+</p>
+<pre><code>cnext run hello.cn       # compile + run now
+cnext build hello.cn     # compile only, produce an executable
+./hello                  # run the produced executable</code></pre>
+
+<h2>3.5 The REPL: Try Before You Write Files</h2>
+<p>
+  A <strong>REPL</strong> is an interactive prompt that reads your input,
+  evaluates it, and prints the result &mdash; useful for experimenting:
+</p>
+<pre><code>cnext repl
+&gt; printin("testing")
+testing
+&gt; 1 + 1
+2
+&gt; exit</code></pre>
+
+<div class="callout realworld"><span class="cl">Real world</span>
+  Every serious language ships both a "build once, run anywhere" path for
+  production and a fast feedback loop for development. Cnext&rsquo;s REPL is
+  that feedback loop; the compiler producing an <code>.exe</code> is the
+  production path.
+</div>
+
+<div class="callout exercise"><span class="cl">Exercise 3.1</span>
+  Edit <code>hello.cn</code> to also print <code>Welcome to Cnext!</code> on a
+  second line. Then build it with <code>cnext build</code> and verify the
+  executable prints both lines.
+</div>
+
+<details class="solution"><summary>Suggested solution</summary>
+<pre><code>main {
+    printin("Hello, World!")
+    printin("Welcome to Cnext!")
+}</code></pre>
+</details>
+</section>

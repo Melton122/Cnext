@@ -296,7 +296,7 @@ static void print_help(void) {
     printf("  config <key> [value]           Get/set configuration.\n");
     printf("  doc [output_dir]               Generate documentation from source.\n\n");
     printf("Package Manager:\n");
-    printf("  test                           Run the test suite.\n");
+    printf("  test [filter|file.cn] [--list] Run project tests.\n");
     printf("  install                        Install all dependencies from cnext.toml.\n");
     printf("  install <package>              Install a single package.\n");
     printf("  remove <package>               Remove a package.\n");
@@ -367,6 +367,138 @@ static int parse_build_args(int argc, char** argv, BuildOptions* opts) {
     }
 
     return 0;
+}
+
+typedef struct {
+    char name[256];
+} TestEntry;
+
+static int compare_test_entries(const void* left, const void* right) {
+    return strcmp(((const TestEntry*)left)->name, ((const TestEntry*)right)->name);
+}
+
+static bool has_cn_extension(const char* path) {
+    size_t len = strlen(path);
+    return len > 3 && strcmp(path + len - 3, ".cn") == 0;
+}
+
+static bool output_has_expectations_in_order(const char* output, ExpectedLine* expects, int expect_count) {
+    const char* cursor = output;
+    for (int i = 0; i < expect_count; i++) {
+        cursor = strstr(cursor, expects[i].text);
+        if (!cursor) return false;
+        cursor += strlen(expects[i].text);
+    }
+    return true;
+}
+
+static int run_tests(int argc, char** argv) {
+    const char* filter = NULL;
+    bool list_only = false;
+    TestEntry entries[512];
+    int entry_count = 0;
+
+    for (int i = 2; i < argc; i++) {
+        if (strcmp(argv[i], "--list") == 0) list_only = true;
+        else if (!filter) filter = argv[i];
+        else {
+            fprintf(stderr, "Usage: cnext test [filter|file.cn] [--list]\n");
+            return 64;
+        }
+    }
+
+    if (filter && has_cn_extension(filter)) {
+        const char* filename = strrchr(filter, CNEXT_PATH_SEP);
+#ifdef _WIN32
+        const char* alternate = strrchr(filter, '/');
+        if (!filename || (alternate && alternate > filename)) filename = alternate;
+#endif
+        filename = filename ? filename + 1 : filter;
+        strncpy(entries[0].name, filename, sizeof(entries[0].name) - 1);
+        entries[0].name[sizeof(entries[0].name) - 1] = '\0';
+        entry_count = 1;
+    } else {
+        DIR* dir = opendir("tests");
+        if (!dir) {
+            fprintf(stderr, "Could not open test directory 'tests'.\n");
+            return 74;
+        }
+        struct dirent* ent;
+        while (entry_count < 512 && (ent = readdir(dir)) != NULL) {
+            if (has_cn_extension(ent->d_name) && (!filter || strstr(ent->d_name, filter))) {
+                strncpy(entries[entry_count].name, ent->d_name, sizeof(entries[entry_count].name) - 1);
+                entries[entry_count].name[sizeof(entries[entry_count].name) - 1] = '\0';
+                entry_count++;
+            }
+        }
+        closedir(dir);
+    }
+
+    qsort(entries, entry_count, sizeof(entries[0]), compare_test_entries);
+    if (entry_count == 0) {
+        printf("No test files found.\n");
+        return 1;
+    }
+    if (list_only) {
+        for (int i = 0; i < entry_count; i++) printf("%s\n", entries[i].name);
+        return 0;
+    }
+
+    printf("Running %d Cnext test file%s...\n\n", entry_count, entry_count == 1 ? "" : "s");
+    int passed = 0;
+    int failed = 0;
+    for (int i = 0; i < entry_count; i++) {
+        char input_path[CNEXT_PATH_MAX];
+        char output_path[CNEXT_PATH_MAX];
+        char output_name[64];
+        const char* test_file = entries[i].name;
+        if (filter && has_cn_extension(filter)) {
+            strncpy(input_path, filter, sizeof(input_path) - 1);
+            input_path[sizeof(input_path) - 1] = '\0';
+        } else {
+            if (join_path(input_path, sizeof(input_path), "tests", test_file) != 0) {
+                failed++;
+                continue;
+            }
+        }
+        snprintf(output_name, sizeof(output_name), "_cnext_test_%d" CNEXT_DEFAULT_EXE_EXT, i);
+        if (join_path(output_path, sizeof(output_path), "tests", output_name) != 0) {
+            failed++;
+            continue;
+        }
+        remove(output_path);
+
+        const char* build_argv[] = { argv[0], "build", input_path, "-o", output_path, NULL };
+        if (run_process(argv[0], build_argv) != 0) {
+            printf("  FAIL: %s (compile error)\n", test_file);
+            failed++;
+            continue;
+        }
+
+        ExpectedLine expects[MAX_EXPECT_LINES];
+        int expect_count = parse_expect_lines(input_path, expects, MAX_EXPECT_LINES);
+        char captured[65536];
+        const char* run_argv[] = { output_path, NULL };
+        int run_status = run_process_captured(output_path, run_argv, captured, sizeof(captured));
+        remove(output_path);
+
+        bool ok = expect_count > 0
+            ? output_has_expectations_in_order(captured, expects, expect_count)
+            : run_status == 0;
+        if (ok) {
+            printf("  PASS: %s\n", test_file);
+            passed++;
+        } else {
+            printf("  FAIL: %s\n", test_file);
+            if (expect_count > 0) printf("    output did not contain all expected lines in order\n");
+            else printf("    program exited with status %d\n", run_status);
+            if (captured[0]) printf("    output: %s", captured);
+            failed++;
+        }
+        fflush(stdout);
+    }
+    printf("\nResults: %d passed, %d failed\n", passed, failed);
+    return failed > 0 ? 1 : 0;
 }
 
 int main(int argc, char** argv) {
@@ -543,90 +675,7 @@ int main(int argc, char** argv) {
     }
 
     if (strcmp(command, "test") == 0) {
-        printf("Running Cnext test suite...\n\n");
-        int passed = 0;
-        int failed = 0;
-
-        typedef struct { char name[256]; } TestEntry;
-        TestEntry entries[512];
-        int entry_count = 0;
-
-        DIR* dir = opendir("tests");
-        if (dir) {
-            struct dirent* ent;
-            while (entry_count < 512 && (ent = readdir(dir)) != NULL) {
-                size_t len = strlen(ent->d_name);
-                if (len > 3 && strcmp(ent->d_name + len - 3, ".cn") == 0) {
-                    strncpy(entries[entry_count].name, ent->d_name, 255);
-                    entries[entry_count].name[255] = '\0';
-                    entry_count++;
-                }
-            }
-            closedir(dir);
-        }
-
-        if (entry_count == 0) {
-            printf("No test files found.\n");
-            return 1;
-        }
-
-        for (int i = 0; i < entry_count; i++) {
-            const char* test_file = entries[i].name;
-            char input_path[512];
-            char output_path[512];
-
-            snprintf(input_path, sizeof(input_path), "tests/%s", test_file);
-            snprintf(output_path, sizeof(output_path), "tests/_test_out%s", CNEXT_DEFAULT_EXE_EXT);
-
-            const char* build_argv[] = {
-                argv[0], "build", input_path, "-o", output_path, NULL
-            };
-            int build_status = run_process(argv[0], build_argv);
-
-            if (build_status != 0) {
-                printf("  SKIP: %s (compile error)\n", test_file);
-                fflush(stdout);
-                continue;
-            }
-
-            ExpectedLine expects[MAX_EXPECT_LINES];
-            int expect_count = parse_expect_lines(input_path, expects, MAX_EXPECT_LINES);
-
-            if (expect_count > 0) {
-                char captured[65536];
-                const char* run_argv[] = { output_path, NULL };
-                run_process_captured(output_path, run_argv, captured, sizeof(captured));
-
-                bool all_found = true;
-                for (int e = 0; e < expect_count; e++) {
-                    if (!strstr(captured, expects[e].text)) {
-                        all_found = false;
-                        printf("  FAIL: %s\n", test_file);
-                        printf("    expected: %s\n", expects[e].text);
-                        failed++;
-                        break;
-                    }
-                }
-                if (all_found) {
-                    printf("  PASS: %s\n", test_file);
-                    passed++;
-                }
-            } else {
-                const char* run_argv[] = { output_path, NULL };
-                int run_ok = run_process(output_path, run_argv) == 0;
-                if (run_ok) {
-                    printf("  PASS: %s\n", test_file);
-                    passed++;
-                } else {
-                    printf("  FAIL: %s\n", test_file);
-                    failed++;
-                }
-            }
-            fflush(stdout);
-        }
-
-        printf("\nResults: %d passed, %d failed\n", passed, failed);
-        return failed > 0 ? 1 : 0;
+        return run_tests(argc, argv);
     }
 
     if (strcmp(command, "search") == 0) {

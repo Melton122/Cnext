@@ -1,0 +1,117 @@
+<div class="page-break"></div>
+<!-- ==================== CHAPTER 4 ==================== -->
+<section id="ch4">
+<h1>4. The Basics: Comments, Variables, Input &amp; Output</h1>
+<p><span class="tag beg">BEGINNER</span></p>
+<p>
+  Every program is built from a small set of ideas: named containers
+  (variables), ways to put data in and get data out (input/output), and rules
+  for structuring files (comments, blocks). This chapter covers them all.
+</p>
+
+<h2>4.1 Comments</h2>
+<p>Comments are notes for humans. The compiler discards them.</p>
+<pre><code>// This is a single-line comment.
+
+/* This is a
+   multi-line comment. */
+main {
+    // printin("this is commented out and will not run")
+    printin("this runs")
+}</code></pre>
+
+<div class="callout tip"><span class="cl">Tip</span>
+  Comments explain <em>why</em>, not <em>what</em>. Good code is often
+  self-explanatory; comments shine when they capture intent ("we clamp here so
+  the value never exceeds 100") or non-obvious trade-offs.
+</div>
+
+<h2>4.2 Variables</h2>
+<p>
+  A <strong>variable</strong> is a named box that holds a value. You can
+  declare it with an explicit type or let the compiler infer the type with
+  <code>var</code>.
+</p>
+<pre><code>int score = 90            // explicit type: 32-bit whole number
+var name = "Ada"          // inferred type: str
+var pi = 3.14             // inferred: float
+var passed = true         // inferred: bool
+score = 95                // values can change later</code></pre>
+
+<div class="callout key"><span class="cl">Key point</span>
+  <code>var x = value</code> lets Cnext figure out the type for you
+  (<strong>type inference</strong>). It is still <em>statically typed</em>:
+  the type is fixed at compile time, so you can&rsquo;t later store a string in
+  a variable that was created as an integer.
+</div>
+
+<h2>4.3 Constants</h2>
+<p>When a value should never change, declare it with <code>const</code>:</p>
+<pre><code>const int MAX_RETRIES = 3
+const str APP_NAME = "Notes"
+// MAX_RETRIES = 5   // compile error: cannot reassign a constant</code></pre>
+
+<h2>4.4 Blocks &amp; Scope</h2>
+<p>
+  Every <code>{ ... }</code> opens a new <strong>scope</strong>. A variable
+  declared inside a block exists only until the block ends.
+</p>
+<pre><code>main {
+    var outside = 10
+    if true {
+        var inside = 20   // exists only in this block
+        printin(outside)  // ok: outside is visible here
+    }
+    // printin(inside)    // error: `inside` is gone
+}</code></pre>
+
+<h2>4.5 Printing Output</h2>
+<p>Use <code>print</code> (no new line) and <code>printin</code> (prints a new line after).</p>
+<pre><code>printin("line 1")
+printin("line 2")
+print("no newline here -> ")
+printin("continues on same line")</code></pre>
+<p>Output:</p>
+<pre><code>line 1
+line 2
+no newline here -> continues on same line</code></pre>
+
+<h2>4.6 Reading Input</h2>
+<p>Ask the user for text with <code>input</code>:</p>
+<pre><code>main {
+    print("Enter your name: ")
+    var name = input()
+    printin("Hello, " + name + "!")
+}</code></pre>
+
+<div class="callout realworld"><span class="cl">Real world</span>
+  Separating <em>input</em>, <em>processing</em>, and <em>output</em> is the
+  oldest software pattern. Programs like a grade calculator read data, compute,
+  and write results &mdash; exactly what this tiny greeting program does with
+  text.
+</div>
+
+<div class="callout exercise"><span class="cl">Exercise 4.1</span>
+  Write a program that asks for a user's name and favorite number, then prints
+  a sentence such as <code>Hello, Ada! 7 is a great choice.</code> Use
+  variables and string concatenation.
+</div>
+<details class="solution"><summary>Suggested solution</summary>
+<pre><code>main {
+    print("Name: ")
+    var name = input()
+    print("Favorite number: ")
+    var num = input()
+    printin("Hello, " + name + "! " + num + " is a great choice.")
+}</code></pre>
+</details>
+</section>
+
+<div class="page-break"></div>
+
+<!-- ==================== PART II ==================== -->
+<section class="part">
+  <div class="partno">PART II</div>
+  <h1>Language Fundamentals</h1>
+  <p>Types, operators, control flow, functions, and collections &mdash; the toolkit of every program.</p>
+</section>

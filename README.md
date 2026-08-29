@@ -483,15 +483,20 @@ Found a bug? Please report it:
 ### Running Tests
 
 ```bash
-# Run compiler built-in tests
-make test
+# Run every Cnext test file in tests/
+cnext test
 
-# Run full test suite
+# List discovered test files
+cnext test --list
+
+# Run matching test files
+cnext test async
+
+# Run exactly one test file
+cnext test tests/test_async.cn
+
+# Run the full compiler and Python test suite
 make check
-
-# Run specific test
-cnext build tests/test_v9.cn
-./out.exe
 ```
 
 ### Writing Tests
@@ -507,6 +512,10 @@ main {
     printin("Hello, World!")
 }
 ```
+
+`// EXPECT:` lines are checked in the order they appear. A test without
+expectations passes when its program exits successfully. Compilation failures
+are reported as test failures, so CI cannot silently skip a broken test.
 
 ### Test Categories
 

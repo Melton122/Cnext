@@ -135,6 +135,14 @@ sys_exec("ls -la")              // Execute command
 str output = sys_shell("ls")    // Execute and capture output
 ```
 
+### Shell execution safety
+
+`sys_exec`, `sys_shell`, `os_exec`, `os_exec_output`, `os_exec_status`,
+`process_run`, and `process_run_status` execute their input through the host
+shell. They are intentionally powerful and must never receive untrusted or
+partially trusted input. Prefer dedicated file, HTTP, and process APIs when
+possible; Cnext does not escape or validate shell syntax for you.
+
 ## JSON Functions
 
 ```cnext

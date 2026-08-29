@@ -1,0 +1,62 @@
+<div class="page-break"></div>
+<!-- ==================== CHAPTER 2 ==================== -->
+<section id="ch2">
+<h1>2. Installing Cnext</h1>
+<p><span class="tag beg">BEGINNER</span></p>
+
+<h2>2.1 What You Need</h2>
+<p>Because Cnext generates C, you need two things:</p>
+<ol>
+  <li>The <strong>Cnext compiler</strong> itself.</li>
+  <li>A <strong>C compiler</strong> (GCC or Clang) to turn the generated C into an executable.</li>
+</ol>
+
+<div class="callout note"><span class="cl">Note</span>
+  On Windows, install GCC via <strong>MSYS2 (MinGW64)</strong>. On Linux,
+  install <code>build-essential</code>. On macOS, install Xcode Command Line
+  Tools (<code>xcode-select --install</code>).
+</div>
+
+<h2>2.2 Installing Cnext</h2>
+<h3>Windows (one command, in PowerShell)</h3>
+<pre><code>irm https://install.cnext.dev/install.ps1 | iex</code></pre>
+
+<h3>Linux / macOS (one command)</h3>
+<pre><code>curl -fsSL https://install.cnext.dev/install.sh | sh</code></pre>
+
+<h3>Build from Source</h3>
+<p>Clone the repository and build with <code>make</code>:</p>
+<pre><code>git clone https://github.com/Melton122/cnext.git
+cd cnext
+make
+sudo make install</code></pre>
+
+<div class="callout tip"><span class="cl">Tip</span>
+  Building from source is ideal if you want to contribute to the compiler
+  itself. Plain <code>make</code> produces an optimized release build;
+  <code>make DEBUG=1</code> builds with debug symbols.
+</div>
+
+<h2>2.3 Verify It Works</h2>
+<pre><code>cnext version
+cnext doctor</code></pre>
+<p>
+  <code>cnext version</code> prints the compiler version. <code>cnext doctor</code>
+  inspects your environment and reports whether the C compiler and other tools
+  it needs are present &mdash; a handy first health check.
+</p>
+
+<h2>2.4 Troubleshooting</h2>
+<table>
+  <tr><th>Symptom</th><th>Likely cause</th><th>Fix</th></tr>
+  <tr><td><code>command not found: cnext</code></td><td>Compiler not on PATH</td><td>Add the install folder to your PATH, or re-run the installer.</td></tr>
+  <tr><td><code>fatal error: runtime.h: No such file or directory</code></td><td>C cannot find Cnext&rsquo;s runtime headers</td><td>Reinstall so headers land in the standard location, or rebuild.</td></tr>
+  <tr><td><code>gcc: not found</code></td><td>No C compiler installed</td><td>Install GCC/Clang (build-essential / MSYS2 / Xcode tools).</td></tr>
+</table>
+
+<div class="callout key"><span class="cl">Key point</span>
+  The two-line mental model: <code>cnext</code> translates your code to C, and
+  a C compiler finishes the job. If either piece is missing, your program
+  cannot run.
+</div>
+</section>

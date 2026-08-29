@@ -91,6 +91,7 @@ static void free_ast_internal(ASTNode* node) {
     free(node->parent_name);
     free(node->implements_names);
     free(node->attribute_name);
+    free(node->owned_token_text);
     free(node);
 }
 

@@ -56,8 +56,23 @@ static inline bool os_unsetenv(CnextString name) {
 #endif
 }
 
+/* Shell-backed functions must not assume CnextString data is NUL-terminated:
+ * slices and substrings are valid Cnext strings too. */
+static inline char* os_command_copy(CnextString command) {
+    if (!command.data) return NULL;
+    char* copy = (char*)malloc(command.length + 1);
+    if (!copy) return NULL;
+    memcpy(copy, command.data, command.length);
+    copy[command.length] = '\0';
+    return copy;
+}
+
 static inline int os_exec(CnextString command) {
-    return system(command.data);
+    char* copy = os_command_copy(command);
+    if (!copy) return -1;
+    int status = system(copy);
+    free(copy);
+    return status;
 }
 
 static inline CnextString os_get_cwd(void) {
@@ -175,7 +190,10 @@ static inline int os_pid(void) {
 }
 
 static inline CnextString os_exec_output(CnextString command) {
-    FILE* pipe = popen(command.data, "r");
+    char* copy = os_command_copy(command);
+    if (!copy) return (CnextString){NULL, 0};
+    FILE* pipe = popen(copy, "r");
+    free(copy);
     if (!pipe) return (CnextString){NULL, 0};
     size_t cap = 4096;
     size_t len = 0;
@@ -198,7 +216,7 @@ static inline CnextString os_exec_output(CnextString command) {
 }
 
 static inline int os_exec_status(CnextString command) {
-    return system(command.data);
+    return os_exec(command);
 }
 
 static inline CnextString os_arch(void) {

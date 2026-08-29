@@ -1,0 +1,23 @@
+// EXPECT: return-cleanup
+// EXPECT: returned-7
+// EXPECT: unwind-cleanup
+// EXPECT: caught
+
+func returns_early(): int {
+    defer printin("return-cleanup")
+    return 7
+}
+
+func throws_error() {
+    defer printin("unwind-cleanup")
+    throw "expected error"
+}
+
+main {
+    printin("returned-" + to_str(returns_early()))
+    try {
+        throws_error()
+    } catch (str err) {
+        printin("caught")
+    }
+}

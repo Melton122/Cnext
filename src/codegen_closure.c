@@ -47,6 +47,31 @@ bool is_lambda_param(ASTNode* lambda, const char* name, int name_len) {
     return false;
 }
 
+static bool closure_target_is(ASTNode* node, const char* name) {
+    if (!node || node->type != AST_IDENTIFIER) return false;
+    return node->token.length == (int)strlen(name) &&
+           memcmp(node->token.start, name, node->token.length) == 0;
+}
+
+static bool closure_mutates_name(ASTNode* node, const char* name) {
+    if (!node) return false;
+    if (node->type == AST_ASSIGN && closure_target_is(node->left, name)) return true;
+    if ((node->type == AST_POSTFIX && node->left) ||
+        (node->type == AST_UNARY && node->right)) {
+        ASTNode* target = node->type == AST_POSTFIX ? node->left : node->right;
+        if ((node->token.type == TOKEN_INCREMENT || node->token.type == TOKEN_DECREMENT) &&
+            closure_target_is(target, name)) return true;
+    }
+    for (int i = 0; i < node->child_count; i++) {
+        if (closure_mutates_name(node->children[i], name)) return true;
+    }
+    return closure_mutates_name(node->left, name) ||
+           closure_mutates_name(node->right, name) ||
+           closure_mutates_name(node->condition, name) ||
+           closure_mutates_name(node->init, name) ||
+           closure_mutates_name(node->increment, name);
+}
+
 void detect_captures_walk(ASTNode* node, CapturedVar** list, ASTNode* lambda, ASTNode* prog) {
     if (!node) return;
     if (node->type == AST_IDENTIFIER) {
@@ -78,6 +103,7 @@ void detect_captures_walk(ASTNode* node, CapturedVar** list, ASTNode* lambda, AS
                 cv->type = cap_type;
                 cv->is_pointer = cap_is_pointer;
                 cv->is_class = cap_is_class;
+                cv->by_reference = closure_mutates_name(lambda->left, name);
                 cv->next = *list;
                 *list = cv;
             }

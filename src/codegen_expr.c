@@ -205,6 +205,7 @@ static void gen_lambda_expr(ASTNode* node) {
             const char* ct = type_token_to_c(cv->type);
             fprintf(out, "%s", ct ? ct : "void*");
             if (cv->is_pointer || cv->is_class) fprintf(out, "*");
+            if (cv->by_reference) fprintf(out, "*");
             fprintf(out, " %s;\n", cv->name);
         }
         fprintf(out, "};\n");
@@ -219,7 +220,11 @@ static void gen_lambda_expr(ASTNode* node) {
         fprintf(out, ") {\n");
         fprintf(out, "    struct _cl_env_%d* _env = (struct _cl_env_%d*)_env_raw;\n", cl_id, cl_id);
         for (CapturedVar* cv = captures; cv; cv = cv->next) {
-            fprintf(out, "    #define %s (_env->%s)\n", cv->name, cv->name);
+            if (cv->by_reference) {
+                fprintf(out, "    #define %s (*(_env->%s))\n", cv->name, cv->name);
+            } else {
+                fprintf(out, "    #define %s (_env->%s)\n", cv->name, cv->name);
+            }
         }
         if (node->left->type == AST_BLOCK) {
             generate_block(node->left);
@@ -236,7 +241,8 @@ static void gen_lambda_expr(ASTNode* node) {
 
         fprintf(out, "({ struct _cl_env_%d* _ce = (struct _cl_env_%d*)malloc(sizeof(struct _cl_env_%d)); if (!_ce) { fprintf(stderr, \"Cnext runtime: out of memory.\\n\"); exit(70); }", cl_id, cl_id, cl_id);
         for (CapturedVar* cv = captures; cv; cv = cv->next) {
-            fprintf(out, "_ce->%s = %s;", cv->name, cv->name);
+            fprintf(out, "_ce->%s = %s%s;", cv->name,
+                    cv->by_reference ? "&" : "", cv->name);
         }
         fprintf(out, "(CnextClosure){ (void*)_cl_fn_%d, _ce, 1 }; })", cl_id);
     } else {

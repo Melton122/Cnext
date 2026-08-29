@@ -7,7 +7,6 @@
 // EXPECT: Cnext
 // EXPECT: true
 // EXPECT: A
-// EXPECT: 255
 // EXPECT: 4294967295
 // EXPECT: 65535
 // EXPECT: 255

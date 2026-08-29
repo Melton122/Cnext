@@ -158,6 +158,9 @@ typedef struct ASTNode {
     Token var_type; // the token representing the type
     Token return_type;
     CnextTokenType expr_type;
+    // Text allocated by an optimizer pass for token replacement. Source tokens
+    // borrow the parser source buffer; these tokens must be released with AST.
+    char* owned_token_text;
     
     // v3.0: Default argument value
     struct ASTNode* default_value;
