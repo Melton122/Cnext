@@ -7,6 +7,7 @@
 cnext
 out
 nul
+build/
 
 # Temp files
 *.tmp
@@ -45,6 +46,12 @@ packages/
 *.zip
 *.tar.gz
 *.dmg
+*.vsix
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
 
 # Node
 node_modules/
@@ -59,6 +66,11 @@ registry.txt
 *.log
 _build_release.ps1
 _guide_*.cn
+_probe*.cn
+_lsp_*.js
+_lsp_*.py
+test.cn
+test_probe/
 t1.txt
 t2.txt
 tests/_test_builtin_minimal.cn

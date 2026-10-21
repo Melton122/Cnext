@@ -1,0 +1,62 @@
+// input() selects a reader from an explicitly typed destination. Without a
+// destination type it reads a string.
+// EXPECT: positive
+// EXPECT: 100
+// EXPECT: 5
+// EXPECT: 3.500000
+// EXPECT: enabled
+// EXPECT: empty
+main {
+    var num: int = input()
+    if num > 0 {
+        print("positive")
+    }
+    if num < 0 {
+        print("negative")
+    }
+    if num == 0 {
+        print("zero")
+    }
+    if num >= 10 {
+        print("gte")
+    }
+    if num <= 100 {
+        print("lte")
+    }
+    if num != 5 {
+        print("ne")
+    }
+
+    var reassigned: long = 0
+    reassigned = input()
+    printin(reassigned)
+
+    var raw = input()
+    print(len(raw))
+
+    var name: str = input("name: ")
+    print(len(name))
+
+    var amount: float = input()
+    printin(amount)
+
+    var enabled: bool = input()
+    if enabled {
+        printin("enabled")
+    }
+
+    var line: str = input()
+    if line == "" {
+        printin("empty")
+    } else {
+        printin("not empty")
+    }
+}
+
+// STDIN: 42
+// STDIN: 100
+// STDIN: hello
+// STDIN: abcde
+// STDIN: 3.5
+// STDIN: true
+// STDIN:

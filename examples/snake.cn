@@ -1,0 +1,127 @@
+// Terminal Snake
+//
+// Use w/a/s/d for movement. Press q to quit.
+
+import math
+
+main {
+    const int WIDTH = 20
+    const int HEIGHT = 10
+    const int MAX_SNAKE = 64
+
+    int[] snake_x = {
+        10, 9, 8, 7, 6, 5, 4, 3,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0
+    }
+    int[] snake_y = {
+        5, 5, 5, 5, 5, 5, 5, 5,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0
+    }
+
+    var length = 3
+    var direction = "d"
+    var score = 0
+    var food_x = math.random_int(0, WIDTH - 1)
+    var food_y = math.random_int(0, HEIGHT - 1)
+    var playing = true
+
+    printin("Cnext Snake")
+    printin("Use w/a/s/d. Press q to quit.")
+
+    while playing {
+        printin("\nScore: " + to_str(score))
+        printin("+--------------------+")
+        var y = 0
+        while y < HEIGHT {
+            var row = "|"
+            var x = 0
+            while x < WIDTH {
+                var cell = "."
+                if x == food_x && y == food_y {
+                    cell = "*"
+                }
+
+                var body_index = 0
+                while body_index < length {
+                    if snake_x[body_index] == x && snake_y[body_index] == y {
+                        cell = "o"
+                        if body_index == 0 {
+                            cell = "@"
+                        }
+                    }
+                    body_index = body_index + 1
+                }
+
+                row = row + cell
+                x = x + 1
+            }
+            printin(row + "|")
+            y = y + 1
+        }
+        printin("+--------------------+")
+        printin("Move:")
+        var command = input_key()
+
+        if command == "q" {
+            playing = false
+        } else {
+            if command == "w" { direction = "w" }
+            if command == "a" { direction = "a" }
+            if command == "s" { direction = "s" }
+            if command == "d" { direction = "d" }
+
+            var new_x = snake_x[0]
+            var new_y = snake_y[0]
+            if direction == "w" { new_y = new_y - 1 }
+            if direction == "s" { new_y = new_y + 1 }
+            if direction == "a" { new_x = new_x - 1 }
+            if direction == "d" { new_x = new_x + 1 }
+
+            var hit = new_x < 0 || new_x >= WIDTH || new_y < 0 || new_y >= HEIGHT
+            var body_index = 0
+            while body_index < length {
+                if snake_x[body_index] == new_x && snake_y[body_index] == new_y {
+                    hit = true
+                }
+                body_index = body_index + 1
+            }
+
+            if hit {
+                printin("Game over!")
+                playing = false
+            } else {
+                var i = length - 1
+                while i > 0 {
+                    snake_x[i] = snake_x[i - 1]
+                    snake_y[i] = snake_y[i - 1]
+                    i = i - 1
+                }
+                snake_x[0] = new_x
+                snake_y[0] = new_y
+
+                if new_x == food_x && new_y == food_y {
+                    if length < MAX_SNAKE {
+                        length = length + 1
+                    }
+                    score = score + 1
+                    food_x = math.random_int(0, WIDTH - 1)
+                    food_y = math.random_int(0, HEIGHT - 1)
+                }
+            }
+        }
+    }
+
+    printin("Final score: " + to_str(score))
+}

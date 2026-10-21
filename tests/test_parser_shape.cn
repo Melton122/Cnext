@@ -1,0 +1,93 @@
+// EXPECT: 2
+// EXPECT: 1
+// EXPECT: func
+// EXPECT: 1
+// Regression test: the dependency shape a self-hosted parser needs. `Token` is
+// fully defined before `Node`, `Node` refers to itself only through a
+// `Node[]` field, and `Parser` comes last. The expression functions recurse
+// through each other and `parse_children` calls `expression`, exercising
+// forward calls between top-level functions.
+class Token {
+    int kind
+    str text
+
+    func new() {
+    }
+}
+
+class Node {
+    int kind
+    Token token
+    Node[] children
+    Node left
+    Node right
+
+    func new() {
+    }
+
+    func add(Node child) {
+        push(self.children, child)
+    }
+
+    func child_count(): int {
+        return self.children.length
+    }
+}
+
+class Parser {
+    Token current
+    Token previous
+    Node root
+
+    func new() {
+    }
+
+    func advance() {
+        self.previous = self.current
+    }
+}
+
+func primary(Parser p): Node {
+    var n = new Node()
+    n.kind = 1
+    n.token = p.current
+    return n
+}
+
+func postfix(Parser p): Node {
+    return primary(p)
+}
+
+func unary(Parser p): Node {
+    return postfix(p)
+}
+
+func assignment(Parser p): Node {
+    return unary(p)
+}
+
+func expression(Parser p): Node {
+    return assignment(p)
+}
+
+func parse_children(Parser p): Node {
+    var n = new Node()
+    n.add(expression(p))
+    n.add(expression(p))
+    return n
+}
+
+main {
+    var p = new Parser()
+    var t = new Token()
+    t.kind = 7
+    t.text = "func"
+    p.current = t
+
+    var n = parse_children(p)
+    printin(n.child_count())
+    printin(n.children[0].kind)
+    printin(n.children[0].token.text)
+    p.advance()
+    printin(1)
+}

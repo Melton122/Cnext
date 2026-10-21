@@ -95,7 +95,8 @@ $(EXEC): $(OBJS)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	$(RM) $(OBJS) $(DEPS) $(EXEC) temp_out.c _cnext_*.tmp 2>/dev/null || true
+	$(RM) $(OBJS) $(DEPS) $(EXEC) temp_out.c _cnext_*.tmp $(LEAKTEST) $(LEAKTEST_OBJ) 2>/dev/null || true
+	$(RMDIR) $(PARITY_DIR) 2>/dev/null || true
 
 test: $(EXEC)
 	./$(EXEC) test
@@ -131,8 +132,53 @@ ifdef WINDOWS_BUILD
 endif
 	@echo "Removed $(EXEC) from $(INSTALL_BIN)"
 
+# Optimizer leak harness: links the compiler objects (minus main.c) with a
+# malloc/calloc/realloc/free interposer so repeated parse -> analyze ->
+# optimize -> free cycles can be verified byte-exact on the heap.
+LEAKTEST = tools/optimizer_leak_harness$(if $(WINDOWS_BUILD),.exe,)
+LEAKTEST_OBJ = tools/optimizer_leak_harness.o
+
+.PHONY: leaktest
+
+leaktest: $(LEAKTEST)
+
+$(LEAKTEST): $(filter-out src/main.o,$(OBJS)) $(LEAKTEST_OBJ)
+	$(CC) $(CFLAGS) -o $@ $(LEAKTEST_OBJ) $(filter-out src/main.o,$(OBJS)) $(LDFLAGS) $(if $(WINDOWS_BUILD),-lpsapi,)
+
+$(LEAKTEST_OBJ): tools/optimizer_leak_harness.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
 format:
 	clang-format -i src/*.c include/*.h
+
+# Self-hosting parity gate. Builds the Cnext lexer (src2/lexer.cn) with the
+# compiler under test, then diffs its token stream against the hand-written C
+# lexer over the whole corpus. The reference dumper is built through this
+# Makefile so the parity step inherits the same toolchain as the main build.
+PARITY_DIR = build/selfhost
+PARITY_CAND = $(PARITY_DIR)/lexer2$(if $(WINDOWS_BUILD),.exe,)
+PARITY_REF = $(PARITY_DIR)/lexdump$(if $(WINDOWS_BUILD),.exe,)
+PARITY_PY = $(shell if command -v python3 >/dev/null 2>&1; then echo python3; else echo python; fi)
+
+.PHONY: parity
+
+parity: $(EXEC) $(PARITY_CAND) $(PARITY_REF)
+	@echo "=== Self-hosting lexer parity ==="
+	$(PARITY_PY) tests/parity_lexer.py \
+		--ref-binary "$(PARITY_REF)" \
+		--cand-cmd "$(PARITY_CAND) {file}" \
+		--paths "tests/*.cn" "examples/*.cn" "src2/*.cn"
+
+$(PARITY_CAND): src2/lexer.cn $(EXEC) | $(PARITY_DIR)
+	@echo "Building self-hosted lexer: $@"
+	$(if $(WINDOWS_BUILD),./$(EXEC) build $< -o $@,./$(EXEC) build $< -o $@)
+
+$(PARITY_REF): tools/lexdump.c src/lexer.c | $(PARITY_DIR)
+	@echo "Building reference lexer dumper: $@"
+	$(CC) $(STD) -Iinclude tools/lexdump.c src/lexer.c -o $@
+
+$(PARITY_DIR):
+	$(MKDIR) $(PARITY_DIR)
 
 # Build benchmark
 bench: $(EXEC)
@@ -182,6 +228,7 @@ help:
 	@echo "  clean      Remove build artifacts"
 	@echo "  test       Build and run compiler tests"
 	@echo "  check      Run full test suite (compiler + Python)"
+	@echo "  parity     Self-hosting lexer parity gate (src2/ vs src/)"
 	@echo "  install    Install compiler to $(INSTALL_DIR)"
 	@echo "  uninstall  Remove compiler from $(INSTALL_DIR)"
 	@echo "  release    Package for release"

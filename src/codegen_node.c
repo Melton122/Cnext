@@ -35,35 +35,58 @@ void generate_node(ASTNode* node) {
             const char* previous_parent_class = current_parent_class;
             current_parent_class = node->parent_name;
 
-            fprintf(out, "typedef struct {\n");
+            char* cname = copy_token_text(node->token);
+            // Forward-declare the tag so the body may reference the class by
+            // name, which is what allows a class to hold instances of itself.
+            fprintf(out, "typedef struct %s %s;\n", cname, cname);
+            fprintf(out, "typedef struct %s {\n", cname);
             indent_level++;
             for (int i = 0; i < node->child_count; i++) {
                 if (node->children[i]->type == AST_VAR_DECL) {
                     write_indent();
-                    generate_type(node->children[i]->var_type, false);
+                    generate_node_type(node->children[i],
+                        node->children[i]->is_pointer || node->children[i]->is_class);
                     fprintf(out, " %.*s;\n", node->children[i]->token.length, node->children[i]->token.start);
                 }
             }
             indent_level--;
-            fprintf(out, "} %.*s;\n\n", node->token.length, node->token.start);
+            fprintf(out, "} %s;\n\n", cname);
+            free(cname);
             
             // Skip constructor emission for abstract classes
             if (!node->is_abstract) {
+                bool has_ctor = false;
                 for (int i = 0; i < node->child_count; i++) {
                     if (node->children[i]->type == AST_CONSTRUCTOR) {
+                        has_ctor = true;
                         char* prefix = copy_token_text(node->token);
                         fprintf(out, "void %s_new(%s* self", prefix, prefix);
                         for (int j = 0; j < node->children[i]->child_count; j++) {
+                            ASTNode* param = node->children[i]->children[j];
                             fprintf(out, ", ");
-                            generate_type(node->children[i]->children[j]->var_type, false);
-                            fprintf(out, " %.*s", node->children[i]->children[j]->token.length,
-                                node->children[i]->children[j]->token.start);
+                            // Same rule as generate_function: a class-typed
+                            // parameter is a pointer, because instances live on
+                            // the heap. Hardcoding `false` here declared the
+                            // parameter by value and disagreed with both the
+                            // body and every call site.
+                            generate_node_type(param, param->is_pointer);
+                            fprintf(out, " %.*s", param->token.length,
+                                param->token.start);
                         }
                         fprintf(out, ") ");
                         generate_block(node->children[i]->left);
                         fprintf(out, "\n");
                         free(prefix);
                     }
+                }
+                // `new Klass()` always calls Klass_new, so a class that declares
+                // no constructor needs an implicit empty one rather than a call
+                // to an undefined function. The instance is already zeroed at
+                // the allocation site, so there is nothing else to do.
+                if (!has_ctor) {
+                    char* prefix = copy_token_text(node->token);
+                    fprintf(out, "void %s_new(%s* self) { (void)self; }\n\n", prefix, prefix);
+                    free(prefix);
                 }
             }
             
@@ -114,7 +137,7 @@ void generate_node(ASTNode* node) {
                             fprintf(out, "%s* self", prefix);
                         } else {
                             bool param_is_class = (param->var_type.type == TOKEN_IDENTIFIER);
-                            generate_type(param->var_type, param_is_class);
+                            generate_node_type(param, param_is_class);
                             fprintf(out, " %.*s", param->token.length, param->token.start);
                         }
                     }
@@ -172,7 +195,10 @@ void generate_node(ASTNode* node) {
             break;
         }
         case AST_STRUCT_DECL:
-            fprintf(out, "typedef struct {\n");
+            // Tagged like classes are, so a separate forward
+            // `typedef struct Name Name;` is legal and can be emitted ahead of
+            // function prototypes that mention this type.
+            fprintf(out, "typedef struct %.*s {\n", node->token.length, node->token.start);
             indent_level++;
             for (int i = 0; i < node->child_count; i++) {
                 write_indent();
@@ -193,8 +219,9 @@ void generate_node(ASTNode* node) {
             }
             
             if (!has_variants) {
-                // Plain enum: just emit a C enum
-                fprintf(out, "typedef enum {\n");
+                // Plain enum: just emit a C enum. Tagged with its own name so a
+                // separate `typedef enum Name Name;` can be emitted earlier.
+                fprintf(out, "typedef enum %.*s {\n", node->token.length, node->token.start);
                 indent_level++;
                 for (int i = 0; i < node->child_count; i++) {
                     write_indent();
@@ -231,7 +258,7 @@ void generate_node(ASTNode* node) {
                 fprintf(out, "} %s_Tag;\n\n", enum_name);
                 
                 // Tagged union struct
-                fprintf(out, "typedef struct {\n");
+                fprintf(out, "typedef struct %s {\n", enum_name);
                 indent_level++;
                 write_indent();
                 fprintf(out, "%s_Tag tag;\n", enum_name);
@@ -369,15 +396,11 @@ void generate_node(ASTNode* node) {
         case AST_VAR_DECL:
             if (node->is_const) fprintf(out, "const ");
             if (node->is_array) {
-                fprintf(out, "struct { ");
-                generate_type(node->var_type, false);
-                fprintf(out, "* data; size_t length; } %.*s", node->token.length, node->token.start);
+                generate_node_type(node, false);
+                fprintf(out, " %.*s", node->token.length, node->token.start);
                 if (node->init && node->init->type == AST_LITERAL_ARRAY) {
-                    fprintf(out, " = { (");
-                    generate_type(node->var_type, false);
-                    fprintf(out, "[])");
-                    generate_expression(node->init);
-                    fprintf(out, ", %d }", node->init->child_count);
+                    fprintf(out, " = ");
+                    generate_array_value(node, node->init);
                 } else if (node->init && node->init->type == AST_SLICE) {
                     fprintf(out, ";\n");
                     write_indent();
@@ -413,10 +436,23 @@ void generate_node(ASTNode* node) {
                     }
                     fprintf(out, "%s* %.*s", mangled_buf, node->token.length, node->token.start);
                 } else {
-                    generate_type(node->var_type, node->is_pointer || node->is_class);
+                    generate_node_type(node, node->is_pointer || node->is_class);
                     fprintf(out, " %.*s", node->token.length, node->token.start);
                 }
                 if (node->init) {
+                    if (node->is_global && node->init->type == AST_NEW_EXPR) {
+                        // `new` expands to a GCC statement expression, which is
+                        // not a constant expression and is not even legal at file
+                        // scope. Declare the global uninitialized and fill it in
+                        // from a constructor function, which runs before main.
+                        fprintf(out, ";\n");
+                        fprintf(out, "static void __attribute__((constructor)) _cnext_init_%.*s(void) {\n",
+                                node->token.length, node->token.start);
+                        fprintf(out, "%.*s = ", node->token.length, node->token.start);
+                        generate_expression(node->init);
+                        fprintf(out, ";\n}\n");
+                        break;
+                    }
                     if (node->init->type == AST_LAMBDA && node->var_type.type == TOKEN_FUNC) {
                         CapturedVar* wrap_caps = NULL;
                         detect_captures_walk(node->init->left, &wrap_caps, node->init, program_node);
@@ -482,7 +518,7 @@ void generate_node(ASTNode* node) {
                     fprintf(out, " %.*s(", func->token.length, func->token.start);
                     for (int j = 0; j < func->child_count; j++) {
                         if (j > 0) fprintf(out, ", ");
-                        generate_type(func->children[j]->var_type, func->children[j]->is_variadic);
+                        generate_node_type(func->children[j], func->children[j]->is_variadic);
                         fprintf(out, " %.*s", func->children[j]->token.length, func->children[j]->token.start);
                         if (func->children[j]->is_variadic) fprintf(out, "...");
                     }
@@ -595,10 +631,14 @@ void generate_node(ASTNode* node) {
                     fprintf(out, ".length");
                 }
                 fprintf(out, ")");
-            } else {
+            } else if (!emit_object_array_element_assignment(node)) {
                 generate_expression(node->left);
                 fprintf(out, " %.*s ", node->token.length, node->token.start);
-                generate_expression(node->right);
+                if (is_array_literal_assignment(node)) {
+                    generate_array_literal_assignment(node->right);
+                } else {
+                    generate_expression(node->right);
+                }
             }
             fprintf(out, ";\n");
             break;

@@ -1,0 +1,39 @@
+// EXPECT: true
+// EXPECT: 0
+// EXPECT: 0
+// EXPECT: 1
+// EXPECT: 4
+// EXPECT: 0
+// Regression test: instances are zero-initialized before their constructor runs,
+// and classes without an explicit constructor still get an empty one -- in
+// generic form too. Unset `str` and array fields must therefore behave like ""
+// and {} rather than holding garbage, and unset class fields must read back as
+// null.
+class Node {
+    str label
+    int[] nums
+    Node[] kids
+    Node next
+    // Deliberately no constructor: an empty one is generated.
+}
+
+class Holder<T> {
+    T value
+    T[] items
+    // Deliberately no constructor, including in generic form.
+}
+
+main {
+    var n = new Node()
+    // A zeroed string must compare equal to the empty string.
+    printin(n.label == "")
+    printin(n.nums.length)
+    printin(n.kids.length)
+    // A zeroed class field is a null pointer.
+    printin(n.next == null)
+
+    var h = new Holder<int>()
+    h.value = 4
+    printin(h.value)
+    printin(h.items.length)
+}

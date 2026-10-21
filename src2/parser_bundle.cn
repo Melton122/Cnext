@@ -1,0 +1,3959 @@
+// --- src2/lexer.cn ---
+// Self-hosting bootstrap: port of src/lexer.c into Cnext (Milestone A).
+// This is a working Cnext implementation that mirrors the behavior of the
+// hand-written C lexer (src/lexer.c) and emits the same deterministic token
+// stream as tools/lexdump.c, so it can serve as the candidate side of
+// tests/parity_lexer.py (--cand-cmd).
+
+// ---------------------------------------------------------------------------
+// Token type constants. Values deliberately match include/lexer.h
+// (CnextTokenType) in order, so the <type-int> column of the dump is
+// byte-identical to the reference emitted by tools/lexdump.c.
+// ---------------------------------------------------------------------------
+const int TOKEN_EOF = 0
+const int TOKEN_ERROR = 1
+const int TOKEN_MAIN = 2
+const int TOKEN_IF = 3
+const int TOKEN_ELSE = 4
+const int TOKEN_WHILE = 5
+const int TOKEN_FOR = 6
+const int TOKEN_FUNC = 7
+const int TOKEN_RETURN = 8
+const int TOKEN_CLASS = 9
+const int TOKEN_VAR = 10
+const int TOKEN_IN = 11
+const int TOKEN_IMPORT = 12
+const int TOKEN_CONST = 13
+const int TOKEN_ENUM = 14
+const int TOKEN_STRUCT = 15
+const int TOKEN_SWITCH = 16
+const int TOKEN_CASE = 17
+const int TOKEN_DEFAULT = 18
+const int TOKEN_TEST = 19
+const int TOKEN_ASSERT = 20
+const int TOKEN_BREAK = 21
+const int TOKEN_CONTINUE = 22
+const int TOKEN_TRY = 23
+const int TOKEN_CATCH = 24
+const int TOKEN_THROW = 25
+const int TOKEN_FINALLY = 26
+const int TOKEN_EXTENDS = 27
+const int TOKEN_INTERFACE = 28
+const int TOKEN_IMPLEMENTS = 29
+const int TOKEN_OVERRIDE = 30
+const int TOKEN_NEW = 31
+const int TOKEN_SUPER = 32
+const int TOKEN_AS = 33
+const int TOKEN_MATCH = 34
+const int TOKEN_TRAIT = 35
+const int TOKEN_TYPE_ALIAS = 36
+const int TOKEN_INT_TYPE = 37
+const int TOKEN_LONG_TYPE = 38
+const int TOKEN_FLOAT_TYPE = 39
+const int TOKEN_DOUBLE_TYPE = 40
+const int TOKEN_STR_TYPE = 41
+const int TOKEN_BOOL_TYPE = 42
+const int TOKEN_CHAR_TYPE = 43
+const int TOKEN_BYTE_TYPE = 44
+const int TOKEN_UINT_TYPE = 45
+const int TOKEN_ULONG_TYPE = 46
+const int TOKEN_USHORT_TYPE = 47
+const int TOKEN_UBYTE_TYPE = 48
+const int TOKEN_IDENTIFIER = 49
+const int TOKEN_NUMBER = 50
+const int TOKEN_FLOAT_LITERAL = 51
+const int TOKEN_STRING_LITERAL = 52
+const int TOKEN_CHAR_LITERAL = 53
+const int TOKEN_TRUE = 54
+const int TOKEN_FALSE = 55
+const int TOKEN_NULL = 56
+const int TOKEN_NONE = 57
+const int TOKEN_PLUS = 58
+const int TOKEN_MINUS = 59
+const int TOKEN_STAR = 60
+const int TOKEN_PERCENT = 61
+const int TOKEN_SLASH = 62
+const int TOKEN_EQUAL = 63
+const int TOKEN_PLUS_EQUAL = 64
+const int TOKEN_MINUS_EQUAL = 65
+const int TOKEN_STAR_EQUAL = 66
+const int TOKEN_SLASH_EQUAL = 67
+const int TOKEN_EQ_EQ = 68
+const int TOKEN_BANG_EQ = 69
+const int TOKEN_LESS = 70
+const int TOKEN_LESS_EQ = 71
+const int TOKEN_GREATER = 72
+const int TOKEN_GREATER_EQ = 73
+const int TOKEN_AND_AND = 74
+const int TOKEN_OR_OR = 75
+const int TOKEN_BANG = 76
+const int TOKEN_ARROW = 77
+const int TOKEN_FAT_ARROW = 78
+const int TOKEN_INCREMENT = 79
+const int TOKEN_DECREMENT = 80
+const int TOKEN_LBRACE = 81
+const int TOKEN_RBRACE = 82
+const int TOKEN_LPAREN = 83
+const int TOKEN_RPAREN = 84
+const int TOKEN_LBRACKET = 85
+const int TOKEN_RBRACKET = 86
+const int TOKEN_COMMA = 87
+const int TOKEN_SEMICOLON = 88
+const int TOKEN_DOT = 89
+const int TOKEN_COLON = 90
+const int TOKEN_QUESTION = 91
+const int TOKEN_QUESTION_DOT = 92
+const int TOKEN_QUESTION_QUESTION = 93
+const int TOKEN_ELLIPSIS = 94
+const int TOKEN_OPTIONAL = 95
+const int TOKEN_RESULT = 96
+const int TOKEN_OPERATOR = 97
+const int TOKEN_EXTEND = 98
+const int TOKEN_YIELD = 99
+const int TOKEN_ITER = 100
+const int TOKEN_COROUTINE = 101
+const int TOKEN_RESUME = 102
+const int TOKEN_WITH = 103
+const int TOKEN_ASYNC = 104
+const int TOKEN_AWAIT = 105
+const int TOKEN_RUN_ASYNC = 106
+const int TOKEN_THREAD = 107
+const int TOKEN_SPAWN = 108
+const int TOKEN_MUTEX = 109
+const int TOKEN_CHANNEL = 110
+const int TOKEN_LOCK = 111
+const int TOKEN_UNLOCK = 112
+const int TOKEN_SEND = 113
+const int TOKEN_RECV = 114
+const int TOKEN_TYPEOF = 115
+const int TOKEN_MACRO = 116
+const int TOKEN_CONSTEXPR = 117
+const int TOKEN_AT = 118
+const int TOKEN_EXTERN = 119
+const int TOKEN_OWN = 120
+const int TOKEN_BENCH = 121
+const int TOKEN_DOLLAR = 122
+const int TOKEN_DEFER = 123
+const int TOKEN_RANGE = 124
+const int TOKEN_STATIC = 125
+const int TOKEN_ABSTRACT = 126
+const int TOKEN_FINAL = 127
+const int TOKEN_PIPE = 128
+const int TOKEN_RANGE_INCLUSIVE = 129
+const int TOKEN_RAW_STRING = 130
+const int TOKEN_WHEN = 131
+
+// ---------------------------------------------------------------------------
+// Lexer
+// The C lexer returns a Token struct by value; this Cnext codegen has a bug
+// generating struct-return, so instead the Lexer class carries the "current
+// token" as scalar fields and exposes getters.
+// ---------------------------------------------------------------------------
+class Lexer {
+    str source
+    int src_len
+    int index
+    int start_index
+    int line
+    int column
+    int start_column
+    bool unterminated_comment
+
+    // Current token (set by next_token).
+    int cur_type
+    str cur_start
+    int cur_length
+    int cur_line
+    int cur_column
+
+    func new(str src) {
+        self.source = src
+        self.src_len = src.length
+        self.index = 0
+        self.start_index = 0
+        self.line = 1
+        self.column = 1
+        self.start_column = 1
+        self.unterminated_comment = false
+    }
+
+    // -- character access (Cnext has no str[i] indexing; use str_char_at) --
+
+    func is_at_end(): bool {
+        return self.index >= self.src_len
+    }
+
+    func char_at(int pos): int {
+        if pos >= self.src_len {
+            return 0
+        }
+        return str_char_at(self.source, pos)
+    }
+
+    func advance(): int {
+        int c = self.char_at(self.index)
+        self.index = self.index + 1
+        self.column = self.column + 1
+        return c
+    }
+
+    func peek(): int {
+        return self.char_at(self.index)
+    }
+
+    func peek_next(): int {
+        return self.char_at(self.index + 1)
+    }
+
+    func mch(int expected): bool {
+        int c = self.char_at(self.index)
+        if self.is_at_end() {
+            return false
+        }
+        if c != expected {
+            return false
+        }
+        self.index = self.index + 1
+        return true
+    }
+
+    // -- token construction --
+
+    func set_token(int ty) {
+        self.cur_type = ty
+        self.cur_start = str_substring(self.source, self.start_index, self.index)
+        self.cur_length = self.index - self.start_index
+        self.cur_line = self.line
+        self.cur_column = self.start_column
+    }
+
+    func set_error(str message) {
+        self.cur_type = TOKEN_ERROR
+        self.cur_start = message
+        self.cur_length = message.length
+        self.cur_line = self.line
+        self.cur_column = self.column
+    }
+
+    // -- whitespace / comments (mirrors C skip_whitespace) --
+
+    func skip_whitespace() {
+        while true {
+            int ch = self.peek()
+            if ch == ' ' || ch == '\r' || ch == '\t' {
+                self.advance()
+            } else {
+                if ch == '\n' {
+                    self.line = self.line + 1
+                    self.column = 0
+                    self.advance()
+                } else {
+                    if ch == '/' && self.peek_next() == '/' {
+                        while !self.is_at_end() && self.peek() != '\n' {
+                            self.advance()
+                        }
+                    } else {
+                        if ch == '/' && self.peek_next() == '*' {
+                            self.advance()
+                            self.advance()
+                            while !self.is_at_end() && !(self.peek() == '*' && self.peek_next() == '/') {
+                                if self.peek() == '\n' {
+                                    self.line = self.line + 1
+                                    self.column = 0
+                                }
+                                self.advance()
+                            }
+                            if !self.is_at_end() {
+                                self.advance()
+                                self.advance()
+                            } else {
+                                self.unterminated_comment = true
+                                return
+                            }
+                        } else {
+                            return
+                        }
+                    }
+                }
+            }
+        }
+    }
+// -- character classes --
+
+    func isalpha(int ch): bool {
+        if ch >= 'a' && ch <= 'z' {
+            return true
+        }
+        if ch >= 'A' && ch <= 'Z' {
+            return true
+        }
+        return false
+    }
+
+    func isdigit(int ch): bool {
+        if ch >= '0' && ch <= '9' {
+            return true
+        }
+        return false
+    }
+
+    // -- keyword lookup (mirrors the C lexer's sorted keyword table) --
+
+    func identifier_type(): int {
+        int name_len = self.index - self.start_index
+        if name_len > 63 {
+            return TOKEN_IDENTIFIER
+        }
+        str text = str_substring(self.source, self.start_index, self.start_index + name_len)
+        if text == "abstract" { return TOKEN_ABSTRACT }
+        if text == "as" { return TOKEN_AS }
+        if text == "assert" { return TOKEN_ASSERT }
+        if text == "async" { return TOKEN_ASYNC }
+        if text == "await" { return TOKEN_AWAIT }
+        if text == "bench" { return TOKEN_BENCH }
+        if text == "bool" { return TOKEN_BOOL_TYPE }
+        if text == "break" { return TOKEN_BREAK }
+        if text == "byte" { return TOKEN_BYTE_TYPE }
+        if text == "case" { return TOKEN_CASE }
+        if text == "catch" { return TOKEN_CATCH }
+        if text == "channel" { return TOKEN_CHANNEL }
+        if text == "char" { return TOKEN_CHAR_TYPE }
+        if text == "class" { return TOKEN_CLASS }
+        if text == "const" { return TOKEN_CONST }
+        if text == "constexpr" { return TOKEN_CONSTEXPR }
+        if text == "continue" { return TOKEN_CONTINUE }
+        if text == "coroutine" { return TOKEN_COROUTINE }
+        if text == "default" { return TOKEN_DEFAULT }
+        if text == "defer" { return TOKEN_DEFER }
+        if text == "double" { return TOKEN_DOUBLE_TYPE }
+        if text == "else" { return TOKEN_ELSE }
+        if text == "enum" { return TOKEN_ENUM }
+        if text == "extend" { return TOKEN_EXTEND }
+        if text == "extends" { return TOKEN_EXTENDS }
+        if text == "extern" { return TOKEN_EXTERN }
+        if text == "false" { return TOKEN_FALSE }
+        if text == "final" { return TOKEN_FINAL }
+        if text == "finally" { return TOKEN_FINALLY }
+        if text == "float" { return TOKEN_FLOAT_TYPE }
+        if text == "for" { return TOKEN_FOR }
+        if text == "func" { return TOKEN_FUNC }
+        if text == "if" { return TOKEN_IF }
+        if text == "implements" { return TOKEN_IMPLEMENTS }
+        if text == "import" { return TOKEN_IMPORT }
+        if text == "in" { return TOKEN_IN }
+        if text == "int" { return TOKEN_INT_TYPE }
+        if text == "interface" { return TOKEN_INTERFACE }
+        if text == "iter" { return TOKEN_ITER }
+        if text == "lock" { return TOKEN_LOCK }
+        if text == "long" { return TOKEN_LONG_TYPE }
+        if text == "macro" { return TOKEN_MACRO }
+        if text == "main" { return TOKEN_MAIN }
+        if text == "match" { return TOKEN_MATCH }
+        if text == "mutex" { return TOKEN_MUTEX }
+        if text == "new" { return TOKEN_NEW }
+        if text == "none" { return TOKEN_NONE }
+        if text == "null" { return TOKEN_NULL }
+        if text == "operator" { return TOKEN_OPERATOR }
+        if text == "override" { return TOKEN_OVERRIDE }
+        if text == "own" { return TOKEN_OWN }
+        if text == "recv" { return TOKEN_RECV }
+        if text == "resume" { return TOKEN_RESUME }
+        if text == "return" { return TOKEN_RETURN }
+        if text == "run_async" { return TOKEN_RUN_ASYNC }
+        if text == "send" { return TOKEN_SEND }
+        if text == "spawn" { return TOKEN_SPAWN }
+        if text == "static" { return TOKEN_STATIC }
+        if text == "str" { return TOKEN_STR_TYPE }
+        if text == "string" { return TOKEN_STR_TYPE }
+        if text == "struct" { return TOKEN_STRUCT }
+        if text == "super" { return TOKEN_SUPER }
+        if text == "switch" { return TOKEN_SWITCH }
+        if text == "test" { return TOKEN_TEST }
+        if text == "thread" { return TOKEN_THREAD }
+        if text == "throw" { return TOKEN_THROW }
+        if text == "trait" { return TOKEN_TRAIT }
+        if text == "true" { return TOKEN_TRUE }
+        if text == "try" { return TOKEN_TRY }
+        if text == "type" { return TOKEN_TYPE_ALIAS }
+        if text == "typeof" { return TOKEN_TYPEOF }
+        if text == "ubyte" { return TOKEN_UBYTE_TYPE }
+        if text == "uint" { return TOKEN_UINT_TYPE }
+        if text == "ulong" { return TOKEN_ULONG_TYPE }
+        if text == "unlock" { return TOKEN_UNLOCK }
+        if text == "ushort" { return TOKEN_USHORT_TYPE }
+        if text == "var" { return TOKEN_VAR }
+        if text == "when" { return TOKEN_WHEN }
+        if text == "while" { return TOKEN_WHILE }
+        if text == "with" { return TOKEN_WITH }
+        if text == "yield" { return TOKEN_YIELD }
+        return TOKEN_IDENTIFIER
+    }
+
+    func identifier() {
+        while self.isalpha(self.peek()) || self.isdigit(self.peek()) || self.peek() == '_' {
+            self.advance()
+        }
+        self.set_token(self.identifier_type())
+    }
+
+    func number() {
+        while self.isdigit(self.peek()) {
+            self.advance()
+        }
+        if self.peek() == '.' && self.isdigit(self.peek_next()) {
+            self.advance()
+            while self.isdigit(self.peek()) {
+                self.advance()
+            }
+            self.set_token(TOKEN_FLOAT_LITERAL)
+        } else {
+            self.set_token(TOKEN_NUMBER)
+        }
+    }
+func string_literal() {
+        while !self.is_at_end() && self.peek() != '"' {
+            if self.peek() == '\\' {
+                self.advance()
+                if self.is_at_end() {
+                    break
+                }
+                self.advance()
+            } else {
+                if self.peek() == '\n' {
+                    self.line = self.line + 1
+                    self.column = 0
+                }
+                self.advance()
+            }
+        }
+        if self.is_at_end() {
+            self.set_error("Unterminated string.")
+        } else {
+            self.advance()
+            self.set_token(TOKEN_STRING_LITERAL)
+        }
+    }
+
+    func raw_string_literal() {
+        while !self.is_at_end() && self.peek() != '"' {
+            if self.peek() == '\n' {
+                self.line = self.line + 1
+                self.column = 0
+            }
+            self.advance()
+        }
+        if self.is_at_end() {
+            self.set_error("Unterminated raw string.")
+        } else {
+            self.advance()
+            self.set_token(TOKEN_RAW_STRING)
+        }
+    }
+func next_token() {
+        self.skip_whitespace()
+        if self.unterminated_comment {
+            self.unterminated_comment = false
+            self.set_error("Unterminated block comment.")
+            return
+        }
+        self.start_index = self.index
+        self.start_column = self.column
+        if self.is_at_end() {
+            self.set_token(TOKEN_EOF)
+            return
+        }
+
+        int ch = self.advance()
+
+        if self.isalpha(ch) || ch == '_' {
+            if ch == 'r' && self.peek() == '"' {
+                self.advance()
+                self.raw_string_literal()
+            } else {
+                self.identifier()
+            }
+            return
+        }
+
+        if self.isdigit(ch) {
+            self.number()
+            return
+        }
+
+        if ch == '(' { self.set_token(TOKEN_LPAREN); return }
+        if ch == ')' { self.set_token(TOKEN_RPAREN); return }
+        if ch == '{' { self.set_token(TOKEN_LBRACE); return }
+        if ch == '}' { self.set_token(TOKEN_RBRACE); return }
+        if ch == '[' { self.set_token(TOKEN_LBRACKET); return }
+        if ch == ']' { self.set_token(TOKEN_RBRACKET); return }
+        if ch == ';' { self.set_token(TOKEN_SEMICOLON); return }
+        if ch == ',' { self.set_token(TOKEN_COMMA); return }
+        if ch == ':' { self.set_token(TOKEN_COLON); return }
+        if ch == '@' { self.set_token(TOKEN_AT); return }
+        if ch == '$' { self.set_token(TOKEN_DOLLAR); return }
+        if ch == '%' { self.set_token(TOKEN_PERCENT); return }
+
+        if ch == '.' {
+            if self.mch('.') {
+                if self.mch('.') {
+                    self.set_token(TOKEN_ELLIPSIS)
+                } else {
+                    if self.mch('=') {
+                        self.set_token(TOKEN_RANGE_INCLUSIVE)
+                    } else {
+                        self.set_token(TOKEN_RANGE)
+                    }
+                }
+            } else {
+                self.set_token(TOKEN_DOT)
+            }
+            return
+        }
+
+        if ch == '?' {
+            if self.mch('.') {
+                self.set_token(TOKEN_QUESTION_DOT)
+            } else {
+                if self.mch('?') {
+                    self.set_token(TOKEN_QUESTION_QUESTION)
+                } else {
+                    self.set_token(TOKEN_QUESTION)
+                }
+            }
+            return
+        }
+
+        if ch == '-' {
+            if self.mch('>') {
+                self.set_token(TOKEN_ARROW)
+            } else {
+                if self.mch('-') {
+                    self.set_token(TOKEN_DECREMENT)
+                } else {
+                    if self.mch('=') {
+                        self.set_token(TOKEN_MINUS_EQUAL)
+                    } else {
+                        self.set_token(TOKEN_MINUS)
+                    }
+                }
+            }
+            return
+        }
+
+        if ch == '+' {
+            if self.mch('+') {
+                self.set_token(TOKEN_INCREMENT)
+            } else {
+                if self.mch('=') {
+                    self.set_token(TOKEN_PLUS_EQUAL)
+                } else {
+                    self.set_token(TOKEN_PLUS)
+                }
+            }
+            return
+        }
+if ch == '/' {
+            if self.mch('=') {
+                self.set_token(TOKEN_SLASH_EQUAL)
+            } else {
+                self.set_token(TOKEN_SLASH)
+            }
+            return
+        }
+
+        if ch == '*' {
+            if self.mch('=') {
+                self.set_token(TOKEN_STAR_EQUAL)
+            } else {
+                self.set_token(TOKEN_STAR)
+            }
+            return
+        }
+
+        if ch == '!' {
+            if self.mch('=') {
+                self.set_token(TOKEN_BANG_EQ)
+            } else {
+                self.set_token(TOKEN_BANG)
+            }
+            return
+        }
+
+        if ch == '=' {
+            if self.mch('=') {
+                self.set_token(TOKEN_EQ_EQ)
+            } else {
+                if self.mch('>') {
+                    self.set_token(TOKEN_FAT_ARROW)
+                } else {
+                    self.set_token(TOKEN_EQUAL)
+                }
+            }
+            return
+        }
+
+        if ch == '<' {
+            if self.mch('=') {
+                self.set_token(TOKEN_LESS_EQ)
+            } else {
+                self.set_token(TOKEN_LESS)
+            }
+            return
+        }
+
+        if ch == '>' {
+            if self.mch('=') {
+                self.set_token(TOKEN_GREATER_EQ)
+            } else {
+                self.set_token(TOKEN_GREATER)
+            }
+            return
+        }
+
+        if ch == '&' {
+            if self.mch('&') {
+                self.set_token(TOKEN_AND_AND)
+            } else {
+                self.set_error("Unexpected character.")
+            }
+            return
+        }
+
+        if ch == '|' {
+            if self.mch('|') {
+                self.set_token(TOKEN_OR_OR)
+            } else {
+                self.set_token(TOKEN_PIPE)
+            }
+            return
+        }
+
+        if ch == '"' {
+            self.string_literal()
+            return
+        }
+
+        if ch == '\'' {
+            if self.is_at_end() {
+                self.set_error("Unterminated char.")
+                return
+            }
+            int inner = self.advance()
+            if inner == '\\' {
+                if self.is_at_end() {
+                    self.set_error("Unterminated char.")
+                    return
+                }
+                self.advance()
+            }
+            if !self.mch('\'') {
+                self.set_error("Unterminated char.")
+            } else {
+                self.set_token(TOKEN_CHAR_LITERAL)
+            }
+            return
+        }
+
+        self.set_error("Unexpected character.")
+    }
+
+    // -- accessors for the current token --
+
+    func cur_type_get(): int {
+        return self.cur_type
+    }
+
+    func cur_start_get(): str {
+        return self.cur_start
+    }
+
+    func cur_length_get(): int {
+        return self.cur_length
+    }
+
+    func cur_start_index_get(): int {
+        return self.start_index
+    }
+
+    func cur_line_get(): int {
+        return self.cur_line
+    }
+
+    func cur_column_get(): int {
+        return self.cur_column
+    }
+}
+// ---------------------------------------------------------------------------
+// lexdump-compatible output helpers (mirror tools/lexdump.c escaping)
+// ---------------------------------------------------------------------------
+func hex_digit(int n): str {
+    if n < 10 {
+        return to_str(n)
+    }
+    if n == 10 { return "a" }
+    if n == 11 { return "b" }
+    if n == 12 { return "c" }
+    if n == 13 { return "d" }
+    if n == 14 { return "e" }
+    return "f"
+}
+
+func hex2(int value): str {
+    str hi = hex_digit(value / 16)
+    str lo = hex_digit(value % 16)
+    return "\\x" + hi + lo
+}
+
+func escape(str s): str {
+    str out = ""
+    int i = 0
+    while i < s.length {
+        int code = str_char_at(s, i)
+        if code == 10 {
+            out = out + "\\n"
+        } else {
+            if code == 13 {
+                out = out + "\\r"
+            } else {
+                if code == 9 {
+                    out = out + "\\t"
+                } else {
+                    if code == 92 {
+                        out = out + "\\\\"
+                    } else {
+                        if code == 34 {
+                            out = out + "\\\""
+                        } else {
+                            if code >= 32 && code <= 126 {
+                                out = out + str_substring(s, i, i + 1)
+                            } else {
+                                out = out + hex2(code)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    return out
+}
+
+// ---------------------------------------------------------------------------
+// Entry point: dump tokens in the same format as tools/lexdump.c
+//   <line>:<column> <type-int> <escaped-text>
+// Usage: lexer.cn <file>
+// ---------------------------------------------------------------------------
+
+
+// --- src2/parser_types.cn ---
+// Self-hosting bootstrap: AST node kind constants and the ASTNode/Token/Parser
+// data-structure definitions used by all parser modules in src2/.
+// Mirrors include/ast.h and include/parser_internal.h.
+
+// ---------------------------------------------------------------------------
+// AST node kind constants (values must match ASTNodeType enum in include/ast.h)
+// ---------------------------------------------------------------------------
+const int AST_PROGRAM          = 0
+const int AST_MAIN             = 1
+const int AST_BLOCK            = 2
+const int AST_VAR_DECL         = 3
+const int AST_FUNC_DECL        = 4
+const int AST_MACRO_DECL       = 5
+const int AST_CLASS_DECL       = 6
+const int AST_STRUCT_DECL      = 7
+const int AST_ENUM_DECL        = 8
+const int AST_EXPR_STMT        = 9
+const int AST_IF               = 10
+const int AST_WHILE            = 11
+const int AST_FOR              = 12
+const int AST_FOR_IN           = 13
+const int AST_SWITCH           = 14
+const int AST_CASE             = 15
+const int AST_DEFAULT          = 16
+const int AST_IMPORT           = 17
+const int AST_RETURN           = 18
+const int AST_ASSIGN           = 19
+const int AST_BINARY           = 20
+const int AST_UNARY            = 21
+const int AST_POSTFIX          = 22
+const int AST_CALL             = 23
+const int AST_IDENTIFIER       = 24
+const int AST_LITERAL          = 25
+const int AST_LITERAL_ARRAY    = 26
+const int AST_MEMBER_ACCESS    = 27
+const int AST_INDEX            = 28
+const int AST_SLICE            = 29
+const int AST_BREAK            = 30
+const int AST_CONTINUE         = 31
+const int AST_TRY              = 32
+const int AST_CATCH            = 33
+const int AST_THROW            = 34
+const int AST_INTERFACE_DECL   = 35
+const int AST_TRAIT_DECL       = 36
+const int AST_CONSTRUCTOR      = 37
+const int AST_NEW_EXPR         = 38
+const int AST_SUPER_EXPR       = 39
+const int AST_TYPEOF           = 40
+const int AST_MATCH            = 41
+const int AST_MATCH_ARM        = 42
+const int AST_LAMBDA           = 43
+const int AST_CAST             = 44
+const int AST_NULL_LITERAL     = 45
+const int AST_TEST             = 46
+const int AST_ASSERT           = 47
+const int AST_TYPE_PARAM       = 48
+const int AST_TUPLE            = 49
+const int AST_TUPLE_ACCESS     = 50
+const int AST_NAMED_ARG        = 51
+const int AST_VARIADIC         = 52
+const int AST_OPERATOR_DECL    = 53
+const int AST_EXTEND_DECL      = 54
+const int AST_DESTRUCTURE      = 55
+const int AST_OPTION_SOME      = 56
+const int AST_OPTION_NONE      = 57
+const int AST_RESULT_OK        = 58
+const int AST_RESULT_ERR       = 59
+const int AST_NULL_COALESCE    = 60
+const int AST_TERNARY          = 61
+const int AST_SAFE_ACCESS      = 62
+const int AST_YIELD            = 63
+const int AST_COROUTINE_DECL   = 64
+const int AST_RESUME_EXPR      = 65
+const int AST_ASYNC_FUNC_DECL  = 66
+const int AST_AWAIT_EXPR       = 67
+const int AST_RUN_ASYNC        = 68
+const int AST_ATTRIBUTE        = 69
+const int AST_CONSTEXPR_DECL   = 70
+const int AST_MACRO_INVOCATION = 71
+const int AST_GUARD            = 72
+const int AST_EXTERN_DECL      = 73
+const int AST_BENCH_DECL       = 74
+const int AST_OWN_EXPR         = 75
+const int AST_TYPE_ALIAS       = 76
+const int AST_DEFER            = 77
+const int AST_RANGE            = 78
+const int AST_UNION_TYPE       = 79
+const int AST_STATIC_METHOD    = 80
+const int AST_ABSTRACT_METHOD  = 81
+const int AST_VARIANT          = 82
+const int AST_TRY_EXPR         = 83
+const int AST_RANGE_INCLUSIVE  = 84
+const int AST_WHEN             = 85
+const int AST_WHEN_ARM         = 86
+
+// Kind-name table (index == AST_xxx constant, matches tools/astdump.c)
+func ast_kind_name(int kind): str {
+    str[] names = {
+        "PROGRAM", "MAIN", "BLOCK", "VAR_DECL", "FUNC_DECL", "MACRO_DECL",
+        "CLASS_DECL", "STRUCT_DECL", "ENUM_DECL", "EXPR_STMT", "IF", "WHILE",
+        "FOR", "FOR_IN", "SWITCH", "CASE", "DEFAULT", "IMPORT", "RETURN",
+        "ASSIGN", "BINARY", "UNARY", "POSTFIX", "CALL", "IDENTIFIER", "LITERAL",
+        "LITERAL_ARRAY", "MEMBER_ACCESS", "INDEX", "SLICE", "BREAK", "CONTINUE",
+        "TRY", "CATCH", "THROW", "INTERFACE_DECL", "TRAIT_DECL", "CONSTRUCTOR",
+        "NEW_EXPR", "SUPER_EXPR", "TYPEOF", "MATCH", "MATCH_ARM", "LAMBDA",
+        "CAST", "NULL_LITERAL", "TEST", "ASSERT", "TYPE_PARAM", "TUPLE",
+        "TUPLE_ACCESS", "NAMED_ARG", "VARIADIC", "OPERATOR_DECL", "EXTEND_DECL",
+        "DESTRUCTURE", "OPTION_SOME", "OPTION_NONE", "RESULT_OK", "RESULT_ERR",
+        "NULL_COALESCE", "TERNARY", "SAFE_ACCESS", "YIELD", "COROUTINE_DECL",
+        "RESUME_EXPR", "ASYNC_FUNC_DECL", "AWAIT_EXPR", "RUN_ASYNC", "ATTRIBUTE",
+        "CONSTEXPR_DECL", "MACRO_INVOCATION", "GUARD", "EXTERN_DECL", "BENCH_DECL",
+        "OWN_EXPR", "TYPE_ALIAS", "DEFER", "RANGE", "UNION_TYPE", "STATIC_METHOD",
+        "ABSTRACT_METHOD", "VARIANT", "TRY_EXPR", "RANGE_INCLUSIVE", "WHEN",
+        "WHEN_ARM"
+    }
+    if kind >= 0 && kind < len(names) {
+        return names[kind]
+    }
+    return "UNKNOWN"
+}
+
+// ---------------------------------------------------------------------------
+// Token — struct type passed by value in C.
+// ---------------------------------------------------------------------------
+struct Token {
+    int kind      // TOKEN_xxx constant
+    str text      // Source text of token
+    int line
+    int col
+    int start_index // Offset of the token's first character in the source
+}
+
+func make_token(int k, str t, int ln, int c): Token {
+    Token tok
+    tok.kind = k
+    tok.text = t
+    tok.line = ln
+    tok.col  = c
+    tok.start_index = 0
+    return tok
+}
+
+func make_eof_token(): Token {
+    Token tok
+    tok.kind = 0
+    tok.text = ""
+    tok.line = 1
+    tok.col  = 1
+    tok.start_index = 0
+    return tok
+}
+
+// A token that carries nothing but its kind. The C parser sets `.type` on a
+// zero-initialized token in a few places, which leaves the text and position
+// empty; the AST dump prints that as var_type="".
+func make_kind_token(int k): Token {
+    return make_token(k, "", 0, 0)
+}
+
+// ---------------------------------------------------------------------------
+// ASTNode — mirrors C ASTNode struct.
+// ---------------------------------------------------------------------------
+class ASTNode {
+    int kind               // AST_xxx constant
+
+    // Primary token
+    Token token
+
+    // Declared type
+    Token var_type
+    // Return type
+    Token return_type
+    // Resolved expression type
+    int expr_type
+
+    // Boolean flags
+    bool is_const
+    bool is_array
+    bool is_pointer         // nullable (str?)
+    bool is_class
+    bool is_pointer_access
+    bool is_union_type
+    bool type_is_inferred
+    bool is_variadic
+    bool is_generator
+    bool is_tail_call_optimized
+    bool is_static
+    bool is_abstract
+    bool is_final
+
+    // Metadata
+    str type_name
+    str parent_name
+    str implements_names
+    str attribute_name
+
+    Token named_arg_name
+    Token operator_token
+
+    // Child lists
+    ASTNode[] children
+    ASTNode[] type_params
+    ASTNode[] type_args
+
+    // Structural slots
+    ASTNode? left
+    ASTNode? right
+    ASTNode? condition
+    ASTNode? init
+    ASTNode? increment
+    ASTNode? default_value
+
+    func new(int k, Token tok) {
+        self.kind           = k
+        self.token          = tok
+        self.var_type       = make_eof_token()
+        self.return_type    = make_eof_token()
+        self.expr_type      = 0
+        self.is_const       = false
+        self.is_array       = false
+        self.is_pointer     = false
+        self.is_class       = false
+        self.is_pointer_access = false
+        self.is_union_type  = false
+        self.type_is_inferred = false
+        self.is_variadic    = false
+        self.is_generator   = false
+        self.is_tail_call_optimized = false
+        self.is_static      = false
+        self.is_abstract    = false
+        self.is_final       = false
+        self.type_name      = ""
+        self.parent_name    = ""
+        self.implements_names = ""
+        self.attribute_name = ""
+        self.named_arg_name = make_eof_token()
+        self.operator_token = make_eof_token()
+        self.children       = {}
+        self.type_params    = {}
+        self.type_args      = {}
+        self.left           = null
+        self.right          = null
+        self.condition      = null
+        self.init           = null
+        self.increment      = null
+        self.default_value  = null
+    }
+}
+
+func node_add_child(ASTNode parent, ASTNode child) {
+    push(parent.children, child)
+}
+
+func node_add_type_param(ASTNode parent, ASTNode param) {
+    push(parent.type_params, param)
+}
+
+func node_add_type_arg(ASTNode parent, ASTNode arg) {
+    push(parent.type_args, arg)
+}
+
+// ---------------------------------------------------------------------------
+// ParserState
+// ---------------------------------------------------------------------------
+class ParserState {
+    Token current
+    Token previous
+    bool had_error
+    bool panic_mode
+
+    func new() {
+        self.current    = make_eof_token()
+        self.previous   = make_eof_token()
+        self.had_error  = false
+        self.panic_mode = false
+    }
+}
+
+// ---------------------------------------------------------------------------
+// MacroEntry
+// ---------------------------------------------------------------------------
+class MacroEntry {
+    str       name
+    ASTNode   decl
+    MacroEntry? next
+
+    func new(str n, ASTNode d) {
+        self.name = n
+        self.decl = d
+        self.next = null
+    }
+}
+
+
+// --- src2/parser_core.cn ---
+// Self-hosting bootstrap: core parser utilities.
+// Port of src/parser_core.c + global state initialization.
+// Depends on: src2/lexer.cn (for Lexer, TOKEN_xxx), src2/parser_types.cn.
+
+// ---------------------------------------------------------------------------
+// Global parser state and source text
+// ---------------------------------------------------------------------------
+ParserState g_parser = new ParserState()
+str g_parser_source = ""
+Lexer? g_lexer = null
+
+// ---------------------------------------------------------------------------
+// Lexer interface helpers.
+// ---------------------------------------------------------------------------
+
+// Convert a lexer.cn Lexer-produced token into a parser Token.
+func lexer_token_to_parser(Lexer lx): Token {
+    Token tok = make_token(lx.cur_type_get(), lx.cur_start_get(), lx.cur_line_get(), lx.cur_column_get())
+    tok.start_index = lx.cur_start_index_get()
+    return tok
+}
+
+// ---------------------------------------------------------------------------
+// Core: advance / consume / check / match
+// Mirrors parser_core.c functions.
+// ---------------------------------------------------------------------------
+
+// Advance the parser by one token. Skip TOKEN_ERROR tokens, emitting errors.
+func advance_token() {
+    g_parser.previous = g_parser.current
+    if g_lexer == null {
+        return
+    }
+    while true {
+        g_lexer.next_token()
+        var tok = lexer_token_to_parser(g_lexer)
+        g_parser.current = tok
+        if tok.kind != TOKEN_ERROR {
+            return
+        }
+        error_at_tok(tok, tok.text)
+    }
+}
+
+// Return true if the current token has the given kind.
+func check_token(int kind): bool {
+    return g_parser.current.kind == kind
+}
+
+// Return true if current is TOKEN_IDENTIFIER with exactly the given text.
+func check_identifier_text(str text): bool {
+    return g_parser.current.kind == TOKEN_IDENTIFIER &&
+           g_parser.current.text == text
+}
+
+// Consume and return true if current token matches kind; else return false.
+func match_token(int kind): bool {
+    if !check_token(kind) {
+        return false
+    }
+    advance_token()
+    return true
+}
+
+// Consume current token if it is TOKEN_IDENTIFIER with the given text.
+func match_identifier_text(str text): bool {
+    if !check_identifier_text(text) {
+        return false
+    }
+    advance_token()
+    return true
+}
+
+// Require the current token to be `kind`, advancing past it. Emit error if not.
+func consume(int kind, str message) {
+    if g_parser.current.kind == kind {
+        advance_token()
+        return
+    }
+    error_at_tok(g_parser.current, message)
+}
+
+// Consume current token if it is a semicolon (semicolons are optional in Cnext).
+func optionally_consume_semicolon() {
+    match_token(TOKEN_SEMICOLON)
+}
+
+// ---------------------------------------------------------------------------
+// Error reporting
+// Mirrors error_at / error / error_at_current in parser_core.c.
+// ---------------------------------------------------------------------------
+
+func error_at_tok(Token tok, str message) {
+    if g_parser.panic_mode {
+        return
+    }
+    g_parser.panic_mode = true
+    g_parser.had_error  = true
+
+    str prefix = "error [E000] [" + to_str(tok.line) + ":" + to_str(tok.col) + "]: "
+    if tok.kind == TOKEN_EOF {
+        printin(prefix + message + " (at end of file)")
+    } else if tok.kind == TOKEN_ERROR {
+        printin(prefix + message)
+    } else {
+        printin(prefix + message + " at '" + tok.text + "'")
+    }
+}
+
+// Report an error at the previous token.
+func parser_error(str message) {
+    error_at_tok(g_parser.previous, message)
+}
+
+// Report an error at the current token.
+func error_at_current(str message) {
+    error_at_tok(g_parser.current, message)
+}
+
+// ---------------------------------------------------------------------------
+// consume_name — accepts identifier or any builtin type keyword as a name.
+// Mirrors is_name_token / consume_name in parser_type.c.
+// ---------------------------------------------------------------------------
+func is_builtin_type(int kind): bool {
+    return kind == TOKEN_INT_TYPE   ||
+           kind == TOKEN_LONG_TYPE  ||
+           kind == TOKEN_FLOAT_TYPE ||
+           kind == TOKEN_DOUBLE_TYPE||
+           kind == TOKEN_STR_TYPE   ||
+           kind == TOKEN_BOOL_TYPE  ||
+           kind == TOKEN_CHAR_TYPE  ||
+           kind == TOKEN_BYTE_TYPE  ||
+           kind == TOKEN_UINT_TYPE  ||
+           kind == TOKEN_ULONG_TYPE ||
+           kind == TOKEN_USHORT_TYPE||
+           kind == TOKEN_UBYTE_TYPE
+}
+
+func is_name_token(int kind): bool {
+    return kind == TOKEN_IDENTIFIER || is_builtin_type(kind)
+}
+
+
+func consume_name(str message) {
+    if is_name_token(g_parser.current.kind) {
+        advance_token()
+        return
+    }
+    error_at_current(message)
+}
+
+// ---------------------------------------------------------------------------
+// is_type — returns true if the current token looks like the start of a type.
+// Mirrors parser_type.c:is_type().
+// ---------------------------------------------------------------------------
+func is_type(): bool {
+    int k = g_parser.current.kind
+    if is_builtin_type(k) || k == TOKEN_VAR || k == TOKEN_ITER || k == TOKEN_FUNC {
+        return true
+    }
+    if k == TOKEN_IDENTIFIER && len(g_parser.current.text) > 0 {
+        str c = str_substring(g_parser.current.text, 0, 1)
+        if c >= "A" && c <= "Z" {
+            return true
+        }
+    }
+    return false
+}
+
+// ---------------------------------------------------------------------------
+// Synchronize — skip tokens after a parse error until a statement boundary.
+// Mirrors synchronize() in parser_core.c.
+// ---------------------------------------------------------------------------
+func synchronize() {
+    g_parser.panic_mode = false
+    while g_parser.current.kind != TOKEN_EOF {
+        if g_parser.previous.kind == TOKEN_SEMICOLON ||
+           g_parser.previous.kind == TOKEN_RBRACE {
+            return
+        }
+        int k = g_parser.current.kind
+        if k == TOKEN_CLASS   || k == TOKEN_TRAIT   || k == TOKEN_FUNC    ||
+           k == TOKEN_EXTEND  || k == TOKEN_IF      || k == TOKEN_WHILE   ||
+           k == TOKEN_FOR     || k == TOKEN_RETURN  || k == TOKEN_MAIN    ||
+           k == TOKEN_TEST    || k == TOKEN_RBRACE  || k == TOKEN_CASE    ||
+           k == TOKEN_DEFAULT || k == TOKEN_IMPORT  || k == TOKEN_CONST   ||
+           k == TOKEN_VAR     || k == TOKEN_TYPE_ALIAS || k == TOKEN_STRUCT||
+           k == TOKEN_ENUM    || k == TOKEN_INTERFACE  || k == TOKEN_TRY   ||
+           k == TOKEN_MATCH   || k == TOKEN_COROUTINE  || k == TOKEN_ASYNC ||
+           k == TOKEN_MACRO   || k == TOKEN_CONSTEXPR  || k == TOKEN_EXTERN||
+           k == TOKEN_DEFER {
+            return
+        }
+        advance_token()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// parse_attribute_name — parse @name or @name(args) and return the name str.
+// Mirrors parse_attribute_name() in parser_core.c.
+// Returns "" if no attribute.
+// ---------------------------------------------------------------------------
+func parse_attribute_name(): str {
+    if !match_token(TOKEN_AT) {
+        return ""
+    }
+    consume(TOKEN_IDENTIFIER, "Expect attribute name after '@'.")
+    str name = g_parser.previous.text
+    if match_token(TOKEN_LPAREN) {
+        int depth = 1
+        while depth > 0 && !check_token(TOKEN_EOF) {
+            if check_token(TOKEN_LPAREN) {
+                depth = depth + 1
+            } else if check_token(TOKEN_RPAREN) {
+                depth = depth - 1
+            }
+            if depth > 0 {
+                advance_token()
+            }
+        }
+        consume(TOKEN_RPAREN, "Expect ')' after attribute arguments.")
+    }
+    return name
+}
+
+// ---------------------------------------------------------------------------
+// assign_type_from_node / assign_return_type_from_node
+// ---------------------------------------------------------------------------
+func assign_type_from_node(ASTNode dest, ASTNode typeNode) {
+    if typeNode.is_union_type {
+        dest.is_union_type = true
+        dest.var_type = make_token(TOKEN_IDENTIFIER, "CnextVariant", typeNode.token.line, typeNode.token.col)
+    } else {
+        dest.var_type = typeNode.token
+        dest.is_array = typeNode.is_array
+    }
+}
+
+func assign_return_type_from_node(ASTNode dest, ASTNode typeNode) {
+    if typeNode.is_union_type {
+        dest.return_type = make_token(TOKEN_IDENTIFIER, "CnextVariant", typeNode.token.line, typeNode.token.col)
+    } else {
+        dest.return_type = typeNode.token
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Parser initialization — call before parsing a file.
+// ---------------------------------------------------------------------------
+func init_parser(str source) {
+    g_parser_source = source
+    g_parser.had_error  = false
+    g_parser.panic_mode = false
+    var eof = make_eof_token()
+    g_parser.current  = eof
+    g_parser.previous = eof
+    g_lexer = new Lexer(source)
+    advance_token()
+}
+
+
+// --- src2/parser_type.cn ---
+// Self-hosting bootstrap: port of src/parser_type.c into Cnext (Milestone B).
+// Provides: parse_type, parse_type_union, is_generic_call_lookahead.
+// Note: is_name_token, consume_name, is_type are defined in parser_core.cn
+//       and must NOT be redefined here.
+// Depends on: src2/parser_types.cn, src2/parser_core.cn, src2/lexer.cn.
+
+// ---------------------------------------------------------------------------
+// parse_type — parse a single type expression and return its ASTNode.
+// Mirrors parser_type.c:parse_type().
+// Returns null on error.
+// ---------------------------------------------------------------------------
+func parse_type(): ASTNode? {
+    // Check for tuple type: (Type1, Type2, ...)
+    if match_token(TOKEN_LPAREN) {
+        var tuple_type = new ASTNode(AST_TUPLE, g_parser.previous)
+        while true {
+            var elem_type = parse_type()
+            if elem_type == null {
+                return null
+            }
+            node_add_child(tuple_type, elem_type)
+            if !match_token(TOKEN_COMMA) {
+                break
+            }
+        }
+        consume(TOKEN_RPAREN, "Expect ')' after tuple type.")
+        return tuple_type
+    }
+
+    // Check for Optional<T> type (identifier text match since optional is not a keyword)
+    if check_identifier_text("optional") || check_identifier_text("Optional") {
+        advance_token()
+        var opt_type = new ASTNode(AST_IDENTIFIER, g_parser.previous)
+        consume(TOKEN_LESS, "Expect '<' after 'Optional'.")
+        var inner_type = parse_type()
+        if inner_type == null {
+            return null
+        }
+        node_add_type_arg(opt_type, inner_type)
+        consume(TOKEN_GREATER, "Expect '>' after Optional type argument.")
+        return opt_type
+    }
+
+    // Check for Result<T, E> type (identifier text match since result is not a keyword)
+    if check_identifier_text("result") || check_identifier_text("Result") {
+        advance_token()
+        var res_type = new ASTNode(AST_IDENTIFIER, g_parser.previous)
+        consume(TOKEN_LESS, "Expect '<' after 'Result'.")
+        var ok_type = parse_type()
+        if ok_type == null {
+            return null
+        }
+        node_add_type_arg(res_type, ok_type)
+        consume(TOKEN_COMMA, "Expect ',' after Result ok type.")
+        var err_type = parse_type()
+        if err_type == null {
+            return null
+        }
+        node_add_type_arg(res_type, err_type)
+        consume(TOKEN_GREATER, "Expect '>' after Result type arguments.")
+        return res_type
+    }
+
+    // Check for iter<T> type
+    if check_token(TOKEN_ITER) {
+        advance_token()
+        var iter_type = new ASTNode(AST_IDENTIFIER, g_parser.previous)
+        consume(TOKEN_LESS, "Expect '<' after 'iter'.")
+        var elem_type = parse_type()
+        if elem_type == null {
+            return null
+        }
+        node_add_type_arg(iter_type, elem_type)
+        consume(TOKEN_GREATER, "Expect '>' after iter type argument.")
+        return iter_type
+    }
+
+    // Check for func type (opaque function pointer)
+    if check_token(TOKEN_FUNC) {
+        advance_token()
+        var node = new ASTNode(AST_IDENTIFIER, g_parser.previous)
+        return node
+    }
+
+    if is_type() {
+        advance_token()
+        Token typeToken = g_parser.previous
+        var node = new ASTNode(AST_IDENTIFIER, typeToken)
+
+        if match_token(TOKEN_LESS) {
+            // Generic type arguments: Type<A, B>
+            while true {
+                var arg = parse_type()
+                if arg == null {
+                    return null
+                }
+                node_add_type_arg(node, arg)
+                if !match_token(TOKEN_COMMA) {
+                    break
+                }
+            }
+            consume(TOKEN_GREATER, "Expect '>' after generic type arguments.")
+        }
+
+        if match_token(TOKEN_LBRACKET) {
+            consume(TOKEN_RBRACKET, "Expect ']' after '[' for array type.")
+            node.is_array = true
+        }
+
+        // Nullable type: str?, int?, etc.
+        if match_token(TOKEN_QUESTION) {
+            node.is_pointer = true  // Reuse is_pointer flag for nullable
+        }
+
+        // Handle union types: Type1 | Type2 | Type3
+        if match_token(TOKEN_PIPE) {
+            var union_node = new ASTNode(AST_UNION_TYPE, typeToken)
+            union_node.is_union_type = true
+            node_add_child(union_node, node)
+            while true {
+                var next_type = parse_type()
+                if next_type == null {
+                    return null
+                }
+                node_add_child(union_node, next_type)
+                if !match_token(TOKEN_PIPE) {
+                    break
+                }
+            }
+            return union_node
+        }
+
+        return node
+    }
+
+    error_at_current("Expect type.")
+    return null
+}
+
+// ---------------------------------------------------------------------------
+// parse_type_union — parse a type that may be a union (Type1 | Type2 | ...).
+// Mirrors parser_type.c:parse_type_union().
+// Returns null on error.
+// ---------------------------------------------------------------------------
+func parse_type_union(): ASTNode? {
+    var left = parse_type()
+    if left == null {
+        return null
+    }
+
+    // Handle union types: Type1 | Type2 | Type3
+    if match_token(TOKEN_PIPE) {
+        var union_node = new ASTNode(AST_UNION_TYPE, left.token)
+        union_node.is_union_type = true
+        node_add_child(union_node, left)
+        while true {
+            var next_type = parse_type()
+            if next_type == null {
+                return null
+            }
+            node_add_child(union_node, next_type)
+            if !match_token(TOKEN_PIPE) {
+                break
+            }
+        }
+        return union_node
+    }
+
+    return left
+}
+
+// ---------------------------------------------------------------------------
+// is_generic_call_lookahead — scan forward in the current token text to see
+// if `<TypeName[,TypeName]*>(` follows the identifier.
+// Mirrors parser_type.c:is_generic_call_lookahead().
+// ---------------------------------------------------------------------------
+func skip_space_forward(str src, int i): int {
+    int rlen = len(src)
+    while i < rlen {
+        str ch = str_substring(src, i, i + 1)
+        if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
+            break
+        }
+        i = i + 1
+    }
+    return i
+}
+
+func is_name_start_char(str ch): bool {
+    return (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || ch == "_"
+}
+
+func is_name_char(str ch): bool {
+    return is_name_start_char(ch) || (ch >= "0" && ch <= "9")
+}
+
+func is_generic_call_lookahead(): bool {
+    str src = g_parser_source
+    int rlen = len(src)
+    // The scan starts at the current token, which is the '<' itself.
+    int i = g_parser.current.start_index
+
+    i = skip_space_forward(src, i)
+    if i >= rlen || str_substring(src, i, i + 1) != "<" {
+        return false
+    }
+    i = i + 1
+
+    i = skip_space_forward(src, i)
+
+    // Must be a type name (alpha/underscore or built-in type keyword)
+    if i >= rlen { return false }
+    if !is_name_start_char(str_substring(src, i, i + 1)) {
+        return false
+    }
+    while i < rlen && is_name_char(str_substring(src, i, i + 1)) {
+        i = i + 1
+    }
+
+    i = skip_space_forward(src, i)
+
+    // Handle comma-separated type list
+    while i < rlen && str_substring(src, i, i + 1) == "," {
+        i = i + 1
+        i = skip_space_forward(src, i)
+        if i >= rlen { return false }
+        if !is_name_start_char(str_substring(src, i, i + 1)) {
+            return false
+        }
+        while i < rlen && is_name_char(str_substring(src, i, i + 1)) {
+            i = i + 1
+        }
+        i = skip_space_forward(src, i)
+    }
+
+    if i >= rlen || str_substring(src, i, i + 1) != ">" {
+        return false
+    }
+    i = i + 1
+
+    i = skip_space_forward(src, i)
+
+    // Must be followed by '(' for a function call
+    return i < rlen && str_substring(src, i, i + 1) == "("
+}
+
+
+// --- src2/parser_macro.cn ---
+// Self-hosting bootstrap: port of src/parser_macro.c
+// Provides: macro_depth_ok, macro_depth_push, macro_depth_pop,
+//           register_macro, lookup_macro, deep_copy_ast, substitute_params.
+// MacroEntry class is defined in parser_types.cn.
+// Depends on: src2/parser_types.cn, src2/parser_core.cn, src2/lexer.cn.
+
+// ---------------------------------------------------------------------------
+// Macro registry state
+// ---------------------------------------------------------------------------
+MacroEntry? g_macro_table = null
+int g_macro_expansion_depth = 0
+const int MAX_MACRO_DEPTH = 32
+
+// ---------------------------------------------------------------------------
+// macro_depth_ok — returns true if the expansion depth is within limits.
+// Mirrors parser_macro.c:macro_depth_ok().
+// ---------------------------------------------------------------------------
+func macro_depth_ok(): bool {
+    return g_macro_expansion_depth < MAX_MACRO_DEPTH
+}
+
+// ---------------------------------------------------------------------------
+// macro_depth_push — increment macro expansion depth.
+// Mirrors parser_macro.c:macro_depth_push().
+// ---------------------------------------------------------------------------
+func macro_depth_push() {
+    g_macro_expansion_depth = g_macro_expansion_depth + 1
+}
+
+// ---------------------------------------------------------------------------
+// macro_depth_pop — decrement macro expansion depth (floor at 0).
+// Mirrors parser_macro.c:macro_depth_pop().
+// ---------------------------------------------------------------------------
+func macro_depth_pop() {
+    if g_macro_expansion_depth > 0 {
+        g_macro_expansion_depth = g_macro_expansion_depth - 1
+    }
+}
+
+// ---------------------------------------------------------------------------
+// register_macro — register a macro declaration node in the global table.
+// Mirrors parser_macro.c:register_macro().
+// ---------------------------------------------------------------------------
+func register_macro(ASTNode decl) {
+    var entry = new MacroEntry(decl.token.text, decl)
+    entry.next = g_macro_table
+    g_macro_table = entry
+}
+
+// ---------------------------------------------------------------------------
+// lookup_macro — look up a macro by name, returning its declaration ASTNode.
+// Mirrors parser_macro.c:lookup_macro().
+// Returns null if not found.
+// ---------------------------------------------------------------------------
+func lookup_macro(str name): ASTNode? {
+    MacroEntry? e = g_macro_table
+    while e != null {
+        if e.name == name {
+            return e.decl
+        }
+        e = e.next
+    }
+    return null
+}
+
+// ---------------------------------------------------------------------------
+// deep_copy_ast — recursively deep-copy an ASTNode tree.
+// Mirrors parser_macro.c:deep_copy_ast().
+// Returns null if node is null.
+// ---------------------------------------------------------------------------
+func deep_copy_ast(ASTNode? node): ASTNode? {
+    if node == null {
+        return null
+    }
+    var copy = new ASTNode(node.kind, node.token)
+
+    // Copy all scalar flags and tokens
+    copy.is_const           = node.is_const
+    copy.is_array           = node.is_array
+    copy.is_pointer         = node.is_pointer
+    copy.is_class           = node.is_class
+    copy.is_pointer_access  = node.is_pointer_access
+    copy.is_union_type      = node.is_union_type
+    copy.is_variadic        = node.is_variadic
+    copy.is_generator       = node.is_generator
+    copy.is_static          = node.is_static
+    copy.is_abstract        = node.is_abstract
+    copy.is_final           = node.is_final
+    copy.is_tail_call_optimized = node.is_tail_call_optimized
+    copy.type_is_inferred   = node.type_is_inferred
+    copy.operator_token     = node.operator_token
+    copy.var_type           = node.var_type
+    copy.return_type        = node.return_type
+    copy.expr_type          = node.expr_type
+    copy.named_arg_name     = node.named_arg_name
+
+    // Copy string metadata
+    copy.type_name          = node.type_name
+    copy.parent_name        = node.parent_name
+    copy.implements_names   = node.implements_names
+    copy.attribute_name     = node.attribute_name
+
+    // Deep-copy children array
+    int ci = 0
+    while ci < len(node.children) {
+        ASTNode? child_copy = deep_copy_ast(node.children[ci])
+        if child_copy != null {
+            node_add_child(copy, child_copy)
+        }
+        ci = ci + 1
+    }
+
+    // Deep-copy type_params array
+    int pi = 0
+    while pi < len(node.type_params) {
+        ASTNode? param_copy = deep_copy_ast(node.type_params[pi])
+        if param_copy != null {
+            node_add_type_param(copy, param_copy)
+        }
+        pi = pi + 1
+    }
+
+    // Deep-copy type_args array
+    int ai = 0
+    while ai < len(node.type_args) {
+        ASTNode? arg_copy = deep_copy_ast(node.type_args[ai])
+        if arg_copy != null {
+            node_add_type_arg(copy, arg_copy)
+        }
+        ai = ai + 1
+    }
+
+    // Deep-copy structural nullable slots
+    copy.left          = deep_copy_ast(node.left)
+    copy.right         = deep_copy_ast(node.right)
+    copy.condition     = deep_copy_ast(node.condition)
+    copy.init          = deep_copy_ast(node.init)
+    copy.increment     = deep_copy_ast(node.increment)
+    copy.default_value = deep_copy_ast(node.default_value)
+
+    return copy
+}
+
+// ---------------------------------------------------------------------------
+// substitute_params — walk an AST tree and substitute macro parameters with
+// their corresponding argument nodes.
+// Mirrors parser_macro.c:substitute_params().
+// params and args are parallel arrays of ASTNode.
+// ---------------------------------------------------------------------------
+func substitute_params(ASTNode? node, ASTNode[] params, ASTNode[] args) {
+    if node == null {
+        return
+    }
+
+    // If this node is an identifier, check if it matches a macro parameter
+    if node.kind == AST_IDENTIFIER {
+        int param_count = len(params)
+        int arg_count   = len(args)
+        int i = 0
+        while i < param_count && i < arg_count {
+            if node.token.text == params[i].token.text {
+                // Deep-copy the argument and graft its data into node
+                ASTNode? arg_copy_n = deep_copy_ast(args[i])
+                if arg_copy_n != null {
+                    var arg_copy = arg_copy_n
+                    node.kind               = arg_copy.kind
+                    node.token              = arg_copy.token
+                    node.is_const           = arg_copy.is_const
+                    node.is_array           = arg_copy.is_array
+                    node.is_pointer         = arg_copy.is_pointer
+                    node.is_class           = arg_copy.is_class
+                    node.expr_type          = arg_copy.expr_type
+                    node.is_pointer_access  = arg_copy.is_pointer_access
+                    node.is_variadic        = arg_copy.is_variadic
+                    node.is_generator       = arg_copy.is_generator
+                    node.operator_token     = arg_copy.operator_token
+                    node.var_type           = arg_copy.var_type
+                    node.return_type        = arg_copy.return_type
+                    node.named_arg_name     = arg_copy.named_arg_name
+                    node.type_name          = arg_copy.type_name
+                    node.parent_name        = arg_copy.parent_name
+                    node.implements_names   = arg_copy.implements_names
+                    node.attribute_name     = arg_copy.attribute_name
+
+                    // Graft arg_copy children into node
+                    int j = 0
+                    while j < len(arg_copy.children) {
+                        node_add_child(node, arg_copy.children[j])
+                        j = j + 1
+                    }
+
+                    // Graft arg_copy type_params into node
+                    int k = 0
+                    while k < len(arg_copy.type_params) {
+                        node_add_type_param(node, arg_copy.type_params[k])
+                        k = k + 1
+                    }
+
+                    // Graft arg_copy type_args into node
+                    int m = 0
+                    while m < len(arg_copy.type_args) {
+                        node_add_type_arg(node, arg_copy.type_args[m])
+                        m = m + 1
+                    }
+
+                    node.left          = arg_copy.left
+                    node.right         = arg_copy.right
+                    node.condition     = arg_copy.condition
+                    node.init          = arg_copy.init
+                    node.increment     = arg_copy.increment
+                    node.default_value = arg_copy.default_value
+                }
+                return
+            }
+            i = i + 1
+        }
+    }
+
+    // Recurse into children
+    int ci = 0
+    while ci < len(node.children) {
+        substitute_params(node.children[ci], params, args)
+        ci = ci + 1
+    }
+
+    // Recurse into structural slots
+    substitute_params(node.left,      params, args)
+    substitute_params(node.right,     params, args)
+    substitute_params(node.condition, params, args)
+    substitute_params(node.init,      params, args)
+    substitute_params(node.increment, params, args)
+}
+
+
+// --- src2/parser_expr.cn ---
+// Self-hosting bootstrap: port of src/parser_expr.c into Cnext (Milestone B).
+// Depends on: src2/lexer.cn, src2/parser_types.cn, src2/parser_core.cn,
+//             src2/parser_type.cn, src2/parser_macro.cn.
+
+// ---------------------------------------------------------------------------
+// Lookahead helpers (raw text scanning)
+// ---------------------------------------------------------------------------
+
+func is_lambda_lookahead(): bool {
+    if g_lexer == null { return false }
+    str src = g_parser_source
+    int src_len = len(src)
+    int depth = 1
+    bool in_string = false
+    str string_char = ""
+    // The reference parser scans from parser.current.start, i.e. the offset of
+    // the token right after the '(' we just consumed. g_lexer.index is the raw
+    // lexing offset and can sit past that token, so it must not be used here.
+    int start_pos = g_parser.current.start_index
+    if start_pos < 0 { start_pos = 0 }
+    if start_pos >= src_len { return false }
+
+    str rest = str_substring(src, start_pos, src_len)
+    int i = 0
+    int rlen = len(rest)
+    while i < rlen {
+        str ch = str_substring(rest, i, i + 1)
+        if in_string {
+            if ch == "\\" && i + 1 < rlen {
+                i = i + 2
+                continue
+            }
+            if ch == string_char {
+                in_string = false
+            }
+        } else {
+            if ch == "\"" || ch == "'" {
+                in_string = true
+                string_char = ch
+            } else if ch == "/" && i + 1 < rlen {
+                str ch2 = str_substring(rest, i + 1, i + 2)
+                if ch2 == "/" {
+                    while i < rlen && str_substring(rest, i, i + 1) != "\n" {
+                        i = i + 1
+                    }
+                    continue
+                }
+                if ch2 == "*" {
+                    i = i + 2
+                    while i + 1 < rlen {
+                        if str_substring(rest, i, i + 1) == "*" && str_substring(rest, i + 1, i + 2) == "/" {
+                            i = i + 2
+                            break
+                        }
+                        i = i + 1
+                    }
+                    continue
+                }
+            } else if ch == "(" {
+                depth = depth + 1
+            } else if ch == ")" {
+                depth = depth - 1
+                if depth == 0 {
+                    i = i + 1
+                    while i < rlen {
+                        str ws = str_substring(rest, i, i + 1)
+                        if ws != " " && ws != "\t" && ws != "\n" && ws != "\r" {
+                            break
+                        }
+                        i = i + 1
+                    }
+                    if i + 1 < rlen {
+                        if str_substring(rest, i, i + 1) == "=" && str_substring(rest, i + 1, i + 2) == ">" {
+                            return true
+                        }
+                    }
+                    return false
+                }
+            }
+        }
+        i = i + 1
+    }
+    return false
+}
+
+func is_paren_after_id(): bool {
+    if g_lexer == null { return false }
+    int start = g_lexer.index
+    int src_len = len(g_parser_source)
+    int i = start
+    while i < src_len {
+        str ch = str_substring(g_parser_source, i, i + 1)
+        if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
+            return ch == "("
+        }
+        i = i + 1
+    }
+    return false
+}
+
+func is_named_arg_lookahead(): bool {
+    if g_lexer == null { return false }
+    int start = g_lexer.index
+    int src_len = len(g_parser_source)
+    int i = start
+    while i < src_len {
+        str ch = str_substring(g_parser_source, i, i + 1)
+        if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
+            if ch != "=" {
+                return false
+            }
+            if i + 1 < src_len {
+                str ch2 = str_substring(g_parser_source, i + 1, i + 2)
+                if ch2 == "=" || ch2 == ">" || ch2 == "+" || ch2 == "-" || ch2 == "*" || ch2 == "/" {
+                    return false
+                }
+            }
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+// ---------------------------------------------------------------------------
+// Primary expression parser
+// Mirrors parser_expr.c:primary().
+// ---------------------------------------------------------------------------
+
+func parse_primary(): ASTNode? {
+    // Array literal: { expr, expr, ... }
+    if match_token(TOKEN_LBRACE) {
+        Token tok = g_parser.previous
+        var node = new ASTNode(AST_LITERAL_ARRAY, tok)
+        if !check_token(TOKEN_RBRACE) {
+            var first = parse_expression()
+            if first != null {
+                node_add_child(node, first)
+            }
+            while match_token(TOKEN_COMMA) {
+                if check_token(TOKEN_RBRACE) {
+                    break
+                }
+                var elem = parse_expression()
+                if elem != null {
+                    node_add_child(node, elem)
+                }
+            }
+        }
+        consume(TOKEN_RBRACE, "Expect '}' after array elements.")
+        return node
+    }
+
+    // Boolean / number / string / char literals
+    if match_token(TOKEN_FALSE) || match_token(TOKEN_TRUE) ||
+       match_token(TOKEN_NUMBER) || match_token(TOKEN_FLOAT_LITERAL) ||
+       match_token(TOKEN_STRING_LITERAL) || match_token(TOKEN_RAW_STRING) ||
+       match_token(TOKEN_CHAR_LITERAL) {
+        return new ASTNode(AST_LITERAL, g_parser.previous)
+    }
+
+    // null literal
+    if match_token(TOKEN_NULL) {
+        return new ASTNode(AST_NULL_LITERAL, g_parser.previous)
+    }
+
+    // none literal (Option::None)
+    if match_token(TOKEN_NONE) {
+        return new ASTNode(AST_OPTION_NONE, g_parser.previous)
+    }
+
+    // typeof(expr)
+    if match_token(TOKEN_TYPEOF) {
+        consume(TOKEN_LPAREN, "Expect '(' after 'typeof'.")
+        var node = new ASTNode(AST_TYPEOF, g_parser.previous)
+        var inner = parse_expression()
+        if inner != null {
+            node.left = inner
+        }
+        consume(TOKEN_RPAREN, "Expect ')' after typeof expression.")
+        return node
+    }
+
+    // own expr
+    if match_token(TOKEN_OWN) {
+        var node = new ASTNode(AST_OWN_EXPR, g_parser.previous)
+        var inner = parse_expression()
+        if inner != null {
+            node.left = inner
+        }
+        return node
+    }
+
+    // option(value)
+    if check_token(TOKEN_IDENTIFIER) && is_paren_after_id() && match_identifier_text("option") {
+        Token opt_tok = g_parser.previous
+        var node = new ASTNode(AST_OPTION_SOME, opt_tok)
+        consume(TOKEN_LPAREN, "Expect '(' after 'option'.")
+        var inner = parse_expression()
+        if inner != null {
+            node.left = inner
+        }
+        consume(TOKEN_RPAREN, "Expect ')' after option value.")
+        return node
+    }
+
+    // ok(value)
+    if check_token(TOKEN_IDENTIFIER) && is_paren_after_id() && match_identifier_text("ok") {
+        Token ok_tok = g_parser.previous
+        var node = new ASTNode(AST_RESULT_OK, ok_tok)
+        consume(TOKEN_LPAREN, "Expect '(' after 'ok'.")
+        var inner = parse_expression()
+        if inner != null {
+            node.left = inner
+        }
+        consume(TOKEN_RPAREN, "Expect ')' after ok value.")
+        return node
+    }
+
+    // err(value)
+    if check_token(TOKEN_IDENTIFIER) && is_paren_after_id() && match_identifier_text("err") {
+        Token err_tok = g_parser.previous
+        var node = new ASTNode(AST_RESULT_ERR, err_tok)
+        consume(TOKEN_LPAREN, "Expect '(' after 'err'.")
+        var inner = parse_expression()
+        if inner != null {
+            node.left = inner
+        }
+        consume(TOKEN_RPAREN, "Expect ')' after err value.")
+        return node
+    }
+
+    // Identifier — with optional generic call, postfix chain
+    if match_token(TOKEN_IDENTIFIER) {
+        var node = new ASTNode(AST_IDENTIFIER, g_parser.previous)
+
+        // Generic call: func_name<T, U>(args)
+        if check_token(TOKEN_LESS) && is_generic_call_lookahead() {
+            advance_token()  // consume '<'
+            var generic_node = new ASTNode(AST_IDENTIFIER, node.token)
+            var targ = parse_type()
+            if targ != null {
+                node_add_type_arg(generic_node, targ)
+            }
+            while match_token(TOKEN_COMMA) {
+                var ta = parse_type()
+                if ta != null {
+                    node_add_type_arg(generic_node, ta)
+                }
+            }
+            consume(TOKEN_GREATER, "Expect '>' after generic type arguments.")
+            node = generic_node
+            if match_token(TOKEN_LPAREN) {
+                var call = new ASTNode(AST_CALL, node.token)
+                call.left = node
+                if !check_token(TOKEN_RPAREN) {
+                    var arg = parse_expression()
+                    if arg != null {
+                        node_add_child(call, arg)
+                    }
+                    while match_token(TOKEN_COMMA) {
+                        var a = parse_expression()
+                        if a != null {
+                            node_add_child(call, a)
+                        }
+                    }
+                }
+                consume(TOKEN_RPAREN, "Expect ')' after arguments.")
+                return call
+            }
+            return node
+        }
+
+        // Postfix chain loop
+        while true {
+            if match_token(TOKEN_DOT) {
+                if check_token(TOKEN_NUMBER) || check_token(TOKEN_FLOAT_LITERAL) {
+                    advance_token()
+                    var access = new ASTNode(AST_TUPLE_ACCESS, g_parser.previous)
+                    access.left = node
+                    node = access
+                    continue
+                }
+                consume_name("Expect property name after '.'.")
+                Token member_name = g_parser.previous
+                if match_token(TOKEN_LPAREN) {
+                    var member = new ASTNode(AST_MEMBER_ACCESS, member_name)
+                    member.left = node
+                    var call = new ASTNode(AST_CALL, member_name)
+                    call.left = member
+                    if !check_token(TOKEN_RPAREN) {
+                        var arg = parse_expression()
+                        if arg != null {
+                            node_add_child(call, arg)
+                        }
+                        while match_token(TOKEN_COMMA) {
+                            var a = parse_expression()
+                            if a != null {
+                                node_add_child(call, a)
+                            }
+                        }
+                    }
+                    consume(TOKEN_RPAREN, "Expect ')' after arguments.")
+                    node = call
+                    continue
+                }
+                var access = new ASTNode(AST_MEMBER_ACCESS, member_name)
+                access.left = node
+                node = access
+                continue
+            }
+
+            if match_token(TOKEN_QUESTION_DOT) {
+                consume_name("Expect property name after '?.'.")
+                Token member_name = g_parser.previous
+                if match_token(TOKEN_LPAREN) {
+                    var member = new ASTNode(AST_SAFE_ACCESS, member_name)
+                    member.left = node
+                    var call = new ASTNode(AST_CALL, member_name)
+                    call.left = member
+                    if !check_token(TOKEN_RPAREN) {
+                        var arg = parse_expression()
+                        if arg != null {
+                            node_add_child(call, arg)
+                        }
+                        while match_token(TOKEN_COMMA) {
+                            var a = parse_expression()
+                            if a != null {
+                                node_add_child(call, a)
+                            }
+                        }
+                    }
+                    consume(TOKEN_RPAREN, "Expect ')' after arguments.")
+                    node = call
+                    continue
+                }
+                var access = new ASTNode(AST_SAFE_ACCESS, member_name)
+                access.left = node
+                node = access
+                continue
+            }
+
+            if match_token(TOKEN_LBRACKET) {
+                if check_token(TOKEN_COLON) {
+                    advance_token()
+                    var slice = new ASTNode(AST_SLICE, g_parser.previous)
+                    slice.left = node
+                    if !check_token(TOKEN_RBRACKET) {
+                        var rhs = parse_expression()
+                        if rhs != null {
+                            slice.right = rhs
+                        }
+                    }
+                    consume(TOKEN_RBRACKET, "Expect ']' after slice.")
+                    node = slice
+                    continue
+                }
+                var first = parse_expression()
+                if match_token(TOKEN_COLON) {
+                    var slice = new ASTNode(AST_SLICE, g_parser.previous)
+                    slice.left = node
+                    slice.init = first
+                    if !check_token(TOKEN_RBRACKET) {
+                        var rhs = parse_expression()
+                        if rhs != null {
+                            slice.right = rhs
+                        }
+                    }
+                    consume(TOKEN_RBRACKET, "Expect ']' after slice.")
+                    node = slice
+                    continue
+                }
+                var index = new ASTNode(AST_INDEX, g_parser.previous)
+                index.left = node
+                index.right = first
+                consume(TOKEN_RBRACKET, "Expect ']' after index.")
+                node = index
+                continue
+            }
+
+            if match_token(TOKEN_LPAREN) {
+                var call = new ASTNode(AST_CALL, g_parser.previous)
+                call.left = node
+
+                var macro_decl = lookup_macro(node.token.text)
+                if macro_decl != null && macro_decl.kind == AST_MACRO_DECL {
+                    if !macro_depth_ok() {
+                        error_at_current("Macro expansion depth limit exceeded (possible recursive macro).")
+                        return node
+                    }
+                    ASTNode[] args = {}
+                    if !check_token(TOKEN_RPAREN) {
+                        var a = parse_expression()
+                        if a != null {
+                            push(args, a)
+                        }
+                        while match_token(TOKEN_COMMA) {
+                            var b = parse_expression()
+                            if b != null {
+                                push(args, b)
+                            }
+                        }
+                    }
+                    consume(TOKEN_RPAREN, "Expect ')' after arguments.")
+                    macro_depth_push()
+                    var expanded = deep_copy_ast(macro_decl.left)
+                    if expanded != null {
+                        substitute_params(expanded, macro_decl.children, args)
+                    }
+                    macro_depth_pop()
+                    var es = new ASTNode(AST_EXPR_STMT, node.token)
+                    es.left = expanded
+                    return es
+                }
+
+                if !check_token(TOKEN_RPAREN) {
+                    while true {
+                        if check_token(TOKEN_IDENTIFIER) && is_named_arg_lookahead() {
+                            Token arg_name = g_parser.current
+                            advance_token()
+                            advance_token()
+                            var named = new ASTNode(AST_NAMED_ARG, arg_name)
+                            named.named_arg_name = arg_name
+                            var rhs = parse_expression()
+                            if rhs != null {
+                                named.right = rhs
+                            }
+                            node_add_child(call, named)
+                        } else {
+                            var arg = parse_expression()
+                            if arg != null {
+                                node_add_child(call, arg)
+                            }
+                        }
+                        if !match_token(TOKEN_COMMA) {
+                            break
+                        }
+                    }
+                }
+                consume(TOKEN_RPAREN, "Expect ')' after arguments.")
+                node = call
+                continue
+            }
+
+            break
+        }
+        return node
+    }
+
+    if match_token(TOKEN_LPAREN) {
+        if is_lambda_lookahead() {
+            var lambda_node = new ASTNode(AST_LAMBDA, g_parser.previous)
+            if !check_token(TOKEN_RPAREN) {
+                while true {
+                    var typeNode = parse_type()
+                    if typeNode == null {
+                        return null
+                    }
+                    consume(TOKEN_IDENTIFIER, "Expect parameter name.")
+                    var param = new ASTNode(AST_VAR_DECL, g_parser.previous)
+                    assign_type_from_node(param, typeNode)
+                    node_add_child(lambda_node, param)
+                    if !match_token(TOKEN_COMMA) {
+                        break
+                    }
+                }
+            }
+            consume(TOKEN_RPAREN, "Expect ')' after lambda parameters.")
+            consume(TOKEN_FAT_ARROW, "Expect '=>' after lambda parameters.")
+            if check_token(TOKEN_LBRACE) {
+                var body = parse_block()
+                lambda_node.left = body
+            } else {
+                var body = parse_expression()
+                lambda_node.left = body
+            }
+            return lambda_node
+        }
+        var first = parse_expression()
+        if match_token(TOKEN_COMMA) {
+            var tuple = new ASTNode(AST_TUPLE, g_parser.previous)
+            node_add_child(tuple, first)
+            while true {
+                var elem = parse_expression()
+                if elem != null {
+                    node_add_child(tuple, elem)
+                }
+                if !match_token(TOKEN_COMMA) {
+                    break
+                }
+            }
+            consume(TOKEN_RPAREN, "Expect ')' after tuple elements.")
+            return tuple
+        }
+        consume(TOKEN_RPAREN, "Expect ')' after expression.")
+        return first
+    }
+
+    if match_token(TOKEN_NEW) {
+        consume(TOKEN_IDENTIFIER, "Expect class name after 'new'.")
+        Token class_tok = g_parser.previous
+        var node = new ASTNode(AST_NEW_EXPR, class_tok)
+        if match_token(TOKEN_LESS) {
+            while true {
+                var ta = parse_type()
+                if ta != null {
+                    node_add_type_arg(node, ta)
+                }
+                if !match_token(TOKEN_COMMA) {
+                    break
+                }
+            }
+            consume(TOKEN_GREATER, "Expect '>' after generic type arguments.")
+        }
+        consume(TOKEN_LPAREN, "Expect '(' after class name in 'new'.")
+        if !check_token(TOKEN_RPAREN) {
+            while true {
+                var arg = parse_expression()
+                if arg != null {
+                    node_add_child(node, arg)
+                }
+                if !match_token(TOKEN_COMMA) {
+                    break
+                }
+            }
+        }
+        consume(TOKEN_RPAREN, "Expect ')' after 'new' arguments.")
+        return node
+    }
+
+    if match_token(TOKEN_SUPER) {
+        consume(TOKEN_DOT, "Expect '.' after 'super'.")
+        if check_token(TOKEN_IDENTIFIER) || check_token(TOKEN_NEW) {
+            advance_token()
+        } else {
+            error_at_current("Expect method name after 'super.'.")
+        }
+        Token member_name = g_parser.previous
+        var super_node = new ASTNode(AST_SUPER_EXPR, member_name)
+        if match_token(TOKEN_LPAREN) {
+            var call = new ASTNode(AST_CALL, member_name)
+            call.left = super_node
+            if !check_token(TOKEN_RPAREN) {
+                while true {
+                    var arg = parse_expression()
+                    if arg != null {
+                        node_add_child(call, arg)
+                    }
+                    if !match_token(TOKEN_COMMA) {
+                        break
+                    }
+                }
+            }
+            consume(TOKEN_RPAREN, "Expect ')' after super call arguments.")
+            return call
+        }
+        return super_node
+    }
+
+    if match_token(TOKEN_AWAIT) {
+        var node = new ASTNode(AST_AWAIT_EXPR, g_parser.previous)
+        var inner = parse_expression()
+        if inner != null {
+            node.left = inner
+        }
+        return node
+    }
+
+    if match_token(TOKEN_WHEN) {
+        var node = new ASTNode(AST_WHEN, g_parser.previous)
+        consume(TOKEN_LBRACE, "Expect '{' after 'when'.")
+        while !check_token(TOKEN_RBRACE) && !check_token(TOKEN_EOF) {
+            var arm = new ASTNode(AST_WHEN_ARM, g_parser.current)
+            if check_identifier_text("else") {
+                advance_token()
+                arm.is_const = true
+            } else {
+                var cond = parse_expression()
+                if cond != null {
+                    arm.condition = cond
+                }
+            }
+            consume(TOKEN_FAT_ARROW, "Expect '=>' after when condition.")
+            var body = parse_expression()
+            if body != null {
+                arm.left = body
+            }
+            match_token(TOKEN_COMMA)
+            node_add_child(node, arm)
+        }
+        consume(TOKEN_RBRACE, "Expect '}' after when body.")
+        return node
+    }
+
+    error_at_current("Expect expression.")
+    return null
+}
+
+func parse_postfix(): ASTNode? {
+    var node = parse_primary()
+    while true {
+        if match_token(TOKEN_INCREMENT) || match_token(TOKEN_DECREMENT) {
+            var op = new ASTNode(AST_POSTFIX, g_parser.previous)
+            op.left = node
+            node = op
+        } else if match_token(TOKEN_AS) {
+            var cast_node = new ASTNode(AST_CAST, g_parser.previous)
+            cast_node.left = node
+            var typeNode = parse_type()
+            if typeNode != null {
+                assign_type_from_node(cast_node, typeNode)
+            }
+            node = cast_node
+        } else {
+            break
+        }
+    }
+    return node
+}
+
+func parse_unary(): ASTNode? {
+    if match_token(TOKEN_BANG) || match_token(TOKEN_MINUS) {
+        var node = new ASTNode(AST_UNARY, g_parser.previous)
+        var rhs = parse_unary()
+        if rhs != null {
+            node.right = rhs
+        }
+        return node
+    }
+    return parse_postfix()
+}
+
+func parse_factor(): ASTNode? {
+    var expr = parse_unary()
+    while match_token(TOKEN_STAR) || match_token(TOKEN_SLASH) || match_token(TOKEN_PERCENT) {
+        var node = new ASTNode(AST_BINARY, g_parser.previous)
+        node.left = expr
+        var rhs = parse_unary()
+        if rhs != null {
+            node.right = rhs
+        }
+        expr = node
+    }
+    return expr
+}
+
+func parse_term(): ASTNode? {
+    var expr = parse_factor()
+    while match_token(TOKEN_PLUS) || match_token(TOKEN_MINUS) {
+        var node = new ASTNode(AST_BINARY, g_parser.previous)
+        node.left = expr
+        var rhs = parse_factor()
+        if rhs != null {
+            node.right = rhs
+        }
+        expr = node
+    }
+    return expr
+}
+
+func parse_comparison(): ASTNode? {
+    var expr = parse_term()
+    while match_token(TOKEN_GREATER) || match_token(TOKEN_GREATER_EQ) ||
+          match_token(TOKEN_LESS) || match_token(TOKEN_LESS_EQ) {
+        var node = new ASTNode(AST_BINARY, g_parser.previous)
+        node.left = expr
+        var rhs = parse_term()
+        if rhs != null {
+            node.right = rhs
+        }
+        expr = node
+    }
+    return expr
+}
+
+func parse_equality(): ASTNode? {
+    var expr = parse_comparison()
+    while match_token(TOKEN_BANG_EQ) || match_token(TOKEN_EQ_EQ) {
+        var node = new ASTNode(AST_BINARY, g_parser.previous)
+        node.left = expr
+        var rhs = parse_comparison()
+        if rhs != null {
+            node.right = rhs
+        }
+        expr = node
+    }
+    return expr
+}
+
+func parse_logic_and(): ASTNode? {
+    var expr = parse_equality()
+    while match_token(TOKEN_AND_AND) {
+        var node = new ASTNode(AST_BINARY, g_parser.previous)
+        node.left = expr
+        var rhs = parse_equality()
+        if rhs != null {
+            node.right = rhs
+        }
+        expr = node
+    }
+    return expr
+}
+
+func parse_null_coalesce(): ASTNode? {
+    var expr = parse_logic_and()
+    while match_token(TOKEN_QUESTION_QUESTION) {
+        var node = new ASTNode(AST_NULL_COALESCE, g_parser.previous)
+        node.left = expr
+        var rhs = parse_logic_and()
+        if rhs != null {
+            node.right = rhs
+        }
+        expr = node
+    }
+    return expr
+}
+
+func parse_logic_or(): ASTNode? {
+    var expr = parse_null_coalesce()
+    while match_token(TOKEN_OR_OR) {
+        var node = new ASTNode(AST_BINARY, g_parser.previous)
+        node.left = expr
+        var rhs = parse_null_coalesce()
+        if rhs != null {
+            node.right = rhs
+        }
+        expr = node
+    }
+    return expr
+}
+
+func parse_range_expr(): ASTNode? {
+    var expr = parse_logic_or()
+    while match_token(TOKEN_RANGE) || match_token(TOKEN_RANGE_INCLUSIVE) {
+        int kind = AST_RANGE
+        if g_parser.previous.kind == TOKEN_RANGE_INCLUSIVE {
+            kind = AST_RANGE_INCLUSIVE
+        }
+        var node = new ASTNode(kind, g_parser.previous)
+        node.left = expr
+        var rhs = parse_logic_or()
+        if rhs != null {
+            node.right = rhs
+        }
+        expr = node
+    }
+    return expr
+}
+
+func parse_expression(): ASTNode? {
+    var node = parse_range_expr()
+    if check_token(TOKEN_QUESTION) {
+        advance_token()
+        bool is_ternary = !check_token(TOKEN_COLON) &&
+                          !check_token(TOKEN_SEMICOLON) &&
+                          !check_token(TOKEN_RPAREN) &&
+                          !check_token(TOKEN_RBRACE) &&
+                          !check_token(TOKEN_COMMA) &&
+                          !check_token(TOKEN_EOF) &&
+                          !check_token(TOKEN_DOT) &&
+                          !check_token(TOKEN_INCREMENT) &&
+                          !check_token(TOKEN_DECREMENT)
+        if is_ternary {
+            var ternary = new ASTNode(AST_TERNARY, g_parser.previous)
+            ternary.condition = node
+            var then_expr = parse_expression()
+            if then_expr != null {
+                ternary.left = then_expr
+            }
+            consume(TOKEN_COLON, "Expect ':' in ternary expression.")
+            var else_expr = parse_expression()
+            if else_expr != null {
+                ternary.right = else_expr
+            }
+            return ternary
+        } else {
+            var try_node = new ASTNode(AST_TRY_EXPR, g_parser.previous)
+            try_node.left = node
+            return try_node
+        }
+    }
+    return node
+}
+
+
+// --- src2/parser_stmt.cn ---
+// Self-hosting bootstrap: port of src/parser_stmt.c into Cnext (Milestone B).
+// Depends on: lexer.cn, parser_types.cn, parser_core.cn, parser_type.cn,
+//             parser_expr.cn.
+
+// ---------------------------------------------------------------------------
+// var_declaration — port of parser_stmt.c:var_declaration()
+// ---------------------------------------------------------------------------
+func parse_var_declaration(bool is_const): ASTNode? {
+    if check_token(TOKEN_VAR) {
+        Token var_tok = g_parser.current
+        advance_token()
+        consume(TOKEN_IDENTIFIER, "Expect variable name.")
+        if g_parser.had_error && g_parser.previous.kind != TOKEN_IDENTIFIER {
+            return null
+        }
+        Token name = g_parser.previous
+        var node = new ASTNode(AST_VAR_DECL, name)
+        node.var_type = var_tok
+        node.is_const = is_const
+        if match_token(TOKEN_COLON) {
+            var typeNode = parse_type()
+            if typeNode == null {
+                return null
+            }
+            assign_type_from_node(node, typeNode)
+        }
+        if match_token(TOKEN_EQUAL) {
+            var init = parse_expression()
+            node.init = init
+        }
+        optionally_consume_semicolon()
+        return node
+    }
+
+    var typeNode = parse_type()
+    if typeNode == null {
+        return null
+    }
+    consume(TOKEN_IDENTIFIER, "Expect variable name.")
+    if g_parser.had_error && g_parser.previous.kind != TOKEN_IDENTIFIER {
+        return null
+    }
+    var node = new ASTNode(AST_VAR_DECL, g_parser.previous)
+    assign_type_from_node(node, typeNode)
+    node.is_const = is_const
+    if match_token(TOKEN_EQUAL) {
+        var init = parse_expression()
+        node.init = init
+    }
+    optionally_consume_semicolon()
+    return node
+}
+
+func parse_assign_stmt(ASTNode? expr): ASTNode? {
+    if match_token(TOKEN_EQUAL) || match_token(TOKEN_PLUS_EQUAL) ||
+       match_token(TOKEN_MINUS_EQUAL) || match_token(TOKEN_STAR_EQUAL) ||
+       match_token(TOKEN_SLASH_EQUAL) {
+        var assign = new ASTNode(AST_ASSIGN, g_parser.previous)
+        assign.left = expr
+        var rhs = parse_expression()
+        assign.right = rhs
+        optionally_consume_semicolon()
+        return assign
+    }
+    parser_error("Invalid assignment target.")
+    return null
+}
+
+func parse_expr_stmt(): ASTNode? {
+    var expr = parse_expression()
+    if check_token(TOKEN_EQUAL) || check_token(TOKEN_PLUS_EQUAL) ||
+       check_token(TOKEN_MINUS_EQUAL) || check_token(TOKEN_STAR_EQUAL) ||
+       check_token(TOKEN_SLASH_EQUAL) {
+        return parse_assign_stmt(expr)
+    }
+    var stmt = new ASTNode(AST_EXPR_STMT, g_parser.previous)
+    stmt.left = expr
+    optionally_consume_semicolon()
+    return stmt
+}
+
+func parse_block(): ASTNode? {
+    consume(TOKEN_LBRACE, "Expect '{' before block.")
+    var node = new ASTNode(AST_BLOCK, g_parser.previous)
+    while !check_token(TOKEN_RBRACE) && !check_token(TOKEN_EOF) {
+        int before = g_parser.current.start_index
+        var decl = parse_declaration()
+        if decl != null {
+            node_add_child(node, decl)
+        }
+        if g_parser.panic_mode {
+            synchronize()
+        }
+        if !check_token(TOKEN_EOF) && !check_token(TOKEN_RBRACE) &&
+           g_parser.current.start_index == before {
+            // declaration() reported an error without consuming anything, so
+            // looping would emit the same error forever. Force progress.
+            advance_token()
+        }
+    }
+    consume(TOKEN_RBRACE, "Expect '}' after block.")
+    return node
+}
+
+func parse_break_statement(): ASTNode? {
+    var node = new ASTNode(AST_BREAK, g_parser.previous)
+    optionally_consume_semicolon()
+    return node
+}
+
+func parse_continue_statement(): ASTNode? {
+    var node = new ASTNode(AST_CONTINUE, g_parser.previous)
+    optionally_consume_semicolon()
+    return node
+}
+
+func parse_if_statement(): ASTNode? {
+    var node = new ASTNode(AST_IF, g_parser.previous)
+    var cond = parse_expression()
+    node.condition = cond
+    var then_block = parse_block()
+    node.left = then_block
+    if match_token(TOKEN_ELSE) {
+        if check_token(TOKEN_IF) {
+            advance_token()
+            var elif_node = parse_if_statement()
+            node.right = elif_node
+        } else {
+            var else_block = parse_block()
+            node.right = else_block
+        }
+    }
+    return node
+}
+
+func parse_while_statement(): ASTNode? {
+    var node = new ASTNode(AST_WHILE, g_parser.previous)
+    var cond = parse_expression()
+    node.condition = cond
+    var body = parse_block()
+    node.left = body
+    return node
+}
+
+func parse_for_statement(): ASTNode? {
+    var node = new ASTNode(AST_FOR, g_parser.previous)
+
+    if match_token(TOKEN_CONST) {
+        var init = parse_var_declaration(true)
+        node.init = init
+    } else if g_parser.current.kind == TOKEN_VAR {
+        match_token(TOKEN_VAR)
+        if check_token(TOKEN_IDENTIFIER) {
+            Token name = g_parser.current
+            advance_token()
+            if match_token(TOKEN_IN) {
+                node.kind = AST_FOR_IN
+                var vdecl = new ASTNode(AST_VAR_DECL, name)
+                vdecl.var_type = make_kind_token(TOKEN_VAR)
+                node.init = vdecl
+                var cond = parse_expression()
+                node.condition = cond
+                var body = parse_block()
+                node.left = body
+                return node
+            }
+            var vdecl = new ASTNode(AST_VAR_DECL, name)
+            vdecl.var_type = make_kind_token(TOKEN_VAR)
+            vdecl.is_const = false
+            if match_token(TOKEN_EQUAL) {
+                var init_expr = parse_expression()
+                vdecl.init = init_expr
+            }
+            optionally_consume_semicolon()
+            node.init = vdecl
+        } else {
+            var init = parse_expr_stmt()
+            node.init = init
+        }
+    } else if g_parser.current.kind == TOKEN_IDENTIFIER {
+        Token name = g_parser.current
+        advance_token()
+        if match_token(TOKEN_IN) {
+            node.kind = AST_FOR_IN
+            var vdecl = new ASTNode(AST_VAR_DECL, name)
+            vdecl.var_type = make_kind_token(TOKEN_IDENTIFIER)
+            node.init = vdecl
+            var cond = parse_expression()
+            node.condition = cond
+            var body = parse_block()
+            node.left = body
+            return node
+        }
+        var id = new ASTNode(AST_IDENTIFIER, name)
+        if check_token(TOKEN_EQUAL) || check_token(TOKEN_PLUS_EQUAL) ||
+           check_token(TOKEN_MINUS_EQUAL) || check_token(TOKEN_STAR_EQUAL) ||
+           check_token(TOKEN_SLASH_EQUAL) {
+            var init = parse_assign_stmt(id)
+            node.init = init
+        } else {
+            var stmt = new ASTNode(AST_EXPR_STMT, g_parser.previous)
+            stmt.left = id
+            node.init = stmt
+        }
+    } else if is_type() {
+        Token saved_type = g_parser.current
+        advance_token()
+        if g_parser.current.kind == TOKEN_IDENTIFIER {
+            Token name = g_parser.current
+            advance_token()
+            if match_token(TOKEN_IN) {
+                node.kind = AST_FOR_IN
+                var vdecl = new ASTNode(AST_VAR_DECL, name)
+                vdecl.var_type = saved_type
+                node.init = vdecl
+                var cond = parse_expression()
+                node.condition = cond
+                var body = parse_block()
+                node.left = body
+                return node
+            }
+            var vdecl = new ASTNode(AST_VAR_DECL, name)
+            vdecl.var_type = saved_type
+            vdecl.is_const = false
+            if match_token(TOKEN_EQUAL) {
+                var init_expr = parse_expression()
+                vdecl.init = init_expr
+            }
+            node.init = vdecl
+        } else {
+            var init = parse_var_declaration(false)
+            node.init = init
+        }
+    } else {
+        var init = parse_expr_stmt()
+        node.init = init
+    }
+
+    if g_parser.previous.kind != TOKEN_SEMICOLON {
+        consume(TOKEN_SEMICOLON, "Expect ';' after for loop init.")
+    }
+    var cond = parse_expression()
+    node.condition = cond
+    consume(TOKEN_SEMICOLON, "Expect ';' after loop condition.")
+    var inc_expr = parse_expression()
+    if check_token(TOKEN_EQUAL) || check_token(TOKEN_PLUS_EQUAL) ||
+       check_token(TOKEN_MINUS_EQUAL) || check_token(TOKEN_STAR_EQUAL) ||
+       check_token(TOKEN_SLASH_EQUAL) {
+        var inc = parse_assign_stmt(inc_expr)
+        node.increment = inc
+    } else {
+        var inc_stmt = new ASTNode(AST_EXPR_STMT, g_parser.previous)
+        inc_stmt.left = inc_expr
+        node.increment = inc_stmt
+    }
+    var body = parse_block()
+    node.left = body
+    return node
+}
+
+func parse_return_statement(): ASTNode? {
+    var node = new ASTNode(AST_RETURN, g_parser.previous)
+    if !check_token(TOKEN_SEMICOLON) && !check_token(TOKEN_RBRACE) {
+        var val = parse_expression()
+        node.left = val
+    }
+    optionally_consume_semicolon()
+    return node
+}
+
+func parse_yield_statement(): ASTNode? {
+    var node = new ASTNode(AST_YIELD, g_parser.previous)
+    if !check_token(TOKEN_SEMICOLON) && !check_token(TOKEN_RBRACE) {
+        var val = parse_expression()
+        node.left = val
+    }
+    optionally_consume_semicolon()
+    return node
+}
+
+func parse_switch_statement(): ASTNode? {
+    var node = new ASTNode(AST_SWITCH, g_parser.previous)
+    var cond = parse_expression()
+    node.condition = cond
+    consume(TOKEN_LBRACE, "Expect '{' before switch body.")
+    while !check_token(TOKEN_RBRACE) && !check_token(TOKEN_EOF) {
+        if match_token(TOKEN_CASE) {
+            var c_node = new ASTNode(AST_CASE, g_parser.previous)
+            var case_cond = parse_expression()
+            c_node.condition = case_cond
+            consume(TOKEN_COLON, "Expect ':' after case expression.")
+            if check_token(TOKEN_LBRACE) {
+                var body = parse_block()
+                c_node.left = body
+            } else {
+                var body = new ASTNode(AST_BLOCK, g_parser.previous)
+                while !check_token(TOKEN_CASE) && !check_token(TOKEN_DEFAULT) &&
+                      !check_token(TOKEN_RBRACE) && !check_token(TOKEN_EOF) {
+                    var decl = parse_declaration()
+                    if decl != null {
+                        node_add_child(body, decl)
+                    }
+                    if g_parser.panic_mode {
+                        synchronize()
+                    }
+                }
+                c_node.left = body
+            }
+            node_add_child(node, c_node)
+        } else if match_token(TOKEN_DEFAULT) {
+            var d_node = new ASTNode(AST_DEFAULT, g_parser.previous)
+            consume(TOKEN_COLON, "Expect ':' after default.")
+            if check_token(TOKEN_LBRACE) {
+                var body = parse_block()
+                d_node.left = body
+            } else {
+                var body = new ASTNode(AST_BLOCK, g_parser.previous)
+                while !check_token(TOKEN_CASE) && !check_token(TOKEN_DEFAULT) &&
+                      !check_token(TOKEN_RBRACE) && !check_token(TOKEN_EOF) {
+                    var decl = parse_declaration()
+                    if decl != null {
+                        node_add_child(body, decl)
+                    }
+                    if g_parser.panic_mode {
+                        synchronize()
+                    }
+                }
+                d_node.left = body
+            }
+            node_add_child(node, d_node)
+        } else {
+            error_at_current("Expect 'case' or 'default' inside switch.")
+            break
+        }
+    }
+    consume(TOKEN_RBRACE, "Expect '}' after switch body.")
+    return node
+}
+
+func parse_try_statement(): ASTNode? {
+    var node = new ASTNode(AST_TRY, g_parser.previous)
+    var try_body = parse_block()
+    node.left = try_body
+
+    if match_token(TOKEN_CATCH) {
+        var catch_node = new ASTNode(AST_CATCH, g_parser.previous)
+        if match_token(TOKEN_LPAREN) {
+            if is_type() {
+                var typeNode = parse_type()
+                if typeNode != null {
+                    consume(TOKEN_IDENTIFIER, "Expect error variable name.")
+                    catch_node.token = g_parser.previous
+                    assign_type_from_node(catch_node, typeNode)
+                }
+            } else {
+                consume(TOKEN_IDENTIFIER, "Expect error variable name.")
+                catch_node.token = g_parser.previous
+                catch_node.var_type = make_kind_token(TOKEN_STR_TYPE)
+            }
+            consume(TOKEN_RPAREN, "Expect ')' after catch parameter.")
+        }
+        var catch_body = parse_block()
+        catch_node.left = catch_body
+        node.right = catch_node
+    }
+
+    if match_token(TOKEN_FINALLY) {
+        var finally_body = parse_block()
+        node.condition = finally_body
+    }
+
+    return node
+}
+
+func parse_throw_statement(): ASTNode? {
+    var node = new ASTNode(AST_THROW, g_parser.previous)
+    var val = parse_expression()
+    node.left = val
+    optionally_consume_semicolon()
+    return node
+}
+
+func parse_match_statement(): ASTNode? {
+    var node = new ASTNode(AST_MATCH, g_parser.previous)
+    var cond = parse_expression()
+    node.condition = cond
+    consume(TOKEN_LBRACE, "Expect '{' before match body.")
+    while !check_token(TOKEN_RBRACE) && !check_token(TOKEN_EOF) {
+        var arm = new ASTNode(AST_MATCH_ARM, g_parser.current)
+
+        if check_token(TOKEN_IDENTIFIER) && len(g_parser.current.text) == 1 &&
+           g_parser.current.text == "_" {
+            advance_token()
+            arm.token = g_parser.previous
+            arm.is_const = true
+        } else {
+            var pat = parse_expression()
+            if pat != null {
+                node_add_child(arm, pat)
+            }
+            while match_token(TOKEN_COMMA) {
+                var extra = parse_expression()
+                if extra != null {
+                    node_add_child(arm, extra)
+                }
+            }
+        }
+
+        if match_token(TOKEN_IF) {
+            var guard_cond = parse_expression()
+            arm.condition = guard_cond
+        }
+
+        consume(TOKEN_FAT_ARROW, "Expect '=>' after match pattern.")
+
+        if check_token(TOKEN_LBRACE) {
+            var body = parse_block()
+            arm.left = body
+        } else {
+            var body = new ASTNode(AST_BLOCK, g_parser.previous)
+            var stmt = parse_statement()
+            if stmt != null {
+                node_add_child(body, stmt)
+            }
+            arm.left = body
+        }
+
+        node_add_child(node, arm)
+    }
+    consume(TOKEN_RBRACE, "Expect '}' after match body.")
+    return node
+}
+
+func parse_destructure_declaration(): ASTNode? {
+    var node = new ASTNode(AST_DESTRUCTURE, g_parser.previous)
+
+    var typeNode = parse_type()
+    if typeNode == null {
+        return null
+    }
+    consume(TOKEN_IDENTIFIER, "Expect variable name.")
+    var var1 = new ASTNode(AST_VAR_DECL, g_parser.previous)
+    assign_type_from_node(var1, typeNode)
+    node_add_child(node, var1)
+
+    while match_token(TOKEN_COMMA) {
+        var tn = parse_type()
+        if tn == null {
+            return null
+        }
+        consume(TOKEN_IDENTIFIER, "Expect variable name.")
+        var v = new ASTNode(AST_VAR_DECL, g_parser.previous)
+        assign_type_from_node(v, tn)
+        node_add_child(node, v)
+    }
+
+    consume(TOKEN_EQUAL, "Expect '=' after destructuring pattern.")
+    var rhs = parse_expression()
+    node.right = rhs
+    optionally_consume_semicolon()
+    return node
+}
+
+func parse_statement(): ASTNode? {
+    if match_token(TOKEN_SWITCH) { return parse_switch_statement() }
+    if match_token(TOKEN_IF)     { return parse_if_statement() }
+    if match_token(TOKEN_WHILE)  { return parse_while_statement() }
+    if match_token(TOKEN_FOR)    { return parse_for_statement() }
+    if match_token(TOKEN_RETURN) { return parse_return_statement() }
+    if match_token(TOKEN_YIELD)  { return parse_yield_statement() }
+    if match_token(TOKEN_BREAK)  { return parse_break_statement() }
+    if match_token(TOKEN_CONTINUE){ return parse_continue_statement() }
+    if match_token(TOKEN_TRY)    { return parse_try_statement() }
+    if match_token(TOKEN_THROW)  { return parse_throw_statement() }
+    if match_token(TOKEN_MATCH)  { return parse_match_statement() }
+    if match_token(TOKEN_ASSERT) { return parse_assert_statement() }
+    if match_token(TOKEN_BENCH)  { return parse_bench_statement() }
+
+    if match_token(TOKEN_DEFER) {
+        var node = new ASTNode(AST_DEFER, g_parser.previous)
+        if check_token(TOKEN_LBRACE) {
+            var body = parse_block()
+            node.left = body
+        } else {
+            var body = parse_expression()
+            node.left = body
+        }
+        optionally_consume_semicolon()
+        return node
+    }
+
+    if match_token(TOKEN_RUN_ASYNC) {
+        var node = new ASTNode(AST_RUN_ASYNC, g_parser.previous)
+        consume(TOKEN_IDENTIFIER, "Expect function name after 'run_async'.")
+        var callee = new ASTNode(AST_IDENTIFIER, g_parser.previous)
+        var call = new ASTNode(AST_CALL, g_parser.previous)
+        call.left = callee
+        consume(TOKEN_LPAREN, "Expect '(' after function name.")
+        if !check_token(TOKEN_RPAREN) {
+            while true {
+                var arg = parse_expression()
+                if arg != null {
+                    node_add_child(call, arg)
+                }
+                if !match_token(TOKEN_COMMA) {
+                    break
+                }
+            }
+        }
+        consume(TOKEN_RPAREN, "Expect ')' after arguments.")
+        node.left = call
+        optionally_consume_semicolon()
+        return node
+    }
+
+    if check_token(TOKEN_RESUME) {
+        var node = new ASTNode(AST_RESUME_EXPR, g_parser.current)
+        advance_token()
+        var co = parse_expression()
+        node.left = co
+        if match_token(TOKEN_WITH) {
+            var val = parse_expression()
+            node.right = val
+        }
+        optionally_consume_semicolon()
+        return node
+    }
+
+    if check_token(TOKEN_LBRACE) {
+        return parse_block()
+    }
+
+    if is_type() {
+        Token saved_type = g_parser.current
+        advance_token()
+        if g_parser.current.kind == TOKEN_IDENTIFIER {
+            advance_token()
+            if g_parser.current.kind == TOKEN_COMMA {
+                g_parser.current = saved_type
+                return parse_destructure_declaration()
+            }
+            g_parser.current = saved_type
+        } else {
+            g_parser.current = saved_type
+        }
+        return parse_var_declaration(false)
+    }
+
+    return parse_expr_stmt()
+}
+
+
+// --- src2/parser_decl.cn ---
+// Self-hosting bootstrap: port of src/parser_decl.c into Cnext (Milestone B).
+// Depends on: lexer.cn, parser_types.cn, parser_core.cn, parser_type.cn,
+//             parser_macro.cn, parser_expr.cn, parser_stmt.cn.
+
+func parse_assert_statement(): ASTNode? {
+    var node = new ASTNode(AST_ASSERT, g_parser.previous)
+    var expr = parse_expression()
+    node.left = expr
+    optionally_consume_semicolon()
+    return node
+}
+
+func parse_bench_statement(): ASTNode? {
+    var node = new ASTNode(AST_BENCH_DECL, g_parser.previous)
+    var body = parse_block()
+    node.left = body
+    return node
+}
+
+func parse_function_declaration(bool require_body): ASTNode? {
+    consume(TOKEN_IDENTIFIER, "Expect function name.")
+    if g_parser.had_error && g_parser.previous.kind != TOKEN_IDENTIFIER {
+        return null
+    }
+    var node = new ASTNode(AST_FUNC_DECL, g_parser.previous)
+
+    if match_token(TOKEN_LESS) {
+        while true {
+            consume_name("Expect type parameter name.")
+            var tp = new ASTNode(AST_TYPE_PARAM, g_parser.previous)
+            node_add_type_param(node, tp)
+            if !match_token(TOKEN_COMMA) {
+                break
+            }
+        }
+        consume(TOKEN_GREATER, "Expect '>' after generic type parameters.")
+    }
+
+    consume(TOKEN_LPAREN, "Expect '(' after function name.")
+    if !check_token(TOKEN_RPAREN) {
+        while true {
+            var typeNode = parse_type()
+            if typeNode == null {
+                return node
+            }
+            bool variadic = match_token(TOKEN_ELLIPSIS)
+            consume(TOKEN_IDENTIFIER, "Expect parameter name.")
+            if g_parser.had_error && g_parser.previous.kind != TOKEN_IDENTIFIER {
+                return node
+            }
+            var param = new ASTNode(AST_VAR_DECL, g_parser.previous)
+            assign_type_from_node(param, typeNode)
+            param.is_variadic = variadic
+            if match_token(TOKEN_EQUAL) {
+                var def_val = parse_expression()
+                param.default_value = def_val
+            }
+            node_add_child(node, param)
+            if !match_token(TOKEN_COMMA) {
+                break
+            }
+        }
+    }
+    consume(TOKEN_RPAREN, "Expect ')' after parameters.")
+
+    if check_token(TOKEN_ARROW) {
+        parser_error("Return type syntax changed: use ':' instead of '->'. Example: func name(params): Type { }")
+        advance_token()
+    }
+    if match_token(TOKEN_COLON) {
+        var retTypeNode = parse_type()
+        if retTypeNode != null {
+            assign_return_type_from_node(node, retTypeNode)
+        }
+    }
+    if require_body {
+        var body = parse_block()
+        node.left = body
+    }
+    return node
+}
+
+func parse_operator_declaration(): ASTNode? {
+    consume(TOKEN_OPERATOR, "Expect 'operator' keyword.")
+    Token op_token = make_eof_token()
+    if match_token(TOKEN_PLUS) || match_token(TOKEN_MINUS) ||
+       match_token(TOKEN_STAR) || match_token(TOKEN_SLASH) ||
+       match_token(TOKEN_EQ_EQ) || match_token(TOKEN_BANG_EQ) ||
+       match_token(TOKEN_LESS) || match_token(TOKEN_LESS_EQ) ||
+       match_token(TOKEN_GREATER) || match_token(TOKEN_GREATER_EQ) ||
+       match_token(TOKEN_LBRACKET) || match_token(TOKEN_LBRACE) {
+        op_token = g_parser.previous
+    } else {
+        error_at_current("Expect operator token (+, -, *, /, ==, !=, <, <=, >, >=, [, {).")
+        return null
+    }
+
+    var node = new ASTNode(AST_OPERATOR_DECL, op_token)
+    node.operator_token = op_token
+
+    consume(TOKEN_LPAREN, "Expect '(' after operator.")
+    // The C parser builds this token with a 4-field initializer, so the
+    // column stays 0. Keep that, or the AST dumps drift apart.
+    Token self_token = make_token(TOKEN_IDENTIFIER, "self", op_token.line, 0)
+    var self_param = new ASTNode(AST_VAR_DECL, self_token)
+    node_add_child(node, self_param)
+
+    if !check_token(TOKEN_RPAREN) {
+        while true {
+            var typeNode = parse_type()
+            if typeNode == null {
+                return node
+            }
+            consume(TOKEN_IDENTIFIER, "Expect parameter name.")
+            if g_parser.had_error && g_parser.previous.kind != TOKEN_IDENTIFIER {
+                return node
+            }
+            var param = new ASTNode(AST_VAR_DECL, g_parser.previous)
+            assign_type_from_node(param, typeNode)
+            node_add_child(node, param)
+            if !match_token(TOKEN_COMMA) {
+                break
+            }
+        }
+    }
+    consume(TOKEN_RPAREN, "Expect ')' after parameters.")
+
+    if check_token(TOKEN_ARROW) {
+        parser_error("Return type syntax changed: use ':' instead of '->'. Example: func name(params): Type { }")
+        advance_token()
+    }
+    if match_token(TOKEN_COLON) {
+        var retTypeNode = parse_type()
+        if retTypeNode != null {
+            assign_return_type_from_node(node, retTypeNode)
+            if len(node.children) > 0 {
+                assign_type_from_node(node.children[0], retTypeNode)
+            }
+        }
+    }
+
+    var body = parse_block()
+    node.left = body
+    return node
+}
+
+func parse_macro_declaration(): ASTNode? {
+    consume(TOKEN_IDENTIFIER, "Expect macro name.")
+    if g_parser.had_error && g_parser.previous.kind != TOKEN_IDENTIFIER {
+        return null
+    }
+    var node = new ASTNode(AST_MACRO_DECL, g_parser.previous)
+    consume(TOKEN_LPAREN, "Expect '(' after macro name.")
+    if !check_token(TOKEN_RPAREN) {
+        while true {
+            consume(TOKEN_IDENTIFIER, "Expect macro parameter name.")
+            if g_parser.had_error && g_parser.previous.kind != TOKEN_IDENTIFIER {
+                return null
+            }
+            var param = new ASTNode(AST_VAR_DECL, g_parser.previous)
+            node_add_child(node, param)
+            if !match_token(TOKEN_COMMA) {
+                break
+            }
+        }
+    }
+    consume(TOKEN_RPAREN, "Expect ')' after macro parameters.")
+    var body = parse_block()
+    node.left = body
+    register_macro(node)
+    return node
+}
+
+func parse_class_declaration(): ASTNode? {
+    bool is_abstract = match_token(TOKEN_ABSTRACT)
+    bool is_final = match_token(TOKEN_FINAL)
+
+    consume(TOKEN_IDENTIFIER, "Expect class name.")
+    Token class_name_token = g_parser.previous
+    var node = new ASTNode(AST_CLASS_DECL, class_name_token)
+    node.is_abstract = is_abstract
+    node.is_final = is_final
+
+    if match_token(TOKEN_LESS) {
+        while true {
+            consume_name("Expect type parameter name.")
+            var tp = new ASTNode(AST_TYPE_PARAM, g_parser.previous)
+            node_add_type_param(node, tp)
+            if !match_token(TOKEN_COMMA) {
+                break
+            }
+        }
+        consume(TOKEN_GREATER, "Expect '>' after generic type parameters.")
+    }
+
+    if match_token(TOKEN_EXTENDS) {
+        consume(TOKEN_IDENTIFIER, "Expect parent class name after 'extends'.")
+        node.parent_name = g_parser.previous.text
+    }
+
+    if match_token(TOKEN_IMPLEMENTS) {
+        str impl_buf = ""
+        while true {
+            consume(TOKEN_IDENTIFIER, "Expect interface or trait name after 'implements'.")
+            if len(impl_buf) > 0 {
+                impl_buf = impl_buf + ","
+            }
+            impl_buf = impl_buf + g_parser.previous.text
+            if !match_token(TOKEN_COMMA) {
+                break
+            }
+        }
+        node.implements_names = impl_buf
+    }
+
+    consume(TOKEN_LBRACE, "Expect '{' before class body.")
+    while !check_token(TOKEN_RBRACE) && !check_token(TOKEN_EOF) {
+        bool method_is_static = match_token(TOKEN_STATIC)
+        bool method_is_abstract = match_token(TOKEN_ABSTRACT)
+        if method_is_abstract {
+            consume(TOKEN_FUNC, "Expect 'func' after 'abstract'.")
+            var method = parse_function_declaration(false)
+            if method != null {
+                method.is_abstract = true
+                node_add_child(node, method)
+            }
+            if g_parser.panic_mode { synchronize() }
+            continue
+        }
+
+        if match_token(TOKEN_FUNC) {
+            if check_token(TOKEN_NEW) {
+                advance_token()
+                var ctor = new ASTNode(AST_CONSTRUCTOR, g_parser.previous)
+                ctor.var_type = class_name_token
+                ctor.is_pointer = true
+                consume(TOKEN_LPAREN, "Expect '(' after 'new'.")
+                if !check_token(TOKEN_RPAREN) {
+                    while true {
+                        var typeNode = parse_type()
+                        if typeNode == null { break }
+                        consume(TOKEN_IDENTIFIER, "Expect parameter name.")
+                        var param = new ASTNode(AST_VAR_DECL, g_parser.previous)
+                        assign_type_from_node(param, typeNode)
+                        node_add_child(ctor, param)
+                        if !match_token(TOKEN_COMMA) { break }
+                    }
+                }
+                consume(TOKEN_RPAREN, "Expect ')' after constructor parameters.")
+                var body = parse_block()
+                ctor.left = body
+                node_add_child(node, ctor)
+            } else if check_token(TOKEN_OPERATOR) {
+                var method = parse_operator_declaration()
+                if method != null {
+                    Token self_tok = make_token(TOKEN_IDENTIFIER, "self", class_name_token.line, 0)
+                    var self_param = new ASTNode(AST_VAR_DECL, self_tok)
+                    self_param.var_type = class_name_token
+                    self_param.is_pointer = true
+                    if len(method.children) > 0 {
+                        method.children[0] = self_param
+                    }
+                    int j = 1
+                    while j < len(method.children) {
+                        var param = method.children[j]
+                        if param.var_type.kind == TOKEN_IDENTIFIER {
+                            param.is_pointer = true
+                            param.is_class = true
+                        }
+                        j = j + 1
+                    }
+                    node_add_child(node, method)
+                }
+            } else {
+                bool is_override = false
+                if check_token(TOKEN_OVERRIDE) {
+                    advance_token()
+                    is_override = true
+                }
+                var method = parse_function_declaration(true)
+                if method != null {
+                    if method_is_static {
+                        method.is_static = true
+                        node_add_child(node, method)
+                    } else {
+                        Token self_tok = make_token(TOKEN_IDENTIFIER, "self", class_name_token.line, 0)
+                        var self_param = new ASTNode(AST_VAR_DECL, self_tok)
+                        self_param.var_type = class_name_token
+                        self_param.is_pointer = true
+
+                        ASTNode[] new_children = {}
+                        push(new_children, self_param)
+                        int i = 0
+                        while i < len(method.children) {
+                            push(new_children, method.children[i])
+                            i = i + 1
+                        }
+                        method.children = new_children
+                        node_add_child(node, method)
+                    }
+                }
+            }
+        } else if match_token(TOKEN_OVERRIDE) {
+            consume(TOKEN_FUNC, "Expect 'func' after 'override'.")
+            var method = parse_function_declaration(true)
+            if method != null {
+                Token self_tok = make_token(TOKEN_IDENTIFIER, "self", class_name_token.line, 0)
+                var self_param = new ASTNode(AST_VAR_DECL, self_tok)
+                self_param.var_type = class_name_token
+                self_param.is_pointer = true
+                ASTNode[] new_children = {}
+                push(new_children, self_param)
+                int i = 0
+                while i < len(method.children) {
+                    push(new_children, method.children[i])
+                    i = i + 1
+                }
+                method.children = new_children
+                node_add_child(node, method)
+            }
+        } else {
+            var decl = parse_var_declaration(false)
+            if decl != null {
+                node_add_child(node, decl)
+            }
+        }
+        if g_parser.panic_mode { synchronize() }
+    }
+    consume(TOKEN_RBRACE, "Expect '}' after class body.")
+    return node
+}
+
+func parse_interface_declaration(): ASTNode? {
+    consume(TOKEN_IDENTIFIER, "Expect interface name.")
+    var node = new ASTNode(AST_INTERFACE_DECL, g_parser.previous)
+    consume(TOKEN_LBRACE, "Expect '{' before interface body.")
+    while !check_token(TOKEN_RBRACE) && !check_token(TOKEN_EOF) {
+        consume(TOKEN_FUNC, "Expect 'func' in interface body.")
+        var method = parse_function_declaration(false)
+        if method != null {
+            node_add_child(node, method)
+        }
+        if g_parser.panic_mode { synchronize() }
+    }
+    consume(TOKEN_RBRACE, "Expect '}' after interface body.")
+    return node
+}
+
+func parse_trait_declaration(): ASTNode? {
+    consume(TOKEN_IDENTIFIER, "Expect trait name.")
+    Token trait_name_tok = g_parser.previous
+    var node = new ASTNode(AST_TRAIT_DECL, trait_name_tok)
+    consume(TOKEN_LBRACE, "Expect '{' before trait body.")
+    while !check_token(TOKEN_RBRACE) && !check_token(TOKEN_EOF) {
+        consume(TOKEN_FUNC, "Expect 'func' in trait body.")
+        var method = parse_function_declaration(true)
+        if method != null {
+            Token self_tok = make_token(TOKEN_IDENTIFIER, "self", trait_name_tok.line, 0)
+            var self_param = new ASTNode(AST_VAR_DECL, self_tok)
+            self_param.var_type = trait_name_tok
+            self_param.is_pointer = true
+            ASTNode[] new_children = {}
+            push(new_children, self_param)
+            int i = 0
+            while i < len(method.children) {
+                push(new_children, method.children[i])
+                i = i + 1
+            }
+            method.children = new_children
+            node_add_child(node, method)
+        }
+        if g_parser.panic_mode { synchronize() }
+    }
+    consume(TOKEN_RBRACE, "Expect '}' after trait body.")
+    return node
+}
+
+func parse_struct_declaration(): ASTNode? {
+    consume(TOKEN_IDENTIFIER, "Expect struct name.")
+    var node = new ASTNode(AST_STRUCT_DECL, g_parser.previous)
+    consume(TOKEN_LBRACE, "Expect '{' before struct body.")
+    while !check_token(TOKEN_RBRACE) && !check_token(TOKEN_EOF) {
+        var decl = parse_var_declaration(false)
+        if decl != null {
+            node_add_child(node, decl)
+        }
+        if g_parser.panic_mode { synchronize() }
+    }
+    consume(TOKEN_RBRACE, "Expect '}' after struct body.")
+    return node
+}
+
+func parse_enum_declaration(): ASTNode? {
+    consume(TOKEN_IDENTIFIER, "Expect enum name.")
+    var node = new ASTNode(AST_ENUM_DECL, g_parser.previous)
+
+    if match_token(TOKEN_LESS) {
+        while true {
+            consume(TOKEN_IDENTIFIER, "Expect type parameter name.")
+            var tp = new ASTNode(AST_IDENTIFIER, g_parser.previous)
+            node_add_type_param(node, tp)
+            if !match_token(TOKEN_COMMA) {
+                break
+            }
+        }
+        consume(TOKEN_GREATER, "Expect '>' after type parameters.")
+    }
+
+    consume(TOKEN_LBRACE, "Expect '{' before enum body.")
+    while !check_token(TOKEN_RBRACE) && !check_token(TOKEN_EOF) {
+        if match_token(TOKEN_IDENTIFIER) {
+            Token member_tok = g_parser.previous
+            if check_token(TOKEN_LPAREN) {
+                advance_token()
+                var variant = new ASTNode(AST_VARIANT, member_tok)
+                if !check_token(TOKEN_RPAREN) {
+                    while true {
+                        var payload_type = parse_type()
+                        if payload_type != null {
+                            node_add_child(variant, payload_type)
+                        }
+                        if !match_token(TOKEN_COMMA) { break }
+                    }
+                }
+                consume(TOKEN_RPAREN, "Expect ')' after variant payload types.")
+                node_add_child(node, variant)
+            } else {
+                var member = new ASTNode(AST_IDENTIFIER, member_tok)
+                if match_token(TOKEN_EQUAL) {
+                    var val = parse_expression()
+                    member.left = val
+                }
+                node_add_child(node, member)
+            }
+            match_token(TOKEN_COMMA)
+        } else {
+            error_at_current("Expect enum member name.")
+            break
+        }
+    }
+    consume(TOKEN_RBRACE, "Expect '}' after enum body.")
+    return node
+}
+
+func parse_constexpr_declaration(): ASTNode? {
+    var typeNode = parse_type()
+    if typeNode == null { return null }
+    consume(TOKEN_IDENTIFIER, "Expect constant name after type.")
+    var node = new ASTNode(AST_CONSTEXPR_DECL, g_parser.previous)
+    assign_type_from_node(node, typeNode)
+    consume(TOKEN_EQUAL, "Expect '=' after constexpr name.")
+    var val = parse_expression()
+    node.left = val
+    optionally_consume_semicolon()
+    return node
+}
+
+func parse_test_declaration(): ASTNode? {
+    consume(TOKEN_STRING_LITERAL, "Expect test description string after 'test'.")
+    var node = new ASTNode(AST_TEST, g_parser.previous)
+    var body = parse_block()
+    node.left = body
+    return node
+}
+
+func parse_coroutine_declaration(): ASTNode? {
+    consume(TOKEN_FUNC, "Expect 'func' after 'coroutine'.")
+    var node = parse_function_declaration(true)
+    if node != null {
+        node.kind = AST_COROUTINE_DECL
+        node.is_generator = true
+    }
+    return node
+}
+
+func parse_async_func_declaration(): ASTNode? {
+    consume(TOKEN_FUNC, "Expect 'func' after 'async'.")
+    var node = parse_function_declaration(true)
+    if node != null {
+        node.kind = AST_ASYNC_FUNC_DECL
+        node.is_generator = true
+    }
+    return node
+}
+
+func parse_main_block(): ASTNode? {
+    var node = new ASTNode(AST_MAIN, g_parser.previous)
+    var body = parse_block()
+    node.left = body
+    return node
+}
+
+func parse_import_declaration(): ASTNode? {
+    var node = new ASTNode(AST_IMPORT, g_parser.previous)
+    if check_token(TOKEN_IDENTIFIER) || check_token(TOKEN_THREAD) {
+        advance_token()
+    } else {
+        consume(TOKEN_IDENTIFIER, "Expect module name after import.")
+    }
+    node.token = g_parser.previous
+    optionally_consume_semicolon()
+    return node
+}
+
+func parse_extend_declaration(): ASTNode? {
+    if check_token(TOKEN_IDENTIFIER) || is_type() {
+        advance_token()
+    } else {
+        error_at_current("Expect type name after 'extend'.")
+    }
+    var node = new ASTNode(AST_EXTEND_DECL, g_parser.previous)
+
+    consume(TOKEN_LBRACE, "Expect '{' after type name in 'extend'.")
+    while !check_token(TOKEN_RBRACE) && !check_token(TOKEN_EOF) {
+        if match_token(TOKEN_FUNC) {
+            var method = parse_function_declaration(true)
+            if method != null {
+                Token self_tok = make_token(TOKEN_IDENTIFIER, "self", node.token.line, 0)
+                var self_param = new ASTNode(AST_VAR_DECL, self_tok)
+                self_param.var_type = node.token
+                self_param.is_pointer = false
+                ASTNode[] new_children = {}
+                push(new_children, self_param)
+                int i = 0
+                while i < len(method.children) {
+                    push(new_children, method.children[i])
+                    i = i + 1
+                }
+                method.children = new_children
+                node_add_child(node, method)
+            }
+        } else {
+            error_at_current("Expect 'func' in extend body.")
+            break
+        }
+        if g_parser.panic_mode { synchronize() }
+    }
+    consume(TOKEN_RBRACE, "Expect '}' after extend body.")
+    return node
+}
+
+func parse_type_alias_declaration(): ASTNode? {
+    consume(TOKEN_IDENTIFIER, "Expect type alias name.")
+    Token name = g_parser.previous
+    var node = new ASTNode(AST_TYPE_ALIAS, name)
+    consume(TOKEN_EQUAL, "Expect '=' after type alias name.")
+    var target_type = parse_type()
+    node.left = target_type
+    optionally_consume_semicolon()
+    return node
+}
+
+func parse_extern_declaration(): ASTNode? {
+    var node = new ASTNode(AST_EXTERN_DECL, g_parser.previous)
+    if match_token(TOKEN_STRING_LITERAL) {
+    }
+    consume(TOKEN_LBRACE, "Expect '{' after 'extern'.")
+    while !check_token(TOKEN_RBRACE) && !check_token(TOKEN_EOF) {
+        if match_token(TOKEN_FUNC) {
+            consume(TOKEN_IDENTIFIER, "Expect function name.")
+            var func_node = new ASTNode(AST_FUNC_DECL, g_parser.previous)
+            consume(TOKEN_LPAREN, "Expect '(' after function name.")
+            if !check_token(TOKEN_RPAREN) {
+                while true {
+                    var typeNode = parse_type()
+                    bool variadic = match_token(TOKEN_ELLIPSIS)
+                    consume(TOKEN_IDENTIFIER, "Expect parameter name.")
+                    var param = new ASTNode(AST_VAR_DECL, g_parser.previous)
+                    if typeNode != null {
+                        assign_type_from_node(param, typeNode)
+                    }
+                    param.is_variadic = variadic
+                    node_add_child(func_node, param)
+                    if !match_token(TOKEN_COMMA) { break }
+                }
+            }
+            consume(TOKEN_RPAREN, "Expect ')' after parameters.")
+            if match_token(TOKEN_COLON) {
+                var typeNode = parse_type()
+                if typeNode != null {
+                    assign_return_type_from_node(func_node, typeNode)
+                }
+            }
+            node_add_child(node, func_node)
+        }
+        optionally_consume_semicolon()
+    }
+    consume(TOKEN_RBRACE, "Expect '}' after extern block.")
+    return node
+}
+
+// ---------------------------------------------------------------------------
+// parse_declaration — main declaration dispatcher.
+// ---------------------------------------------------------------------------
+func parse_declaration(): ASTNode? {
+    str attr_name = ""
+    if check_token(TOKEN_AT) {
+        attr_name = parse_attribute_name()
+    }
+
+    ASTNode? node = null
+    if match_token(TOKEN_CONST)         { node = parse_var_declaration(true) }
+    else if match_token(TOKEN_CONSTEXPR){ node = parse_constexpr_declaration() }
+    else if match_token(TOKEN_TYPE_ALIAS){ node = parse_type_alias_declaration() }
+    else if match_token(TOKEN_IMPORT)   { node = parse_import_declaration() }
+    else if match_token(TOKEN_STRUCT)   { node = parse_struct_declaration() }
+    else if match_token(TOKEN_ENUM)     { node = parse_enum_declaration() }
+    else if match_token(TOKEN_CLASS)    { node = parse_class_declaration() }
+    else if match_token(TOKEN_INTERFACE){ node = parse_interface_declaration() }
+    else if match_token(TOKEN_TRAIT)    { node = parse_trait_declaration() }
+    else if match_token(TOKEN_TEST)     { node = parse_test_declaration() }
+    else if match_token(TOKEN_MACRO)    { node = parse_macro_declaration() }
+    else if match_token(TOKEN_COROUTINE){ node = parse_coroutine_declaration() }
+    else if match_token(TOKEN_ASYNC)    { node = parse_async_func_declaration() }
+    else if match_token(TOKEN_FUNC) {
+        if check_token(TOKEN_OPERATOR) {
+            node = parse_operator_declaration()
+        } else {
+            node = parse_function_declaration(true)
+        }
+    }
+    else if match_token(TOKEN_EXTEND)   { node = parse_extend_declaration() }
+    else if match_token(TOKEN_EXTERN)   { node = parse_extern_declaration() }
+    else if match_token(TOKEN_MAIN)     { node = parse_main_block() }
+    else if is_type()                    { node = parse_var_declaration(false) }
+    else                                { node = parse_statement() }
+
+    if node != null && len(attr_name) > 0 {
+        node.attribute_name = attr_name
+    }
+    return node
+}
+
+
+// --- src2/parser.cn ---
+// Self-hosting bootstrap: top-level parser driver and AST dumper (Milestone B).
+// Port of src/parser.c + AST serializer matching tools/astdump.c.
+//
+// Usage when compiled to executable (e.g., parser_selfhost.exe <file.cn>):
+//   1. Prints input file path
+//   2. Parses file with parse_program()
+//   3. Dumps AST tree (or !PARSE_ERROR on failure)
+
+// ---------------------------------------------------------------------------
+// String escaping helper matching tools/astdump.c
+//
+// The reference dumper escapes raw *bytes*: anything outside 32..126 becomes
+// \xNN, so a UTF-8 literal prints as its byte sequence. The lexer's escape()
+// already does exactly that, so reuse it rather than re-escaping by code
+// point, which would print the character itself.
+// ---------------------------------------------------------------------------
+func print_escaped_str(str s) {
+    print("\"")
+    print(escape(s))
+    print("\"")
+}
+
+func print_token_attr(str name, Token tok) {
+    print(" " + name + "=")
+    print_escaped_str(tok.text)
+}
+
+func print_indent(int depth) {
+    int i = 0
+    while i < depth {
+        print("  ")
+        i = i + 1
+    }
+}
+
+// ---------------------------------------------------------------------------
+// AST node printer matching tools/astdump.c output format:
+// <indent>[<slot> ]KIND@<line>:<col>[ token="..."][ var_type="..."]...
+// ---------------------------------------------------------------------------
+func print_ast_node(ASTNode? node, int depth, str slot) {
+    if node == null {
+        return
+    }
+    print_indent(depth)
+    if len(slot) > 0 {
+        print(slot + " ")
+    }
+    print(ast_kind_name(node.kind))
+    print("@" + to_str(node.token.line) + ":" + to_str(node.token.col))
+
+    // Token attributes
+    print_token_attr("token", node.token)
+    if node.var_type.kind != TOKEN_EOF {
+        print_token_attr("var_type", node.var_type)
+    }
+    if node.return_type.kind != TOKEN_EOF {
+        print_token_attr("return_type", node.return_type)
+    }
+
+    // Flags
+    str flags_str = ""
+    str sep = ""
+    if node.is_const { flags_str = flags_str + sep + "const"; sep = "," }
+    if node.is_array { flags_str = flags_str + sep + "array"; sep = "," }
+    if node.is_pointer { flags_str = flags_str + sep + "pointer"; sep = "," }
+    if node.is_class { flags_str = flags_str + sep + "class"; sep = "," }
+    if node.is_pointer_access { flags_str = flags_str + sep + "ptraccess"; sep = "," }
+    if node.is_union_type { flags_str = flags_str + sep + "union"; sep = "," }
+    if node.type_is_inferred { flags_str = flags_str + sep + "inferred"; sep = "," }
+    if node.is_variadic { flags_str = flags_str + sep + "variadic"; sep = "," }
+    if node.is_generator { flags_str = flags_str + sep + "generator"; sep = "," }
+    if node.is_tail_call_optimized { flags_str = flags_str + sep + "tailcall"; sep = "," }
+    if node.is_static { flags_str = flags_str + sep + "static"; sep = "," }
+    if node.is_abstract { flags_str = flags_str + sep + "abstract"; sep = "," }
+    if node.is_final { flags_str = flags_str + sep + "final"; sep = "," }
+
+    if len(flags_str) > 0 {
+        print(" flags=" + flags_str)
+    }
+
+    if len(node.type_name) > 0 {
+        print(" type_name=")
+        print_escaped_str(node.type_name)
+    }
+    if len(node.parent_name) > 0 {
+        print(" parent=")
+        print_escaped_str(node.parent_name)
+    }
+    if len(node.implements_names) > 0 {
+        print(" implements=")
+        print_escaped_str(node.implements_names)
+    }
+    if len(node.attribute_name) > 0 {
+        print(" attribute=")
+        print_escaped_str(node.attribute_name)
+    }
+    if node.named_arg_name.kind != TOKEN_EOF {
+        print_token_attr("named_arg", node.named_arg_name)
+    }
+    if node.operator_token.kind != TOKEN_EOF {
+        print_token_attr("operator", node.operator_token)
+    }
+    printin("")
+
+    // Children
+    int i = 0
+    while i < len(node.children) {
+        print_ast_node(node.children[i], depth + 1, "")
+        i = i + 1
+    }
+    i = 0
+    while i < len(node.type_params) {
+        print_ast_node(node.type_params[i], depth + 1, "type_param")
+        i = i + 1
+    }
+    i = 0
+    while i < len(node.type_args) {
+        print_ast_node(node.type_args[i], depth + 1, "type_arg")
+        i = i + 1
+    }
+
+    print_ast_node(node.left, depth + 1, "left")
+    print_ast_node(node.right, depth + 1, "right")
+    print_ast_node(node.condition, depth + 1, "condition")
+    print_ast_node(node.init, depth + 1, "init")
+    print_ast_node(node.increment, depth + 1, "increment")
+    print_ast_node(node.default_value, depth + 1, "default_value")
+}
+
+// ---------------------------------------------------------------------------
+// parse_program — top-level entry point (port of src/parser.c:parse_program)
+// ---------------------------------------------------------------------------
+func parse_program(str source): ASTNode? {
+    init_parser(source)
+
+    Token eof_tok = make_eof_token()
+    // The reference parser takes the program's token from parser.previous before
+    // anything has been scanned, so its column is still 0. The dump records that
+    // position, so it has to match exactly.
+    eof_tok.col = 0
+    var program = new ASTNode(AST_PROGRAM, eof_tok)
+
+    while !match_token(TOKEN_EOF) {
+        int before = g_parser.current.start_index
+        var decl = parse_declaration()
+        if decl != null {
+            int k = decl.kind
+            if k == AST_EXPR_STMT || k == AST_IF || k == AST_WHILE ||
+               k == AST_FOR || k == AST_FOR_IN || k == AST_SWITCH ||
+               k == AST_RETURN || k == AST_BREAK || k == AST_CONTINUE ||
+               k == AST_ASSIGN || k == AST_BLOCK || k == AST_TRY ||
+               k == AST_THROW || k == AST_MATCH || k == AST_ASSERT ||
+               k == AST_RESUME_EXPR || k == AST_AWAIT_EXPR || k == AST_RUN_ASYNC {
+                error_at_tok(decl.token, "Statements cannot appear at the top level.")
+            } else {
+                node_add_child(program, decl)
+            }
+        }
+        if g_parser.panic_mode {
+            synchronize()
+        }
+        if !check_token(TOKEN_EOF) && g_parser.current.start_index == before {
+            // parse_declaration() reported an error without consuming anything
+            // (and synchronize() can stop immediately when current is already a
+            // statement boundary), so looping would repeat the same error forever.
+            advance_token()
+        }
+    }
+
+    if g_parser.had_error {
+        return null
+    }
+    return program
+}
+
+// ---------------------------------------------------------------------------
+// Main program driver
+// ---------------------------------------------------------------------------
+main {
+    if sys_args_count() < 2 {
+        printin("Usage: parser_selfhost <file.cn>")
+    } else {
+        str file_path = sys_arg_at(1)
+        printin(file_path)
+
+        str source = read_file(file_path)
+        var program = parse_program(source)
+        if program == null {
+            printin("!PARSE_ERROR")
+        } else {
+            print_ast_node(program, 0, "")
+        }
+    }
+}
+
+

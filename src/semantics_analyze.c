@@ -1,5 +1,30 @@
 #include "semantics_internal.h"
 
+// Defines a parameter in the current scope and marks class-typed parameters as
+// pointers. Class instances are heap-allocated, so a parameter of class type is
+// passed as `Klass*`; without this the declaration is emitted by value and every
+// use inside the body mismatches it. `analyze_function` has always done this, and
+// constructors and operator declarations need the same treatment or a
+// `func new(Node n)` signature disagrees with its own call sites.
+static void define_parameter(ASTNode* param) {
+    validate_type_token(param->var_type);
+    char* type_name = type_name_from_token(param->var_type);
+    define_symbol(param->token, param->var_type.type, false, type_name, param);
+    if (param->var_type.type == TOKEN_IDENTIFIER) {
+        Symbol* type_sym = resolve_symbol(param->var_type);
+        // An array parameter is a value struct (`CnextArrayObj` for class
+        // elements), not a pointer, even when its element type is a class. The
+        // element type is what resolves to a class here, so the is_array guard
+        // is what keeps `Node[] items` from being declared `CnextArrayObj*`
+        // while every caller passes the struct itself.
+        if (type_sym && type_sym->type == TOKEN_CLASS && !param->is_array) {
+            param->is_class = true;
+            param->is_pointer = true;
+        }
+    }
+    free(type_name);
+}
+
 void analyze_function(ASTNode* node, bool define_name) {
     if (define_name && !resolve_current_symbol(node->token)) {
         define_symbol(node->token, TOKEN_FUNC, true, NULL, node);
@@ -30,33 +55,131 @@ void analyze_function(ASTNode* node, bool define_name) {
 
     validate_type_token(node->return_type);
 
+    // A class-typed return value is a pointer, exactly like a class-typed local,
+    // field or parameter. Record it so codegen emits `Klass*` rather than
+    // `Klass` for the return type. Without this, a function returning a class
+    // instance declares a by-value return type and fails to compile.
+    if (node->return_type.type == TOKEN_IDENTIFIER) {
+        Symbol* rt_sym = resolve_symbol(node->return_type);
+        if (rt_sym && rt_sym->type == TOKEN_CLASS &&
+            rt_sym->decl_node && rt_sym->decl_node->type != AST_TYPE_ALIAS) {
+            node->is_class = true;
+        }
+    }
+
     for (int i = 0; i < node->child_count; i++) {
         ASTNode* param = node->children[i];
-        validate_type_token(param->var_type);
-        char* type_name = type_name_from_token(param->var_type);
-        define_symbol(param->token, param->var_type.type, false, type_name, param);
-        // Mark class-type parameters as pointer (class instances are heap-allocated)
-        if (param->var_type.type == TOKEN_IDENTIFIER) {
-            Symbol* type_sym = resolve_symbol(param->var_type);
-            if (type_sym && type_sym->type == TOKEN_CLASS) {
-                param->is_class = true;
-                param->is_pointer = true;
-            }
-        }
-        free(type_name);
-        
+        define_parameter(param);
+
         // Analyze default value if present
         if (param->default_value) {
             analyze_expression(param->default_value);
         }
     }
+    // The return type types a `return input()` in the body.
+    CnextTokenType saved_return_type = sem_current_return_type;
+    sem_current_return_type = node->return_type.type;
     analyze_node(node->left);
+    sem_current_return_type = saved_return_type;
     sem_pop_scope();
     if (was_generator) generator_depth--;
 }
 
+// Resolve the declaration of a `self.field` / `obj.field` access so the field's
+// real type (notably whether it is an array) can be inspected. The enclosing
+// class is taken from the base expression: `self` is an ordinary parameter
+// typed as its class (bound explicitly for constructors, which have no `self`
+// parameter), and a nested field carries its class in type_name.
+ASTNode* resolve_field_decl(ASTNode* access) {
+    if (!access || access->type != AST_MEMBER_ACCESS || !access->left) return NULL;
+    const char* class_name = NULL;
+    if (access->left->type == AST_IDENTIFIER) {
+        Symbol* base_sym = resolve_symbol(access->left->token);
+        if (base_sym) class_name = base_sym->type_name;
+    } else if (access->left->type == AST_MEMBER_ACCESS && access->left->type_name) {
+        class_name = access->left->type_name;
+    }
+    if (!class_name) return NULL;
+    int cn_len = (int)strlen(class_name);
+    Token class_token = {TOKEN_IDENTIFIER, class_name, cn_len, access->token.line, 0};
+    Symbol* class_sym = resolve_symbol(class_token);
+    if (!class_sym || !class_sym->decl_node) return NULL;
+    ASTNode* class_node = class_sym->decl_node;
+    for (int i = 0; i < class_node->child_count; i++) {
+        ASTNode* child = class_node->children[i];
+        if (child->type == AST_VAR_DECL &&
+            child->token.length == access->token.length &&
+            strncmp(child->token.start, access->token.start, access->token.length) == 0) {
+            return child;
+        }
+    }
+    return NULL;
+}
+
+// `arr = { ... }` needs the element type so codegen can build the right array
+// struct. Record it on the literal itself.
+static void annotate_array_literal_assignment(ASTNode* node, ASTNode* decl) {
+    if (!node->right || node->right->type != AST_LITERAL_ARRAY) return;
+    if (!decl || !decl->is_array) return;
+    node->right->var_type = decl->var_type;
+    node->right->is_array = true;
+    node->right->is_class = decl->is_class || false;
+    if (decl->var_type.type == TOKEN_IDENTIFIER) {
+        char* elem = type_name_from_token(decl->var_type);
+        if (elem) {
+            int elen = (int)strlen(elem);
+            Token elem_token = {TOKEN_IDENTIFIER, elem, elen, node->token.line, 0};
+            Symbol* elem_sym = resolve_symbol(elem_token);
+            if (elem_sym && elem_sym->type == TOKEN_CLASS) node->right->is_class = true;
+            free(elem);
+        }
+    }
+}
+
+// The type a destination expects. `input()` is context-sensitive, so the
+// destination decides which reader the read uses: an element of an `int[]`
+// wants an integer, a field of type `float` wants a float.
+static CnextTokenType assignment_target_type(ASTNode* left) {
+    if (!left) return TOKEN_EOF;
+
+    if (left->type == AST_IDENTIFIER) {
+        Symbol* sym = resolve_symbol(left->token);
+        return sym ? sym->type : TOKEN_EOF;
+    }
+
+    if (left->type == AST_MEMBER_ACCESS) {
+        ASTNode* field = resolve_field_decl(left);
+        return field ? field->var_type.type : TOKEN_EOF;
+    }
+
+    if (left->type == AST_INDEX) {
+        ASTNode* base = left->left;
+        ASTNode* base_decl = NULL;
+        if (base && base->type == AST_IDENTIFIER) {
+            Symbol* base_sym = resolve_symbol(base->token);
+            if (base_sym) base_decl = base_sym->decl_node;
+        } else if (base && base->type == AST_MEMBER_ACCESS) {
+            base_decl = resolve_field_decl(base);
+        }
+        // An array's declared type is its element type.
+        if (base_decl && base_decl->is_array) return base_decl->var_type.type;
+        return TOKEN_EOF;
+    }
+
+    return TOKEN_EOF;
+}
+
 void analyze_assignment(ASTNode* node) {
     CnextTokenType left_type = analyze_expression(node->left);
+    // `input()` is context-sensitive: assigning it to a typed destination
+    // selects the corresponding runtime reader before analyzing the RHS.
+    CnextTokenType target_type = left_type;
+    if (target_type == TOKEN_EOF || target_type == TOKEN_VAR) {
+        target_type = assignment_target_type(node->left);
+    }
+    if (node->right) {
+        sem_apply_expected_type(node->right, target_type);
+    }
     analyze_expression(node->right);
 
     if (node->right && node->right->type == AST_NULL_LITERAL) {
@@ -83,10 +206,16 @@ void analyze_assignment(ASTNode* node) {
         } else if (sym->is_const) {
             report_error(ERR_SEM_CONST_MUTATE, node->left->token.line, "Cannot reassign to const variable:", sym->name);
         }
+        annotate_array_literal_assignment(node, sym ? sym->decl_node : NULL);
         return;
     }
 
-    if (node->left->type == AST_MEMBER_ACCESS || node->left->type == AST_INDEX) {
+    if (node->left->type == AST_MEMBER_ACCESS) {
+        annotate_array_literal_assignment(node, resolve_field_decl(node->left));
+        return;
+    }
+
+    if (node->left->type == AST_INDEX) {
         return;
     }
 
@@ -147,6 +276,11 @@ void analyze_node(ASTNode* node) {
             for (int i = 0; i < node->child_count; i++) {
                 if (node->children[i]->type == AST_FUNC_DECL) {
                     analyze_function(node->children[i], false);
+                } else if (node->children[i]->type == AST_CONSTRUCTOR) {
+                    // A constructor is not a field: its children are parameters
+                    // and its `left` is a body that must be analyzed. Routing it
+                    // to analyze_field_declaration would silently skip the body.
+                    analyze_node(node->children[i]);
                 } else if (node->children[i]->type == AST_OPERATOR_DECL) {
                     analyze_node(node->children[i]);
                 } else {
@@ -336,7 +470,12 @@ void analyze_node(ASTNode* node) {
             analyze_postfix(node);
             break;
         case AST_RETURN:
-            if (node->left) analyze_expression(node->left);
+            if (node->left) {
+                // `return input()` in `func ask(): int` reads an integer: the
+                // return type is the context that types the read.
+                sem_apply_expected_type(node->left, sem_current_return_type);
+                analyze_expression(node->left);
+            }
             break;
         case AST_TRY:
             analyze_node(node->left); 
@@ -393,12 +532,17 @@ void analyze_node(ASTNode* node) {
             break;
         case AST_CONSTRUCTOR:
             sem_push_scope();
+            // Constructors carry no explicit `self` parameter, because codegen
+            // emits the receiver itself. Bind it here so that `self.field`
+            // resolves the same way it does inside a method.
+            if (node->var_type.type == TOKEN_IDENTIFIER) {
+                Token self_token = {TOKEN_IDENTIFIER, "self", 4, node->token.line, 0};
+                char* class_name = type_name_from_token(node->var_type);
+                define_symbol(self_token, TOKEN_IDENTIFIER, false, class_name, node);
+                free(class_name);
+            }
             for (int i = 0; i < node->child_count; i++) {
-                ASTNode* param = node->children[i];
-                validate_type_token(param->var_type);
-                char* tn = type_name_from_token(param->var_type);
-                define_symbol(param->token, param->var_type.type, false, tn, param);
-                free(tn);
+                define_parameter(node->children[i]);
             }
             analyze_node(node->left);
             sem_pop_scope();
@@ -409,11 +553,7 @@ void analyze_node(ASTNode* node) {
             define_symbol(node->token, TOKEN_FUNC, true, NULL, node);
             sem_push_scope();
             for (int i = 0; i < node->child_count; i++) {
-                ASTNode* param = node->children[i];
-                validate_type_token(param->var_type);
-                char* type_name = type_name_from_token(param->var_type);
-                define_symbol(param->token, param->var_type.type, false, type_name, param);
-                free(type_name);
+                define_parameter(node->children[i]);
             }
             analyze_node(node->left);
             sem_pop_scope();

@@ -179,6 +179,7 @@ static const KeywordEntry keywords[] = {
     {"spawn", TOKEN_SPAWN},
     {"static", TOKEN_STATIC},
     {"str", TOKEN_STR_TYPE},
+    {"string", TOKEN_STR_TYPE},
     {"struct", TOKEN_STRUCT},
     {"super", TOKEN_SUPER},
     {"switch", TOKEN_SWITCH},

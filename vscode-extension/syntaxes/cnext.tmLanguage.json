@@ -140,7 +140,7 @@
       "patterns": [
         {
           "name": "support.type.primitive.cnext",
-          "match": "\\b(int|long|float|double|str|bool|char|byte|uint|ulong|ushort|ubyte|void)\\b"
+          "match": "\\b(int|long|float|double|str|string|bool|char|byte|uint|ulong|ushort|ubyte|void)\\b"
         },
         {
           "name": "support.type.iter.cnext",

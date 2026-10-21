@@ -1,0 +1,54 @@
+// EXPECT: 5
+// EXPECT: 7
+// Regression test: class-typed constructor parameters.
+//
+// Class instances are heap-allocated, so a parameter of class type is passed as
+// `Klass*`. Constructor emission hardcoded the pointer flag to false and
+// semantics never marked constructor parameters the way it marked ordinary
+// function parameters, so `func new(Node n)` declared its parameter by value and
+// disagreed with both the body and every call site.
+class Node {
+    int kind
+
+    func new() {
+    }
+}
+
+class Holder {
+    Node? item
+
+    func new(Node n) {
+        self.item = n
+    }
+
+    func get(): int {
+        return self.item.kind
+    }
+}
+
+// The generic specialization path had the identical hardcoding.
+class Box<T> {
+    T value
+
+    func new(T v) {
+        self.value = v
+    }
+
+    func get(): T {
+        return self.value
+    }
+}
+
+func make(): Node {
+    var n = new Node()
+    n.kind = 5
+    return n
+}
+
+main {
+    var h = new Holder(make())
+    printin(h.get())
+    printin(h.get() + 2)
+    var b = new Box<int>(7)
+    printin(b.get())
+}

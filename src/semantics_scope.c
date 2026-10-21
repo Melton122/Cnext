@@ -6,6 +6,9 @@ bool has_semantic_error = false;
 int loop_depth = 0;
 int switch_depth = 0;
 int generator_depth = 0;
+/* The return type of the function whose body is being analyzed. A `return
+   input()` inside `func ask(): int` needs it to know which reader to use. */
+CnextTokenType sem_current_return_type = TOKEN_EOF;
 
 char* copy_cstring(const char* value) {
     if (!value) return NULL;

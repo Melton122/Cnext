@@ -1,0 +1,14 @@
+func sum(int[] values): int {
+    var total = 0
+    var i = 0
+    while i < values.length {
+        total = total + values[i]
+        i = i + 1
+    }
+    return total
+}
+
+main {
+    int[] values = {1, 2, 3, 4}
+    printin(sum(values))
+}

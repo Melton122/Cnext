@@ -1,0 +1,44 @@
+// EXPECT: 10
+// EXPECT: 11
+// EXPECT: 10
+// EXPECT: 12
+// EXPECT: 11
+// Regression test: class instances returned by value from both top-level
+// functions and methods. Class types are pointers, so the generated signature
+// has to be `Node*`; `var x = make()` also has to take its type from the
+// initializer's class name rather than the bare expression token.
+class Node {
+    int kind
+
+    func new() {
+    }
+
+    func bump(): Node {
+        var n = new Node()
+        n.kind = self.kind + 1
+        return n
+    }
+}
+
+func make(): Node {
+    var n = new Node()
+    n.kind = 10
+    return n
+}
+
+// A class return passed straight into a call, without a named local.
+func take(Node n): int {
+    return n.kind
+}
+
+main {
+    var a = make()
+    printin(a.kind)
+    var b = a.bump()
+    printin(b.kind)
+    // `bump` allocates a fresh instance, so `a` must be untouched.
+    printin(a.kind)
+    var c = b.bump()
+    printin(c.kind)
+    printin(take(a.bump()))
+}

@@ -31,6 +31,69 @@ ClassSpecWork* class_spec_last = NULL;
 
 // --- Public API ---
 
+// Emits the C declarations that let a program refer to its own top-level
+// functions and classes before they are defined: a forward typedef per
+// aggregate, then a prototype per top-level function.
+//
+// Semantics already resolve these references (predeclare_global registers every
+// top-level name up front), but codegen writes definitions in source order, so
+// C was the first thing to see an upward call and rejected it with *implicit
+// declaration* / *unknown type name*. Recursive descent parsers are defined by
+// upward mutual recursion, so this is not an edge case.
+//
+// Aggregates are declared first because a prototype may name one as a
+// parameter type, and a pointer to an incomplete type is legal in a prototype.
+// Classes already emit `typedef struct X X;` ahead of their definition, so
+// repeating it here is a no-op; structs are emitted in the same tagged shape
+// for the same reason.
+static void emit_forward_declarations(ASTNode* program) {
+    bool wrote_typedef = false;
+    for (int i = 0; i < program->child_count; i++) {
+        ASTNode* child = program->children[i];
+        if (child->type == AST_CLASS_DECL || child->type == AST_STRUCT_DECL) {
+            fprintf(out, "typedef struct %.*s %.*s;\n",
+                    child->token.length, child->token.start,
+                    child->token.length, child->token.start);
+            wrote_typedef = true;
+        } else if (child->type == AST_ENUM_DECL) {
+            // A variant-carrying enum is emitted as a tagged struct whose tag
+            // is an anonymous enum; a plain one is a real C enum. Either way the
+            // name itself is always defined via a struct or enum typedef.
+            bool has_variants = false;
+            for (int j = 0; j < child->child_count; j++) {
+                if (child->children[j]->type == AST_VARIANT) { has_variants = true; break; }
+            }
+            fprintf(out, "typedef %s %.*s %.*s;\n", has_variants ? "struct" : "enum",
+                    child->token.length, child->token.start,
+                    child->token.length, child->token.start);
+            wrote_typedef = true;
+        } else if (child->type == AST_TYPE_ALIAS && child->left) {
+            // Repeating the alias is harmless when it matches, and a no-op for
+            // the common alias-to-primitive case that already worked.
+            fprintf(out, "typedef ");
+            generate_type(child->left->token, false);
+            fprintf(out, " %.*s;\n", child->token.length, child->token.start);
+            wrote_typedef = true;
+        }
+    }
+    if (wrote_typedef) fprintf(out, "\n");
+
+    bool wrote_proto = false;
+    for (int i = 0; i < program->child_count; i++) {
+        ASTNode* child = program->children[i];
+        // Generic declarations are instantiated into specialized functions
+        // whose prototypes are emitted alongside them, and generators rewrite
+        // their own signature entirely.
+        if (child->type != AST_FUNC_DECL && child->type != AST_COROUTINE_DECL &&
+            child->type != AST_ASYNC_FUNC_DECL) continue;
+        if (child->type_param_count > 0 || child->is_generator) continue;
+        if (!child->left) continue;  // declaration only, no body to emit later
+        generate_function_prototype(child);
+        wrote_proto = true;
+    }
+    if (wrote_proto) fprintf(out, "\n");
+}
+
 static void generate_runtime_preamble(void) {
     fprintf(out, "#include \"runtime.h\"\n\n");
     if (codegen_emit_lines && codegen_debug_source) {
@@ -207,7 +270,7 @@ bool generate_c_code(ASTNode* program, const char* output_filename, bool test_mo
             for (int pi = 0; pi < sw->func_decl->child_count; pi++) {
                 ASTNode* param = sw->func_decl->children[pi];
                 if (pi > 0) fprintf(out, ", ");
-                generate_type(param->var_type, param->is_pointer);
+                generate_node_type(param, param->is_pointer);
             }
             fprintf(out, ");\n");
             for (int ti = 0; ti < sw->func_decl->type_param_count && ti < sw->resolved_count; ti++) {
@@ -217,6 +280,7 @@ bool generate_c_code(ASTNode* program, const char* output_filename, bool test_mo
         for (ClassSpecWork* cs = class_spec_queue; cs; cs = cs->next) {
             fprintf(out, "typedef struct %s %s;\n", cs->mangled_name, cs->mangled_name);
         }
+        emit_forward_declarations(program);
         if (gen_specs || class_spec_queue) fprintf(out, "\n");
         out = saved_out;
     }

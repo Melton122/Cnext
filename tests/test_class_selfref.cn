@@ -1,0 +1,60 @@
+// EXPECT: 1
+// EXPECT: alpha
+// EXPECT: -1
+// EXPECT: 2
+// EXPECT: 2
+// EXPECT: -1
+// EXPECT: 2
+// EXPECT: alpha
+// Regression test: a class must be able to hold a reference to its own type,
+// and nullable class fields must be assignable both ways.
+class Node {
+    int kind
+    str text
+    Node? left
+    Node? right
+
+    func new(int k, str t) {
+        self.kind = k
+        self.text = t
+        self.left = null
+        self.right = null
+    }
+
+    func link(Node n) {
+        self.left = n
+    }
+
+    func left_kind(): int {
+        if self.left == null {
+            return -1
+        }
+        return self.left.kind
+    }
+}
+
+func depth(Node? n): int {
+    if n == null {
+        return 0
+    }
+    return 1 + depth(n.left)
+}
+
+main {
+    var a = new Node(1, "alpha")
+    printin(a.kind)
+    printin(a.text)
+    printin(a.left_kind())
+
+    a.link(new Node(2, "beta"))
+    printin(a.left_kind())
+    printin(depth(a))
+
+    a.left = null
+    printin(a.left_kind())
+
+    var b = new Node(3, "gamma")
+    b.left = a
+    printin(depth(b))
+    printin(b.left.text)
+}

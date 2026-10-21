@@ -10,6 +10,13 @@
 #include <math.h>
 #include <time.h>
 #include <stdint.h>
+#ifdef _WIN32
+#include <conio.h>
+#endif
+#ifndef _WIN32
+#include <termios.h>
+#include <unistd.h>
+#endif
 
 /* ========================================================================
  * Cnext Runtime Library
@@ -30,6 +37,16 @@ typedef struct {
     char* data;
     size_t length;
 } CnextString;
+
+typedef struct { int* data; size_t length; } CnextArrayInt;
+typedef struct { long long* data; size_t length; } CnextArrayLong;
+typedef struct { float* data; size_t length; } CnextArrayFloat;
+typedef struct { double* data; size_t length; } CnextArrayDouble;
+typedef struct { CnextString* data; size_t length; } CnextArrayString;
+typedef struct { bool* data; size_t length; } CnextArrayBool;
+/* Arrays whose elements are class instances. Every class instance is already a
+   pointer, so the elements are stored as void* and dereferenced on access. */
+typedef struct { void** data; size_t length; } CnextArrayObj;
 
 /* --- Memory Tracking --- */
 typedef struct _AllocNode {
@@ -495,7 +512,10 @@ static inline void printin_llong(long long x) { _cnext_printin("%lld", x); }
 static inline void printin_ullong(unsigned long long x) { _cnext_printin("%llu", x); }
 static inline void printin_float(float x) { _cnext_printin("%f", x); }
 static inline void printin_double(double x) { _cnext_printin("%f", x); }
-static inline void printin_str(CnextString x) { _cnext_printin("%s", x.data ? x.data : "(null)"); }
+static inline void printin_str(CnextString x) {
+    if (!x.data) { _cnext_printin("(null)"); return; }
+    _cnext_printin("%.*s", (int)x.length, x.data);
+}
 static inline void printin_cstr(const char* x) { _cnext_printin("%s", x ? x : "(null)"); }
 static inline void printin_bool(bool x) { _cnext_printin("%s", x ? "true" : "false"); }
 static inline void printin_ptr(void* x) { _cnext_printin("%p", x); }
@@ -552,7 +572,13 @@ static inline void print_llong(long long x) { _cnext_print("%lld", x); }
 static inline void print_ullong(unsigned long long x) { _cnext_print("%llu", x); }
 static inline void print_float(float x) { _cnext_print("%f", x); }
 static inline void print_double(double x) { _cnext_print("%f", x); }
-static inline void print_str(CnextString x) { _cnext_print("%s", x.data ? x.data : "(null)"); }
+/* Strings carry an explicit length, so printing has to honour it. A slice from
+   cnext_str_sub points into a larger buffer and is not NUL-terminated at its
+   end, so "%s" would run past the slice to the end of the source buffer. */
+static inline void print_str(CnextString x) {
+    if (!x.data) { _cnext_print("(null)"); return; }
+    _cnext_print("%.*s", (int)x.length, x.data);
+}
 static inline void print_cstr(const char* x) { _cnext_print("%s", x ? x : "(null)"); }
 static inline void print_bool(bool x) { _cnext_print("%s", x ? "true" : "false"); }
 static inline void print_ptr(void* x) { _cnext_print("%p", x); }
@@ -607,17 +633,182 @@ static inline void print_tuple(CnextTuple x) { printf("%s", x.repr.data ? x.repr
 
 /* --- Input --- */
 
-static inline CnextString cnext_input(CnextString prompt) {
-    if (prompt.data) printf("%s", prompt.data);
-    char* buffer = (char*)malloc(256);
+/* Read one whole line from stdin, without the trailing newline. The buffer
+   grows on demand so a long line is not silently truncated at 255 bytes. */
+static inline char* _cnext_read_line(void) {
+    size_t capacity = 256;
+    size_t length = 0;
+    char* buffer = (char*)malloc(capacity);
     if (!buffer) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
-    if (fgets(buffer, 256, stdin)) {
-        buffer[strcspn(buffer, "\n")] = 0;
-    } else {
-        buffer[0] = '\0';
+    int c;
+    while ((c = getchar()) != EOF) {
+        if (c == '\n') break;
+        if (length + 1 >= capacity) {
+            size_t next = capacity * 2;
+            char* grown = (char*)realloc(buffer, next);
+            if (!grown) { free(buffer); fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
+            buffer = grown;
+            capacity = next;
+        }
+        buffer[length++] = (char)c;
     }
+    /* A CRLF line ending leaves a stray '\r' behind. */
+    if (length > 0 && buffer[length - 1] == '\r') length--;
+    buffer[length] = '\0';
     _cnext_track(buffer);
+    return buffer;
+}
+
+/* Show the prompt before the read. The length is used rather than the NUL so
+   a prompt that is a slice of a longer string still prints exactly its own
+   characters, and the flush makes the prompt appear before the read blocks. */
+static inline void _cnext_input_prompt(CnextString prompt) {
+    if (prompt.data && prompt.length > 0) {
+        printf("%.*s", (int)prompt.length, prompt.data);
+        fflush(stdout);
+    }
+}
+
+/* Read one line as text. */
+static inline CnextString cnext_input(CnextString prompt) {
+    _cnext_input_prompt(prompt);
+    char* buffer = _cnext_read_line();
     return (CnextString){buffer, strlen(buffer)};
+}
+
+static inline CnextString cnext_input_key(void) {
+    char key = '\0';
+#ifdef _WIN32
+    int value = _getch();
+    if (value == 0 || value == 224) (void)_getch();
+    key = (char)value;
+#else
+    struct termios old_term;
+    struct termios raw_term;
+    if (tcgetattr(STDIN_FILENO, &old_term) != 0) return (CnextString){NULL, 0};
+    raw_term = old_term;
+    raw_term.c_lflag &= (tcflag_t)~(ICANON | ECHO);
+    raw_term.c_cc[VMIN] = 1;
+    raw_term.c_cc[VTIME] = 0;
+    if (tcsetattr(STDIN_FILENO, TCSANOW, &raw_term) != 0) return (CnextString){NULL, 0};
+    /* getchar() rather than read(): the line readers above go through stdio,
+       and a raw read would miss anything stdio had already buffered. */
+    int value = getchar();
+    if (value == EOF) value = 0;
+    key = (char)value;
+    tcsetattr(STDIN_FILENO, TCSANOW, &old_term);
+#endif
+    char* result = (char*)malloc(2);
+    if (!result) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
+    result[0] = key;
+    result[1] = '\0';
+    _cnext_track(result);
+    return (CnextString){result, key ? 1 : 0};
+}
+
+/* --- Typed readers ---
+   Every reader shares the same shape: show the prompt, read one line, parse
+   it. A line that does not parse yields the zero value for the type rather
+   than aborting, so a mistyped entry never takes the program down. */
+
+static inline int cnext_input_int(CnextString prompt) {
+    _cnext_input_prompt(prompt);
+    char* buffer = _cnext_read_line();
+    char* end = NULL;
+    long value = strtol(buffer, &end, 10);
+    return end == buffer ? 0 : (int)value;
+}
+
+static inline unsigned int cnext_input_uint(CnextString prompt) {
+    _cnext_input_prompt(prompt);
+    char* buffer = _cnext_read_line();
+    char* end = NULL;
+    /* strtoul is used so a negative entry wraps the way an unsigned read
+       should rather than being clamped by strtol's signed range check. */
+    unsigned long value = strtoul(buffer, &end, 10);
+    return end == buffer ? 0u : (unsigned int)value;
+}
+
+static inline long long cnext_input_long(CnextString prompt) {
+    _cnext_input_prompt(prompt);
+    char* buffer = _cnext_read_line();
+    char* end = NULL;
+    long long value = strtoll(buffer, &end, 10);
+    return end == buffer ? 0LL : value;
+}
+
+static inline unsigned long long cnext_input_ulong(CnextString prompt) {
+    _cnext_input_prompt(prompt);
+    char* buffer = _cnext_read_line();
+    char* end = NULL;
+    unsigned long long value = strtoull(buffer, &end, 10);
+    return end == buffer ? 0ULL : value;
+}
+
+static inline float cnext_input_float(CnextString prompt) {
+    _cnext_input_prompt(prompt);
+    char* buffer = _cnext_read_line();
+    char* end = NULL;
+    float value = strtof(buffer, &end);
+    return end == buffer ? 0.0f : value;
+}
+
+static inline double cnext_input_double(CnextString prompt) {
+    _cnext_input_prompt(prompt);
+    char* buffer = _cnext_read_line();
+    char* end = NULL;
+    double value = strtod(buffer, &end);
+    return end == buffer ? 0.0 : value;
+}
+
+static inline bool cnext_input_bool(CnextString prompt) {
+    _cnext_input_prompt(prompt);
+    char* buffer = _cnext_read_line();
+    /* Trim leading and trailing whitespace so " true " reads as true. */
+    char* start = buffer;
+    while (*start == ' ' || *start == '\t' || *start == '\r' || *start == '\n') start++;
+    size_t length = strlen(start);
+    while (length > 0 && (start[length - 1] == ' ' || start[length - 1] == '\t' ||
+                          start[length - 1] == '\r' || start[length - 1] == '\n')) {
+        length--;
+    }
+    if (length == 4 && strncmp(start, "true", 4) == 0) return true;
+    if (length == 4 && strncmp(start, "TRUE", 4) == 0) return true;
+    if (length == 4 && strncmp(start, "True", 4) == 0) return true;
+    if (length == 1 && start[0] == '1') return true;
+    if (length == 3 && strncmp(start, "yes", 3) == 0) return true;
+    return false;
+}
+
+static inline char cnext_input_char(CnextString prompt) {
+    _cnext_input_prompt(prompt);
+    char* buffer = _cnext_read_line();
+    return buffer[0] ? buffer[0] : '\0';
+}
+
+static inline char cnext_input_byte(CnextString prompt) {
+    _cnext_input_prompt(prompt);
+    char* buffer = _cnext_read_line();
+    if (!buffer[0]) return 0;
+    /* A byte is a signed 8-bit value: 200 is -56, not 200. */
+    int value = (int)(signed char)buffer[0];
+    return (char)value;
+}
+
+static inline unsigned short cnext_input_ushort(CnextString prompt) {
+    _cnext_input_prompt(prompt);
+    char* buffer = _cnext_read_line();
+    char* end = NULL;
+    unsigned long value = strtoul(buffer, &end, 10);
+    return end == buffer ? (unsigned short)0 : (unsigned short)value;
+}
+
+static inline unsigned char cnext_input_ubyte(CnextString prompt) {
+    _cnext_input_prompt(prompt);
+    char* buffer = _cnext_read_line();
+    char* end = NULL;
+    unsigned long value = strtoul(buffer, &end, 10);
+    return end == buffer ? (unsigned char)0 : (unsigned char)value;
 }
 
 /* --- String Concatenation --- */
@@ -703,10 +894,34 @@ static inline CnextString cnext_to_string_char(char x) { char* b = (char*)malloc
 
 static inline bool cnext_str_eq(CnextString a, CnextString b) {
     if (a.length != b.length) return false;
-    if (a.data == NULL && b.data == NULL) return true;
+    // Two empty strings are equal even when one of them is a zeroed field that
+    // was never assigned: a zeroed CnextString has data == NULL and length 0,
+    // and len() and concatenation already treat it as empty, so == must agree.
+    if (a.length == 0) return true;
     if (a.data == NULL || b.data == NULL) return false;
     return memcmp(a.data, b.data, a.length) == 0;
 }
+
+/* --- String Ordering --- */
+
+/* Lexicographic order: compare the shared prefix, then let the shorter string
+ * sort first. This makes single-character range checks such as
+ * `c >= "A" && c <= "Z"` behave the way they do for chars, and keeps
+ * multi-character comparisons consistent with strcmp. */
+static inline int cnext_str_cmp(CnextString a, CnextString b) {
+    size_t n = a.length < b.length ? a.length : b.length;
+    if (n > 0) {
+        int r = memcmp(a.data, b.data, n);
+        if (r != 0) return r < 0 ? -1 : 1;
+    }
+    if (a.length == b.length) return 0;
+    return a.length < b.length ? -1 : 1;
+}
+
+static inline bool cnext_str_lt(CnextString a, CnextString b) { return cnext_str_cmp(a, b) < 0; }
+static inline bool cnext_str_le(CnextString a, CnextString b) { return cnext_str_cmp(a, b) <= 0; }
+static inline bool cnext_str_gt(CnextString a, CnextString b) { return cnext_str_cmp(a, b) > 0; }
+static inline bool cnext_str_ge(CnextString a, CnextString b) { return cnext_str_cmp(a, b) >= 0; }
 
 /* --- String Utility Functions --- */
 
@@ -1054,6 +1269,38 @@ static inline size_t _cnext_array_check(size_t length, size_t index) {
 }
 
 #define CNEXT_ARRAY_IDX(arr, idx) (*({ __auto_type _a = (arr); size_t _i = (idx); _cnext_array_check(_a.length, _i); &_a.data[_i]; }))
+
+/* Indexing an object array yields the element itself (a class instance
+   pointer) rather than a pointer to the slot, so `a[0].field` reads through
+   the reference just like a local class variable does. */
+#define CNEXT_ARRAY_IDX_OBJ(arr, idx) ({ __auto_type _a = (arr); size_t _i = (idx); _cnext_array_check(_a.length, _i); _a.data[_i]; })
+
+/* Writing an object-array element has to store the pointer in the backing
+   buffer. The read above yields the element pointer itself, which is not a
+   modifiable lvalue, and its result cannot be addressed because GCC statement
+   expressions do not preserve lvalue-ness. So the store has to happen inside the
+   statement expression rather than through it. */
+#define CNEXT_ARRAY_IDX_OBJ_ASSIGN(arr, idx, val) ({ __auto_type _a = (arr); size_t _i = (idx); _cnext_array_check(_a.length, _i); _a.data[_i] = (void*)(val); })
+
+/* Array literals are built as compound literals, which live in automatic
+   storage. Copy them onto the heap so the array owns its buffer and can be
+   grown later with CNEXT_ARRAY_PUSH. */
+static inline void* _cnext_array_heap_copy(const void* src, size_t count, size_t elem_size) {
+    void* dst = malloc((count ? count : 1) * elem_size);
+    if (!dst) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
+    if (count && src) memcpy(dst, src, count * elem_size);
+    return dst;
+}
+
+/* Append to any of the Cnext array types. The updated struct is returned so
+   the caller can assign it back, which is how push() is generated. */
+#define CNEXT_ARRAY_PUSH(arr, val) ({ \
+    __typeof__(arr) _p = (arr); \
+    _p.data = (__typeof__(_p.data))realloc(_p.data, (_p.length + 1) * sizeof(*_p.data)); \
+    if (!_p.data) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); } \
+    _p.data[_p.length] = (val); \
+    _p.length++; \
+    _p; })
 
 #define CNEXT_SLICE(arr, start, end) ({ \
     __auto_type _a = (arr); \
@@ -1498,6 +1745,7 @@ static inline int cnext_fibonacci(int n) {
 
 #ifdef _WIN32
 #include <windows.h>
+#include <conio.h>
 static inline long long cnext_timestamp(void) {
     FILETIME ft;
     GetSystemTimeAsFileTime(&ft);

@@ -1,0 +1,51 @@
+// Regression test: calls upward into functions defined later.
+//
+// Semantics resolve these calls fine because predeclare_global registers every
+// top-level function up front, so the Cnext compiler stayed silent while the
+// generated C failed with *implicit declaration* / *conflicting types*.
+// Functions were emitted in source order with no C prototypes, so calling a
+// function before it was defined could not compile. A recursive descent parser
+// is defined by upward mutual recursion, so this is pinned down here.
+//
+// Not covered: naming a class or struct *before* its definition still needs the
+// complete type in the function body, so aggregate types remain
+// definition-before-use. See docs/self_hosting.md.
+func caller(): int {
+    return callee()
+}
+
+func callee(): int {
+    return 7
+}
+
+func one(): int {
+    return caller()
+}
+
+// Two functions calling each other, neither defined before the other.
+func is_even(int n): bool {
+    if n == 0 {
+        return true
+    }
+    return is_odd(n - 1)
+}
+
+func is_odd(int n): bool {
+    if n == 0 {
+        return false
+    }
+    return is_even(n - 1)
+}
+
+func check(): int {
+    if is_even(10) {
+        return 1
+    }
+    return 0
+}
+
+// `main` calls functions defined after it.
+main {
+    printin(one())
+    printin(check())
+}

@@ -1,0 +1,767 @@
+// Self-hosting bootstrap: port of src/lexer.c into Cnext (Milestone A).
+// This is a working Cnext implementation that mirrors the behavior of the
+// hand-written C lexer (src/lexer.c) and emits the same deterministic token
+// stream as tools/lexdump.c, so it can serve as the candidate side of
+// tests/parity_lexer.py (--cand-cmd).
+
+// ---------------------------------------------------------------------------
+// Token type constants. Values deliberately match include/lexer.h
+// (CnextTokenType) in order, so the <type-int> column of the dump is
+// byte-identical to the reference emitted by tools/lexdump.c.
+// ---------------------------------------------------------------------------
+const int TOKEN_EOF = 0
+const int TOKEN_ERROR = 1
+const int TOKEN_MAIN = 2
+const int TOKEN_IF = 3
+const int TOKEN_ELSE = 4
+const int TOKEN_WHILE = 5
+const int TOKEN_FOR = 6
+const int TOKEN_FUNC = 7
+const int TOKEN_RETURN = 8
+const int TOKEN_CLASS = 9
+const int TOKEN_VAR = 10
+const int TOKEN_IN = 11
+const int TOKEN_IMPORT = 12
+const int TOKEN_CONST = 13
+const int TOKEN_ENUM = 14
+const int TOKEN_STRUCT = 15
+const int TOKEN_SWITCH = 16
+const int TOKEN_CASE = 17
+const int TOKEN_DEFAULT = 18
+const int TOKEN_TEST = 19
+const int TOKEN_ASSERT = 20
+const int TOKEN_BREAK = 21
+const int TOKEN_CONTINUE = 22
+const int TOKEN_TRY = 23
+const int TOKEN_CATCH = 24
+const int TOKEN_THROW = 25
+const int TOKEN_FINALLY = 26
+const int TOKEN_EXTENDS = 27
+const int TOKEN_INTERFACE = 28
+const int TOKEN_IMPLEMENTS = 29
+const int TOKEN_OVERRIDE = 30
+const int TOKEN_NEW = 31
+const int TOKEN_SUPER = 32
+const int TOKEN_AS = 33
+const int TOKEN_MATCH = 34
+const int TOKEN_TRAIT = 35
+const int TOKEN_TYPE_ALIAS = 36
+const int TOKEN_INT_TYPE = 37
+const int TOKEN_LONG_TYPE = 38
+const int TOKEN_FLOAT_TYPE = 39
+const int TOKEN_DOUBLE_TYPE = 40
+const int TOKEN_STR_TYPE = 41
+const int TOKEN_BOOL_TYPE = 42
+const int TOKEN_CHAR_TYPE = 43
+const int TOKEN_BYTE_TYPE = 44
+const int TOKEN_UINT_TYPE = 45
+const int TOKEN_ULONG_TYPE = 46
+const int TOKEN_USHORT_TYPE = 47
+const int TOKEN_UBYTE_TYPE = 48
+const int TOKEN_IDENTIFIER = 49
+const int TOKEN_NUMBER = 50
+const int TOKEN_FLOAT_LITERAL = 51
+const int TOKEN_STRING_LITERAL = 52
+const int TOKEN_CHAR_LITERAL = 53
+const int TOKEN_TRUE = 54
+const int TOKEN_FALSE = 55
+const int TOKEN_NULL = 56
+const int TOKEN_NONE = 57
+const int TOKEN_PLUS = 58
+const int TOKEN_MINUS = 59
+const int TOKEN_STAR = 60
+const int TOKEN_PERCENT = 61
+const int TOKEN_SLASH = 62
+const int TOKEN_EQUAL = 63
+const int TOKEN_PLUS_EQUAL = 64
+const int TOKEN_MINUS_EQUAL = 65
+const int TOKEN_STAR_EQUAL = 66
+const int TOKEN_SLASH_EQUAL = 67
+const int TOKEN_EQ_EQ = 68
+const int TOKEN_BANG_EQ = 69
+const int TOKEN_LESS = 70
+const int TOKEN_LESS_EQ = 71
+const int TOKEN_GREATER = 72
+const int TOKEN_GREATER_EQ = 73
+const int TOKEN_AND_AND = 74
+const int TOKEN_OR_OR = 75
+const int TOKEN_BANG = 76
+const int TOKEN_ARROW = 77
+const int TOKEN_FAT_ARROW = 78
+const int TOKEN_INCREMENT = 79
+const int TOKEN_DECREMENT = 80
+const int TOKEN_LBRACE = 81
+const int TOKEN_RBRACE = 82
+const int TOKEN_LPAREN = 83
+const int TOKEN_RPAREN = 84
+const int TOKEN_LBRACKET = 85
+const int TOKEN_RBRACKET = 86
+const int TOKEN_COMMA = 87
+const int TOKEN_SEMICOLON = 88
+const int TOKEN_DOT = 89
+const int TOKEN_COLON = 90
+const int TOKEN_QUESTION = 91
+const int TOKEN_QUESTION_DOT = 92
+const int TOKEN_QUESTION_QUESTION = 93
+const int TOKEN_ELLIPSIS = 94
+const int TOKEN_OPTIONAL = 95
+const int TOKEN_RESULT = 96
+const int TOKEN_OPERATOR = 97
+const int TOKEN_EXTEND = 98
+const int TOKEN_YIELD = 99
+const int TOKEN_ITER = 100
+const int TOKEN_COROUTINE = 101
+const int TOKEN_RESUME = 102
+const int TOKEN_WITH = 103
+const int TOKEN_ASYNC = 104
+const int TOKEN_AWAIT = 105
+const int TOKEN_RUN_ASYNC = 106
+const int TOKEN_THREAD = 107
+const int TOKEN_SPAWN = 108
+const int TOKEN_MUTEX = 109
+const int TOKEN_CHANNEL = 110
+const int TOKEN_LOCK = 111
+const int TOKEN_UNLOCK = 112
+const int TOKEN_SEND = 113
+const int TOKEN_RECV = 114
+const int TOKEN_TYPEOF = 115
+const int TOKEN_MACRO = 116
+const int TOKEN_CONSTEXPR = 117
+const int TOKEN_AT = 118
+const int TOKEN_EXTERN = 119
+const int TOKEN_OWN = 120
+const int TOKEN_BENCH = 121
+const int TOKEN_DOLLAR = 122
+const int TOKEN_DEFER = 123
+const int TOKEN_RANGE = 124
+const int TOKEN_STATIC = 125
+const int TOKEN_ABSTRACT = 126
+const int TOKEN_FINAL = 127
+const int TOKEN_PIPE = 128
+const int TOKEN_RANGE_INCLUSIVE = 129
+const int TOKEN_RAW_STRING = 130
+const int TOKEN_WHEN = 131
+
+// ---------------------------------------------------------------------------
+// Lexer
+// The C lexer returns a Token struct by value; this Cnext codegen has a bug
+// generating struct-return, so instead the Lexer class carries the "current
+// token" as scalar fields and exposes getters.
+// ---------------------------------------------------------------------------
+class Lexer {
+    str source
+    int src_len
+    int index
+    int start_index
+    int line
+    int column
+    int start_column
+    bool unterminated_comment
+
+    // Current token (set by next_token).
+    int cur_type
+    str cur_start
+    int cur_length
+    int cur_line
+    int cur_column
+
+    func new(str src) {
+        self.source = src
+        self.src_len = src.length
+        self.index = 0
+        self.start_index = 0
+        self.line = 1
+        self.column = 1
+        self.start_column = 1
+        self.unterminated_comment = false
+    }
+
+    // -- character access (Cnext has no str[i] indexing; use str_char_at) --
+
+    func is_at_end(): bool {
+        return self.index >= self.src_len
+    }
+
+    func char_at(int pos): int {
+        if pos >= self.src_len {
+            return 0
+        }
+        return str_char_at(self.source, pos)
+    }
+
+    func advance(): int {
+        int c = self.char_at(self.index)
+        self.index = self.index + 1
+        self.column = self.column + 1
+        return c
+    }
+
+    func peek(): int {
+        return self.char_at(self.index)
+    }
+
+    func peek_next(): int {
+        return self.char_at(self.index + 1)
+    }
+
+    func mch(int expected): bool {
+        int c = self.char_at(self.index)
+        if self.is_at_end() {
+            return false
+        }
+        if c != expected {
+            return false
+        }
+        self.index = self.index + 1
+        return true
+    }
+
+    // -- token construction --
+
+    func set_token(int ty) {
+        self.cur_type = ty
+        self.cur_start = str_substring(self.source, self.start_index, self.index)
+        self.cur_length = self.index - self.start_index
+        self.cur_line = self.line
+        self.cur_column = self.start_column
+    }
+
+    func set_error(str message) {
+        self.cur_type = TOKEN_ERROR
+        self.cur_start = message
+        self.cur_length = message.length
+        self.cur_line = self.line
+        self.cur_column = self.column
+    }
+
+    // -- whitespace / comments (mirrors C skip_whitespace) --
+
+    func skip_whitespace() {
+        while true {
+            int ch = self.peek()
+            if ch == ' ' || ch == '\r' || ch == '\t' {
+                self.advance()
+            } else {
+                if ch == '\n' {
+                    self.line = self.line + 1
+                    self.column = 0
+                    self.advance()
+                } else {
+                    if ch == '/' && self.peek_next() == '/' {
+                        while !self.is_at_end() && self.peek() != '\n' {
+                            self.advance()
+                        }
+                    } else {
+                        if ch == '/' && self.peek_next() == '*' {
+                            self.advance()
+                            self.advance()
+                            while !self.is_at_end() && !(self.peek() == '*' && self.peek_next() == '/') {
+                                if self.peek() == '\n' {
+                                    self.line = self.line + 1
+                                    self.column = 0
+                                }
+                                self.advance()
+                            }
+                            if !self.is_at_end() {
+                                self.advance()
+                                self.advance()
+                            } else {
+                                self.unterminated_comment = true
+                                return
+                            }
+                        } else {
+                            return
+                        }
+                    }
+                }
+            }
+        }
+    }
+// -- character classes --
+
+    func isalpha(int ch): bool {
+        if ch >= 'a' && ch <= 'z' {
+            return true
+        }
+        if ch >= 'A' && ch <= 'Z' {
+            return true
+        }
+        return false
+    }
+
+    func isdigit(int ch): bool {
+        if ch >= '0' && ch <= '9' {
+            return true
+        }
+        return false
+    }
+
+    // -- keyword lookup (mirrors the C lexer's sorted keyword table) --
+
+    func identifier_type(): int {
+        int name_len = self.index - self.start_index
+        if name_len > 63 {
+            return TOKEN_IDENTIFIER
+        }
+        str text = str_substring(self.source, self.start_index, self.start_index + name_len)
+        if text == "abstract" { return TOKEN_ABSTRACT }
+        if text == "as" { return TOKEN_AS }
+        if text == "assert" { return TOKEN_ASSERT }
+        if text == "async" { return TOKEN_ASYNC }
+        if text == "await" { return TOKEN_AWAIT }
+        if text == "bench" { return TOKEN_BENCH }
+        if text == "bool" { return TOKEN_BOOL_TYPE }
+        if text == "break" { return TOKEN_BREAK }
+        if text == "byte" { return TOKEN_BYTE_TYPE }
+        if text == "case" { return TOKEN_CASE }
+        if text == "catch" { return TOKEN_CATCH }
+        if text == "channel" { return TOKEN_CHANNEL }
+        if text == "char" { return TOKEN_CHAR_TYPE }
+        if text == "class" { return TOKEN_CLASS }
+        if text == "const" { return TOKEN_CONST }
+        if text == "constexpr" { return TOKEN_CONSTEXPR }
+        if text == "continue" { return TOKEN_CONTINUE }
+        if text == "coroutine" { return TOKEN_COROUTINE }
+        if text == "default" { return TOKEN_DEFAULT }
+        if text == "defer" { return TOKEN_DEFER }
+        if text == "double" { return TOKEN_DOUBLE_TYPE }
+        if text == "else" { return TOKEN_ELSE }
+        if text == "enum" { return TOKEN_ENUM }
+        if text == "extend" { return TOKEN_EXTEND }
+        if text == "extends" { return TOKEN_EXTENDS }
+        if text == "extern" { return TOKEN_EXTERN }
+        if text == "false" { return TOKEN_FALSE }
+        if text == "final" { return TOKEN_FINAL }
+        if text == "finally" { return TOKEN_FINALLY }
+        if text == "float" { return TOKEN_FLOAT_TYPE }
+        if text == "for" { return TOKEN_FOR }
+        if text == "func" { return TOKEN_FUNC }
+        if text == "if" { return TOKEN_IF }
+        if text == "implements" { return TOKEN_IMPLEMENTS }
+        if text == "import" { return TOKEN_IMPORT }
+        if text == "in" { return TOKEN_IN }
+        if text == "int" { return TOKEN_INT_TYPE }
+        if text == "interface" { return TOKEN_INTERFACE }
+        if text == "iter" { return TOKEN_ITER }
+        if text == "lock" { return TOKEN_LOCK }
+        if text == "long" { return TOKEN_LONG_TYPE }
+        if text == "macro" { return TOKEN_MACRO }
+        if text == "main" { return TOKEN_MAIN }
+        if text == "match" { return TOKEN_MATCH }
+        if text == "mutex" { return TOKEN_MUTEX }
+        if text == "new" { return TOKEN_NEW }
+        if text == "none" { return TOKEN_NONE }
+        if text == "null" { return TOKEN_NULL }
+        if text == "operator" { return TOKEN_OPERATOR }
+        if text == "override" { return TOKEN_OVERRIDE }
+        if text == "own" { return TOKEN_OWN }
+        if text == "recv" { return TOKEN_RECV }
+        if text == "resume" { return TOKEN_RESUME }
+        if text == "return" { return TOKEN_RETURN }
+        if text == "run_async" { return TOKEN_RUN_ASYNC }
+        if text == "send" { return TOKEN_SEND }
+        if text == "spawn" { return TOKEN_SPAWN }
+        if text == "static" { return TOKEN_STATIC }
+        if text == "str" { return TOKEN_STR_TYPE }
+        if text == "string" { return TOKEN_STR_TYPE }
+        if text == "struct" { return TOKEN_STRUCT }
+        if text == "super" { return TOKEN_SUPER }
+        if text == "switch" { return TOKEN_SWITCH }
+        if text == "test" { return TOKEN_TEST }
+        if text == "thread" { return TOKEN_THREAD }
+        if text == "throw" { return TOKEN_THROW }
+        if text == "trait" { return TOKEN_TRAIT }
+        if text == "true" { return TOKEN_TRUE }
+        if text == "try" { return TOKEN_TRY }
+        if text == "type" { return TOKEN_TYPE_ALIAS }
+        if text == "typeof" { return TOKEN_TYPEOF }
+        if text == "ubyte" { return TOKEN_UBYTE_TYPE }
+        if text == "uint" { return TOKEN_UINT_TYPE }
+        if text == "ulong" { return TOKEN_ULONG_TYPE }
+        if text == "unlock" { return TOKEN_UNLOCK }
+        if text == "ushort" { return TOKEN_USHORT_TYPE }
+        if text == "var" { return TOKEN_VAR }
+        if text == "when" { return TOKEN_WHEN }
+        if text == "while" { return TOKEN_WHILE }
+        if text == "with" { return TOKEN_WITH }
+        if text == "yield" { return TOKEN_YIELD }
+        return TOKEN_IDENTIFIER
+    }
+
+    func identifier() {
+        while self.isalpha(self.peek()) || self.isdigit(self.peek()) || self.peek() == '_' {
+            self.advance()
+        }
+        self.set_token(self.identifier_type())
+    }
+
+    func number() {
+        while self.isdigit(self.peek()) {
+            self.advance()
+        }
+        if self.peek() == '.' && self.isdigit(self.peek_next()) {
+            self.advance()
+            while self.isdigit(self.peek()) {
+                self.advance()
+            }
+            self.set_token(TOKEN_FLOAT_LITERAL)
+        } else {
+            self.set_token(TOKEN_NUMBER)
+        }
+    }
+func string_literal() {
+        while !self.is_at_end() && self.peek() != '"' {
+            if self.peek() == '\\' {
+                self.advance()
+                if self.is_at_end() {
+                    break
+                }
+                self.advance()
+            } else {
+                if self.peek() == '\n' {
+                    self.line = self.line + 1
+                    self.column = 0
+                }
+                self.advance()
+            }
+        }
+        if self.is_at_end() {
+            self.set_error("Unterminated string.")
+        } else {
+            self.advance()
+            self.set_token(TOKEN_STRING_LITERAL)
+        }
+    }
+
+    func raw_string_literal() {
+        while !self.is_at_end() && self.peek() != '"' {
+            if self.peek() == '\n' {
+                self.line = self.line + 1
+                self.column = 0
+            }
+            self.advance()
+        }
+        if self.is_at_end() {
+            self.set_error("Unterminated raw string.")
+        } else {
+            self.advance()
+            self.set_token(TOKEN_RAW_STRING)
+        }
+    }
+func next_token() {
+        self.skip_whitespace()
+        if self.unterminated_comment {
+            self.unterminated_comment = false
+            self.set_error("Unterminated block comment.")
+            return
+        }
+        self.start_index = self.index
+        self.start_column = self.column
+        if self.is_at_end() {
+            self.set_token(TOKEN_EOF)
+            return
+        }
+
+        int ch = self.advance()
+
+        if self.isalpha(ch) || ch == '_' {
+            if ch == 'r' && self.peek() == '"' {
+                self.advance()
+                self.raw_string_literal()
+            } else {
+                self.identifier()
+            }
+            return
+        }
+
+        if self.isdigit(ch) {
+            self.number()
+            return
+        }
+
+        if ch == '(' { self.set_token(TOKEN_LPAREN); return }
+        if ch == ')' { self.set_token(TOKEN_RPAREN); return }
+        if ch == '{' { self.set_token(TOKEN_LBRACE); return }
+        if ch == '}' { self.set_token(TOKEN_RBRACE); return }
+        if ch == '[' { self.set_token(TOKEN_LBRACKET); return }
+        if ch == ']' { self.set_token(TOKEN_RBRACKET); return }
+        if ch == ';' { self.set_token(TOKEN_SEMICOLON); return }
+        if ch == ',' { self.set_token(TOKEN_COMMA); return }
+        if ch == ':' { self.set_token(TOKEN_COLON); return }
+        if ch == '@' { self.set_token(TOKEN_AT); return }
+        if ch == '$' { self.set_token(TOKEN_DOLLAR); return }
+        if ch == '%' { self.set_token(TOKEN_PERCENT); return }
+
+        if ch == '.' {
+            if self.mch('.') {
+                if self.mch('.') {
+                    self.set_token(TOKEN_ELLIPSIS)
+                } else {
+                    if self.mch('=') {
+                        self.set_token(TOKEN_RANGE_INCLUSIVE)
+                    } else {
+                        self.set_token(TOKEN_RANGE)
+                    }
+                }
+            } else {
+                self.set_token(TOKEN_DOT)
+            }
+            return
+        }
+
+        if ch == '?' {
+            if self.mch('.') {
+                self.set_token(TOKEN_QUESTION_DOT)
+            } else {
+                if self.mch('?') {
+                    self.set_token(TOKEN_QUESTION_QUESTION)
+                } else {
+                    self.set_token(TOKEN_QUESTION)
+                }
+            }
+            return
+        }
+
+        if ch == '-' {
+            if self.mch('>') {
+                self.set_token(TOKEN_ARROW)
+            } else {
+                if self.mch('-') {
+                    self.set_token(TOKEN_DECREMENT)
+                } else {
+                    if self.mch('=') {
+                        self.set_token(TOKEN_MINUS_EQUAL)
+                    } else {
+                        self.set_token(TOKEN_MINUS)
+                    }
+                }
+            }
+            return
+        }
+
+        if ch == '+' {
+            if self.mch('+') {
+                self.set_token(TOKEN_INCREMENT)
+            } else {
+                if self.mch('=') {
+                    self.set_token(TOKEN_PLUS_EQUAL)
+                } else {
+                    self.set_token(TOKEN_PLUS)
+                }
+            }
+            return
+        }
+if ch == '/' {
+            if self.mch('=') {
+                self.set_token(TOKEN_SLASH_EQUAL)
+            } else {
+                self.set_token(TOKEN_SLASH)
+            }
+            return
+        }
+
+        if ch == '*' {
+            if self.mch('=') {
+                self.set_token(TOKEN_STAR_EQUAL)
+            } else {
+                self.set_token(TOKEN_STAR)
+            }
+            return
+        }
+
+        if ch == '!' {
+            if self.mch('=') {
+                self.set_token(TOKEN_BANG_EQ)
+            } else {
+                self.set_token(TOKEN_BANG)
+            }
+            return
+        }
+
+        if ch == '=' {
+            if self.mch('=') {
+                self.set_token(TOKEN_EQ_EQ)
+            } else {
+                if self.mch('>') {
+                    self.set_token(TOKEN_FAT_ARROW)
+                } else {
+                    self.set_token(TOKEN_EQUAL)
+                }
+            }
+            return
+        }
+
+        if ch == '<' {
+            if self.mch('=') {
+                self.set_token(TOKEN_LESS_EQ)
+            } else {
+                self.set_token(TOKEN_LESS)
+            }
+            return
+        }
+
+        if ch == '>' {
+            if self.mch('=') {
+                self.set_token(TOKEN_GREATER_EQ)
+            } else {
+                self.set_token(TOKEN_GREATER)
+            }
+            return
+        }
+
+        if ch == '&' {
+            if self.mch('&') {
+                self.set_token(TOKEN_AND_AND)
+            } else {
+                self.set_error("Unexpected character.")
+            }
+            return
+        }
+
+        if ch == '|' {
+            if self.mch('|') {
+                self.set_token(TOKEN_OR_OR)
+            } else {
+                self.set_token(TOKEN_PIPE)
+            }
+            return
+        }
+
+        if ch == '"' {
+            self.string_literal()
+            return
+        }
+
+        if ch == '\'' {
+            if self.is_at_end() {
+                self.set_error("Unterminated char.")
+                return
+            }
+            int inner = self.advance()
+            if inner == '\\' {
+                if self.is_at_end() {
+                    self.set_error("Unterminated char.")
+                    return
+                }
+                self.advance()
+            }
+            if !self.mch('\'') {
+                self.set_error("Unterminated char.")
+            } else {
+                self.set_token(TOKEN_CHAR_LITERAL)
+            }
+            return
+        }
+
+        self.set_error("Unexpected character.")
+    }
+
+    // -- accessors for the current token --
+
+    func cur_type_get(): int {
+        return self.cur_type
+    }
+
+    func cur_start_get(): str {
+        return self.cur_start
+    }
+
+    func cur_length_get(): int {
+        return self.cur_length
+    }
+
+    func cur_start_index_get(): int {
+        return self.start_index
+    }
+
+    func cur_line_get(): int {
+        return self.cur_line
+    }
+
+    func cur_column_get(): int {
+        return self.cur_column
+    }
+}
+// ---------------------------------------------------------------------------
+// lexdump-compatible output helpers (mirror tools/lexdump.c escaping)
+// ---------------------------------------------------------------------------
+func hex_digit(int n): str {
+    if n < 10 {
+        return to_str(n)
+    }
+    if n == 10 { return "a" }
+    if n == 11 { return "b" }
+    if n == 12 { return "c" }
+    if n == 13 { return "d" }
+    if n == 14 { return "e" }
+    return "f"
+}
+
+func hex2(int value): str {
+    str hi = hex_digit(value / 16)
+    str lo = hex_digit(value % 16)
+    return "\\x" + hi + lo
+}
+
+func escape(str s): str {
+    str out = ""
+    int i = 0
+    while i < s.length {
+        int code = str_char_at(s, i)
+        if code == 10 {
+            out = out + "\\n"
+        } else {
+            if code == 13 {
+                out = out + "\\r"
+            } else {
+                if code == 9 {
+                    out = out + "\\t"
+                } else {
+                    if code == 92 {
+                        out = out + "\\\\"
+                    } else {
+                        if code == 34 {
+                            out = out + "\\\""
+                        } else {
+                            if code >= 32 && code <= 126 {
+                                out = out + str_substring(s, i, i + 1)
+                            } else {
+                                out = out + hex2(code)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    return out
+}
+
+// ---------------------------------------------------------------------------
+// Entry point: dump tokens in the same format as tools/lexdump.c
+//   <line>:<column> <type-int> <escaped-text>
+// Usage: lexer.cn <file>
+// ---------------------------------------------------------------------------
+
+main {
+    if sys_args_count() < 2 {
+        printin("usage: lexer <file>")
+    } else {
+        str path = sys_arg_at(1)
+        printin(path)
+        str source = read_file(path)
+        Lexer lex = new Lexer(source)
+        while true {
+            lex.next_token()
+            int ty = lex.cur_type_get()
+            str line = to_str(lex.cur_line_get())
+            str col = to_str(lex.cur_column_get())
+            str typestr = to_str(ty)
+            printin(line + ":" + col + " " + typestr + " " + escape(lex.cur_start_get()))
+            if ty == TOKEN_EOF {
+                break
+            }
+        }
+    }
+}

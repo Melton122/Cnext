@@ -94,6 +94,129 @@ void generate_type(Token token, bool is_pointer) {
     if (is_pointer) fprintf(out, "*");
 }
 
+// An array whose element type is a class stores class instances, which are
+// pointers, so it uses CnextArrayObj rather than a typed value array.
+bool node_array_is_object(ASTNode* node) {
+    if (!node || !node->is_array) return false;
+    if (node->var_type.type == TOKEN_IDENTIFIER) {
+        char elem_name[256];
+        int elen = node->var_type.length < 255 ? node->var_type.length : 255;
+        memcpy(elem_name, node->var_type.start, elen);
+        elem_name[elen] = '\0';
+        Token subst_type;
+        bool subst_array;
+        if (find_type_subst(elem_name, &subst_type, &subst_array)) {
+            return subst_type.type == TOKEN_IDENTIFIER;
+        }
+        return true;
+    }
+    return false;
+}
+
+// `arr = { ... }` assigns a whole array value, so it needs a compound literal
+// of the array struct. A bare braced list is not an expression in C.
+bool is_array_literal_assignment(ASTNode* node) {
+    return node && node->right && node->right->type == AST_LITERAL_ARRAY &&
+           node->right->is_array;
+}
+
+// Emits `arr[i] = value` for an array of class instances, returning true when it
+// handled the whole assignment.
+//
+// A read of an object-array element yields the stored pointer, which is what lets
+// a following `->field` work, but that pointer is not a modifiable lvalue, so
+// the value cannot be assigned through it. Reaching the slot itself is not an
+// option either: CNEXT_ARRAY_IDX_OBJ is a statement expression, and GCC does not
+// preserve lvalue-ness through one, so its result cannot be addressed. The store
+// therefore has to happen inside the statement expression, which is what
+// CNEXT_ARRAY_IDX_OBJ_ASSIGN does. Both the expression and the statement paths
+// call this so the two cannot drift apart.
+bool emit_object_array_element_assignment(ASTNode* node) {
+    ASTNode* target = node ? node->left : NULL;
+    if (!target || target->type != AST_INDEX || !target->is_class) return false;
+    if (!node->right || node->right->type == AST_LITERAL_ARRAY ||
+        node->right->type == AST_SLICE) {
+        return false;
+    }
+    fprintf(out, "CNEXT_ARRAY_IDX_OBJ_ASSIGN(");
+    generate_expression(target->left);
+    fprintf(out, ", ");
+    generate_expression(target->right);
+    fprintf(out, ", ");
+    generate_expression(node->right);
+    fprintf(out, ")");
+    return true;
+}
+
+// Emits a whole array value from a literal. type_owner supplies the element
+// type (it is the array declaration, or the annotated literal for an
+// assignment). The backing store is heap allocated so the array can be grown
+// later by push.
+void generate_array_value(ASTNode* type_owner, ASTNode* literal) {
+    fprintf(out, "({ ");
+    generate_node_type(type_owner, false);
+    fprintf(out, " _cnarr = { (");
+    if (node_array_is_object(type_owner)) fprintf(out, "void*");
+    else generate_type(type_owner->var_type, false);
+    fprintf(out, "[])");
+    generate_expression(literal);
+    fprintf(out, ", %d }; ", literal->child_count);
+    if (node_array_is_object(type_owner)) {
+        fprintf(out, "_cnarr.data = (void**)_cnext_array_heap_copy(_cnarr.data, _cnarr.length, sizeof(void*)); ");
+    } else {
+        fprintf(out, "_cnarr.data = (");
+        generate_type(type_owner->var_type, false);
+        fprintf(out, "*)_cnext_array_heap_copy(_cnarr.data, _cnarr.length, sizeof(");
+        generate_type(type_owner->var_type, false);
+        fprintf(out, ")); ");
+    }
+    fprintf(out, "_cnarr; })");
+}
+
+void generate_array_literal_assignment(ASTNode* literal) {
+    generate_array_value(literal, literal);
+}
+
+// The element type of an array node after generic type-parameter substitution.
+// `T[]` inside `List<T>` still carries `T` as its var_type while a
+// specialization is generated, so the element type is only known after
+// consulting the substitution map.
+static Token array_element_token(ASTNode* node) {
+    Token elem = node->var_type;
+    if (elem.type != TOKEN_IDENTIFIER) return elem;
+    char elem_name[256];
+    int elen = elem.length < 255 ? elem.length : 255;
+    memcpy(elem_name, elem.start, elen);
+    elem_name[elen] = '\0';
+    Token subst_type;
+    bool subst_array;
+    if (find_type_subst(elem_name, &subst_type, &subst_array) && !subst_array) {
+        return subst_type;
+    }
+    return elem;
+}
+
+void generate_node_type(ASTNode* node, bool is_pointer) {
+    if (node && node->is_array) {
+        switch (array_element_token(node).type) {
+            case TOKEN_INT_TYPE: fprintf(out, "CnextArrayInt"); break;
+            case TOKEN_LONG_TYPE: fprintf(out, "CnextArrayLong"); break;
+            case TOKEN_FLOAT_TYPE: fprintf(out, "CnextArrayFloat"); break;
+            case TOKEN_DOUBLE_TYPE: fprintf(out, "CnextArrayDouble"); break;
+            case TOKEN_STR_TYPE: fprintf(out, "CnextArrayString"); break;
+            case TOKEN_BOOL_TYPE: fprintf(out, "CnextArrayBool"); break;
+            default: {
+                if (node_array_is_object(node)) fprintf(out, "CnextArrayObj");
+                else generate_type(node->var_type, false);
+                break;
+            }
+        }
+        if (is_pointer) fprintf(out, "*");
+        return;
+    }
+    generate_type(node ? node->var_type : (Token){TOKEN_EOF}, is_pointer);
+}
+
 bool is_valid_interpolation(const char* start, const char* end) {
     const char* c = start;
     bool found_close = false;
@@ -109,7 +232,16 @@ bool is_valid_interpolation(const char* start, const char* end) {
     }
     if (!found_close) return false;
     if (c == start) return false;
-    return true;
+    // A placeholder has to hold an actual expression. Accepting whitespace made
+    // a literal `{ }` in a message (a docs-style placeholder, as in
+    // "Example: func name(params): Type { }") parse as an interpolation, and
+    // the expression then generated nothing at all -- the text silently
+    // vanished and the emitted `cnext_to_string()` had no argument. Treat a
+    // blank placeholder as literal text instead.
+    for (const char* s = start; s < c; s++) {
+        if (*s != ' ' && *s != '\t' && *s != '\r' && *s != '\n') return true;
+    }
+    return false;
 }
 
 void generate_interp_expression(const char* start, const char* end) {
@@ -259,7 +391,9 @@ void generate_function(ASTNode* node, const char* prefix) {
     ASTNode* prev_func_params = current_func_params;
     current_func_params = node;
     current_func_returns_void = (node->return_type.type == TOKEN_EOF || type_token_to_c(node->return_type.type) == NULL);
-    generate_type(node->return_type, false);
+    // A function whose declared return type names a class returns a pointer,
+    // because class instances are always heap-allocated.
+    generate_type(node->return_type, node->is_class);
     if (prefix) {
         fprintf(out, " %s_%.*s(", prefix, node->token.length, node->token.start);
     } else {
@@ -270,13 +404,13 @@ void generate_function(ASTNode* node, const char* prefix) {
     for (int i = 0; i < node->child_count; i++) {
         if (node->children[i]->is_variadic) {
             if (!first_param) fprintf(out, ", ");
-            generate_type(node->children[i]->var_type, node->children[i]->is_pointer);
+            generate_node_type(node->children[i], node->children[i]->is_pointer);
             fprintf(out, " %.*s", node->children[i]->token.length, node->children[i]->token.start);
             fprintf(out, ", ...");
             first_param = false;
         } else {
             if (!first_param) fprintf(out, ", ");
-            generate_type(node->children[i]->var_type, node->children[i]->is_pointer);
+            generate_node_type(node->children[i], node->children[i]->is_pointer);
             fprintf(out, " %.*s", node->children[i]->token.length, node->children[i]->token.start);
             first_param = false;
         }
@@ -285,6 +419,28 @@ void generate_function(ASTNode* node, const char* prefix) {
     generate_block(node->left);
     fprintf(out, "\n");
     current_func_params = prev_func_params;
+}
+
+// Writes the C signature of a top-level function without its body, followed by
+// a semicolon. Must stay in sync with generate_function above, which emits the
+// same header and then the block instead.
+void generate_function_prototype(ASTNode* node) {
+    generate_type(node->return_type, node->is_class);
+    fprintf(out, " %.*s(", node->token.length, node->token.start);
+    bool first_param = true;
+    for (int i = 0; i < node->child_count; i++) {
+        if (!first_param) fprintf(out, ", ");
+        generate_node_type(node->children[i], node->children[i]->is_pointer);
+        if (node->children[i]->is_variadic) {
+            fprintf(out, " %.*s, ...", node->children[i]->token.length,
+                    node->children[i]->token.start);
+        } else {
+            fprintf(out, " %.*s", node->children[i]->token.length,
+                    node->children[i]->token.start);
+        }
+        first_param = false;
+    }
+    fprintf(out, ");\n");
 }
 
 ASTNode* find_func_decl(ASTNode* prog, const char* name) {

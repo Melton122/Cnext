@@ -1,0 +1,121 @@
+// EXPECT: 3
+// EXPECT: 2
+// EXPECT: 7
+// EXPECT: 4
+// EXPECT: 0
+// EXPECT: 2
+// EXPECT: 5
+// EXPECT: 42
+// EXPECT: 1
+// EXPECT: 3
+// EXPECT: 10
+// EXPECT: 3
+// EXPECT: 3
+// EXPECT: 4
+// Regression test: arrays of class instances, as locals and as class fields.
+// Covers literal init, empty init, length, indexing, push, and assignment of a
+// literal to a field -- from main, from a constructor, and from a method.
+class Num {
+    int v
+
+    func new(int x) {
+        self.v = x
+    }
+}
+
+class Box {
+    Num[] vals
+
+    func new() {
+    }
+
+    func count(): int {
+        return self.vals.length
+    }
+}
+
+class Prims {
+    int[] nums
+
+    // A brace literal assigned to a field from inside a constructor. This used
+    // to emit a bare `{}` because constructor bodies were never semantically
+    // analyzed, so `self` never resolved and the array literal was never typed.
+    func new() {
+        self.nums = {1, 2}
+    }
+
+    func total(): int {
+        var sum = 0
+        for int i = 0; i < self.nums.length; i = i + 1 {
+            sum = sum + self.nums[i]
+        }
+        return sum
+    }
+
+    func add(int v) {
+        push(self.nums, v)
+    }
+
+    func size(): int {
+        return self.nums.length
+    }
+}
+
+// Assignment of an object array literal from inside a constructor, plus push
+// on a class field array from inside a method.
+class Bag {
+    Num[] vals
+
+    func new() {
+        self.vals = {new Num(1), new Num(2), new Num(3)}
+    }
+
+    func add(int v) {
+        push(self.vals, new Num(v))
+    }
+
+    func count(): int {
+        return self.vals.length
+    }
+}
+
+main {
+    // Local object array: literal init, length, index read.
+    var a: Num[] = {new Num(1), new Num(2), new Num(3)}
+    printin(a.length)
+    printin(a[1].v)
+
+    // push grows a local object array.
+    push(a, new Num(7))
+    printin(a[3].v)
+    printin(a.length)
+
+    // Class field: literal init assigned from a statement, then read back
+    // through a method and by index.
+    var b = new Box()
+    b.vals = {}
+    printin(b.count())
+
+    b.vals = {new Num(3), new Num(5)}
+    printin(b.count())
+    printin(b.vals[1].v)
+
+    var c = new Box()
+    c.vals = {new Num(42)}
+    printin(c.vals[0].v)
+    printin(len(c.vals))
+
+    // Constructor-side initialization of a primitive array field.
+    var p = new Prims()
+    printin(p.total())
+    p.add(7)
+    printin(p.total())
+    printin(p.size())
+
+    // Constructor-side initialization of an object array field, then push from
+    // inside a method.
+    var g = new Bag()
+    printin(g.count())
+    g.add(9)
+    printin(g.count())
+}

@@ -1,0 +1,41 @@
+// EXPECT: 0
+// EXPECT: 1
+// EXPECT: 1
+// EXPECT: 2
+// EXPECT: b
+// Regression test: a generic class holding an array of its own type parameter.
+// The element type of `T[]` is only known after specialization, so the field
+// used to be emitted as a bare `T`/`int` instead of the matching array struct.
+class List<T> {
+    T[] items
+
+    func new() {
+        self.items = {}
+    }
+
+    func add(T item) {
+        push(self.items, item)
+    }
+
+    func get(int index): T {
+        return self.items[index]
+    }
+
+    func size(): int {
+        return self.items.length
+    }
+}
+
+main {
+    var ints = new List<int>()
+    printin(ints.size())
+    ints.add(1)
+    printin(ints.size())
+    printin(ints.get(0))
+
+    var strs = new List<str>()
+    strs.add("a")
+    strs.add("b")
+    printin(strs.size())
+    printin(strs.get(1))
+}

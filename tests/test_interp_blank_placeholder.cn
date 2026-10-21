@@ -1,0 +1,17 @@
+// EXPECT: Example: func name(params): Type { }
+// EXPECT: v=1 a=x
+// Regression test: a blank `{ }` in a string literal is literal text.
+//
+// The interpolation scanner accepted a whitespace-only placeholder as valid, so
+// `{ }` was treated as an interpolation whose expression generated nothing. The
+// text silently vanished and the emitted cnext_to_string() was left with no
+// argument, which does not compile. A placeholder has to contain an expression;
+// a blank one is ordinary text.
+main {
+    printin("Example: func name(params): Type { }")
+
+    // Real interpolation still works alongside it.
+    var v = 1
+    var a = "x"
+    printin("v={v} a={a}")
+}

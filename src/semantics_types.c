@@ -68,6 +68,11 @@ void validate_var_initializer(ASTNode* node) {
 
     if (!node->init) return;
 
+    if (node->var_type.type != TOKEN_VAR) {
+        // `var n: int = input()` reads an integer: the declared type is the
+        // context that types the read.
+        sem_apply_expected_type(node->init, node->var_type.type);
+    }
     CnextTokenType init_type = analyze_expression(node->init);
     if (node->init->type == AST_NULL_LITERAL) {
         node->init->expr_type = node->var_type.type;
@@ -84,13 +89,25 @@ void analyze_var_declaration(ASTNode* node) {
 
     // Infer type for 'var' declarations from the initializer
     if (node->var_type.type == TOKEN_VAR && node->init) {
+        node->type_is_inferred = true;
         CnextTokenType inferred = node->init->expr_type;
         if (inferred != TOKEN_EOF && inferred != TOKEN_VAR) {
             node->var_type.type = inferred;
-            if (inferred == TOKEN_IDENTIFIER && node->init->token.length > 0) {
-                node->var_type.start = node->init->token.start;
-                node->var_type.length = node->init->token.length;
-                node->var_type.line = node->init->token.line;
+            if (inferred == TOKEN_IDENTIFIER) {
+                // The inferred name has to come from the initializer's *type*,
+                // not from the initializer expression's own token: for a call
+                // that token is '(', and for a member access it is the member
+                // name, neither of which names a type. type_name is what the
+                // expression analyzer records for calls, `new`, and fields.
+                if (node->init->type_name && node->init->type_name[0] != '\0') {
+                    node->var_type.start = node->init->type_name;
+                    node->var_type.length = (int)strlen(node->init->type_name);
+                    node->var_type.line = node->init->token.line;
+                } else if (node->init->token.length > 0) {
+                    node->var_type.start = node->init->token.start;
+                    node->var_type.length = node->init->token.length;
+                    node->var_type.line = node->init->token.line;
+                }
             }
         }
     }
@@ -101,7 +118,9 @@ void analyze_var_declaration(ASTNode* node) {
             // Resolve type aliases: check if it's actually a class or a typedef
             if (type_sym->decl_node && type_sym->decl_node->type == AST_TYPE_ALIAS) {
                 // Type alias — not a class, don't set is_class
-            } else {
+            } else if (!node->is_array) {
+                // An array's var_type is its *element* type, so a class element
+                // type must not make the array itself a class reference.
                 node->is_class = true;
             }
         }
@@ -117,6 +136,22 @@ void analyze_field_declaration(ASTNode* node) {
     if (node->init) {
         report_token_error(ERR_SEM_FIELD_INIT, node->token, "Fields cannot have initializers:");
         analyze_expression(node->init);
+    }
+    // A field whose type names a class is stored by reference, exactly like a
+    // local variable of that type. Marking it here lets codegen emit a pointer
+    // field, which is what makes self-referential types (class fields holding
+    // instances of their own class) well-formed.
+    if (node->var_type.type == TOKEN_IDENTIFIER) {
+        Symbol* type_sym = resolve_symbol(node->var_type);
+        if (type_sym && type_sym->type == TOKEN_CLASS) {
+            if (type_sym->decl_node && type_sym->decl_node->type == AST_TYPE_ALIAS) {
+                // Type alias — not a class, leave is_class clear
+            } else if (!node->is_array) {
+                // An array's var_type is its element type; only a non-array
+                // field of class type is stored as a pointer field.
+                node->is_class = true;
+            }
+        }
     }
 }
 
@@ -425,9 +460,14 @@ void register_import(Token module) {
 void register_all_builtins(Token module) {
     static const struct { const char* name; int len; } builtins[] = {
         /* Core */
-        {"print", 5}, {"printin", 7}, {"input", 5}, {"len", 3},
+        {"print", 5}, {"printin", 7}, {"input", 5}, {"input_key", 9}, {"len", 3},
         {"typeof", 6}, {"assert", 6}, {"panic", 5}, {"exit", 4},
         {"clone", 5}, {"swap_values", 11}, {"free", 4},
+        /* Typed reads: each names its own type, so it needs no destination */
+        {"input_int", 9}, {"input_uint", 10}, {"input_long", 10},
+        {"input_ulong", 11}, {"input_float", 11}, {"input_double", 12},
+        {"input_bool", 10}, {"input_char", 10}, {"input_byte", 10},
+        {"input_ushort", 12}, {"input_ubyte", 11},
         /* Memory Arenas */
         {"mem_arena_create", 16}, {"mem_arena_alloc", 15},
         {"mem_arena_free", 14}, {"mem_arena_destroy", 17},

@@ -157,133 +157,148 @@ static ASTNode* primary() {
             }
             return node;
         }
-        if (match_token(TOKEN_DOT)) { // member access, tuple access, or method call
-            if (check(TOKEN_NUMBER) || check(TOKEN_FLOAT_LITERAL)) {
-                // Tuple access: expr.0, expr.1, etc.
-                advance_token();
-                ASTNode* access = create_node(AST_TUPLE_ACCESS, parser.previous);
-                access->left = node;
-                return access;
-            }
-            consume_name("Expect property name after '.'.");
-            Token member_name = parser.previous;
-            if (match_token(TOKEN_LPAREN)) { // Method call: obj.method(args)
-                ASTNode* member = create_node(AST_MEMBER_ACCESS, member_name);
-                member->left = node;
-                ASTNode* call = create_node(AST_CALL, member_name);
-                call->left = member;
-                if (!check(TOKEN_RPAREN)) {
-                    do {
-                        add_child(call, expression());
-                    } while (match_token(TOKEN_COMMA));
+        // Postfix chain. Every branch rebinds `node` and loops again so that
+        // combinations like obj.field[i], arr[i].field, arr[i][j] and
+        // f()[0] parse as nested nodes instead of stopping after one step.
+        while (true) {
+            if (match_token(TOKEN_DOT)) { // member access, tuple access, or method call
+                if (check(TOKEN_NUMBER) || check(TOKEN_FLOAT_LITERAL)) {
+                    // Tuple access: expr.0, expr.1, etc.
+                    advance_token();
+                    ASTNode* access = create_node(AST_TUPLE_ACCESS, parser.previous);
+                    access->left = node;
+                    node = access;
+                    continue;
                 }
-                consume(TOKEN_RPAREN, "Expect ')' after arguments.");
-                return call;
-            }
-            ASTNode* access = create_node(AST_MEMBER_ACCESS, member_name);
-            access->left = node;
-            return access;
-        }
-        if (match_token(TOKEN_QUESTION_DOT)) { // safe member access: obj?.field or obj?.method(args)
-            consume_name("Expect property name after '?.'.");
-            Token member_name = parser.previous;
-            if (match_token(TOKEN_LPAREN)) { // Safe method call: obj?.method(args)
-                ASTNode* member = create_node(AST_SAFE_ACCESS, member_name);
-                member->left = node;
-                ASTNode* call = create_node(AST_CALL, member_name);
-                call->left = member;
-                if (!check(TOKEN_RPAREN)) {
-                    do {
-                        add_child(call, expression());
-                    } while (match_token(TOKEN_COMMA));
-                }
-                consume(TOKEN_RPAREN, "Expect ')' after arguments.");
-                return call;
-            }
-            ASTNode* access = create_node(AST_SAFE_ACCESS, member_name);
-            access->left = node;
-            return access;
-        }
-        if (match_token(TOKEN_LBRACKET)) {
-            if (check(TOKEN_COLON)) {
-                advance_token();
-                ASTNode* slice = create_node(AST_SLICE, parser.previous);
-                slice->left = node;
-                if (!check(TOKEN_RBRACKET)) slice->right = expression();
-                consume(TOKEN_RBRACKET, "Expect ']' after slice.");
-                return slice;
-            }
-            ASTNode* first = expression();
-            if (match_token(TOKEN_COLON)) {
-                ASTNode* slice = create_node(AST_SLICE, parser.previous);
-                slice->left = node;
-                slice->init = first;
-                if (!check(TOKEN_RBRACKET)) slice->right = expression();
-                consume(TOKEN_RBRACKET, "Expect ']' after slice.");
-                return slice;
-            }
-            ASTNode* index = create_node(AST_INDEX, parser.previous);
-            index->left = node;
-            index->right = first;
-            consume(TOKEN_RBRACKET, "Expect ']' after index.");
-            return index;
-        }
-        if (match_token(TOKEN_LPAREN)) { // Function call
-            ASTNode* call = create_node(AST_CALL, parser.previous);
-            call->left = node;
-            // Check for macro expansion
-            ASTNode* macro_decl = lookup_macro(node->token.start, node->token.length);
-            if (macro_decl && macro_decl->type == AST_MACRO_DECL) {
-                if (!macro_depth_ok()) {
-                    error_at_current("Macro expansion depth limit exceeded (possible recursive macro).");
-                    free_ast(call);
-                    return node;
-                }
-                // Collect arguments
-                ASTNode** args = NULL;
-                int arg_count = 0;
-                int arg_cap = 0;
-                if (!check(TOKEN_RPAREN)) {
-                    do {
-                        if (arg_count >= arg_cap) {
-                            arg_cap = arg_cap ? arg_cap * 2 : 8;
-                            ASTNode** na = checked_realloc(args, sizeof(ASTNode*) * arg_cap);
-                            if (na) args = na;
-                        }
-                        args[arg_count++] = expression();
-                    } while (match_token(TOKEN_COMMA));
-                }
-                consume(TOKEN_RPAREN, "Expect ')' after arguments.");
-                // Expand macro: deep copy body and substitute parameters
-                macro_depth_push();
-                ASTNode* expanded = deep_copy_ast(macro_decl->left);
-                substitute_params(expanded, macro_decl->children, macro_decl->child_count, args, arg_count);
-                macro_depth_pop();
-                free(args);
-                free_ast(call);
-                // Return the expanded block as an expression statement
-                ASTNode* expr_stmt = create_node(AST_EXPR_STMT, node->token);
-                expr_stmt->left = expanded;
-                return expr_stmt;
-            }
-            if (!check(TOKEN_RPAREN)) {
-                do {
-                    // Check for named argument: identifier = expr (lookahead without advancing lexer)
-                    if (check(TOKEN_IDENTIFIER) && is_named_arg_lookahead()) {
-                        Token arg_name = parser.current;
-                        advance_token(); // consume identifier
-                        advance_token(); // consume '='
-                        ASTNode* named = create_node(AST_NAMED_ARG, arg_name);
-                        named->named_arg_name = arg_name;
-                        named->right = expression();
-                        add_child(call, named);
-                    } else {
-                        add_child(call, expression());
+                consume_name("Expect property name after '.'.");
+                Token member_name = parser.previous;
+                if (match_token(TOKEN_LPAREN)) { // Method call: obj.method(args)
+                    ASTNode* member = create_node(AST_MEMBER_ACCESS, member_name);
+                    member->left = node;
+                    ASTNode* call = create_node(AST_CALL, member_name);
+                    call->left = member;
+                    if (!check(TOKEN_RPAREN)) {
+                        do {
+                            add_child(call, expression());
+                        } while (match_token(TOKEN_COMMA));
                     }
-                } while (match_token(TOKEN_COMMA));
+                    consume(TOKEN_RPAREN, "Expect ')' after arguments.");
+                    node = call;
+                    continue;
+                }
+                ASTNode* access = create_node(AST_MEMBER_ACCESS, member_name);
+                access->left = node;
+                node = access;
+                continue;
             }
-            consume(TOKEN_RPAREN, "Expect ')' after arguments.");
-            return call;
+            if (match_token(TOKEN_QUESTION_DOT)) { // safe member access: obj?.field or obj?.method(args)
+                consume_name("Expect property name after '?.'.");
+                Token member_name = parser.previous;
+                if (match_token(TOKEN_LPAREN)) { // Safe method call: obj?.method(args)
+                    ASTNode* member = create_node(AST_SAFE_ACCESS, member_name);
+                    member->left = node;
+                    ASTNode* call = create_node(AST_CALL, member_name);
+                    call->left = member;
+                    if (!check(TOKEN_RPAREN)) {
+                        do {
+                            add_child(call, expression());
+                        } while (match_token(TOKEN_COMMA));
+                    }
+                    consume(TOKEN_RPAREN, "Expect ')' after arguments.");
+                    node = call;
+                    continue;
+                }
+                ASTNode* access = create_node(AST_SAFE_ACCESS, member_name);
+                access->left = node;
+                node = access;
+                continue;
+            }
+            if (match_token(TOKEN_LBRACKET)) {
+                if (check(TOKEN_COLON)) {
+                    advance_token();
+                    ASTNode* slice = create_node(AST_SLICE, parser.previous);
+                    slice->left = node;
+                    if (!check(TOKEN_RBRACKET)) slice->right = expression();
+                    consume(TOKEN_RBRACKET, "Expect ']' after slice.");
+                    node = slice;
+                    continue;
+                }
+                ASTNode* first = expression();
+                if (match_token(TOKEN_COLON)) {
+                    ASTNode* slice = create_node(AST_SLICE, parser.previous);
+                    slice->left = node;
+                    slice->init = first;
+                    if (!check(TOKEN_RBRACKET)) slice->right = expression();
+                    consume(TOKEN_RBRACKET, "Expect ']' after slice.");
+                    node = slice;
+                    continue;
+                }
+                ASTNode* index = create_node(AST_INDEX, parser.previous);
+                index->left = node;
+                index->right = first;
+                consume(TOKEN_RBRACKET, "Expect ']' after index.");
+                node = index;
+                continue;
+            }
+            if (match_token(TOKEN_LPAREN)) { // Function call
+                ASTNode* call = create_node(AST_CALL, parser.previous);
+                call->left = node;
+                // Check for macro expansion
+                ASTNode* macro_decl = lookup_macro(node->token.start, node->token.length);
+                if (macro_decl && macro_decl->type == AST_MACRO_DECL) {
+                    if (!macro_depth_ok()) {
+                        error_at_current("Macro expansion depth limit exceeded (possible recursive macro).");
+                        free_ast(call);
+                        return node;
+                    }
+                    // Collect arguments
+                    ASTNode** args = NULL;
+                    int arg_count = 0;
+                    int arg_cap = 0;
+                    if (!check(TOKEN_RPAREN)) {
+                        do {
+                            if (arg_count >= arg_cap) {
+                                arg_cap = arg_cap ? arg_cap * 2 : 8;
+                                ASTNode** na = checked_realloc(args, sizeof(ASTNode*) * arg_cap);
+                                if (na) args = na;
+                            }
+                            args[arg_count++] = expression();
+                        } while (match_token(TOKEN_COMMA));
+                    }
+                    consume(TOKEN_RPAREN, "Expect ')' after arguments.");
+                    // Expand macro: deep copy body and substitute parameters
+                    macro_depth_push();
+                    ASTNode* expanded = deep_copy_ast(macro_decl->left);
+                    substitute_params(expanded, macro_decl->children, macro_decl->child_count, args, arg_count);
+                    macro_depth_pop();
+                    free(args);
+                    free_ast(call);
+                    // The expansion is a statement, so it is terminal here
+                    ASTNode* expr_stmt = create_node(AST_EXPR_STMT, node->token);
+                    expr_stmt->left = expanded;
+                    return expr_stmt;
+                }
+                if (!check(TOKEN_RPAREN)) {
+                    do {
+                        // Check for named argument: identifier = expr (lookahead without advancing lexer)
+                        if (check(TOKEN_IDENTIFIER) && is_named_arg_lookahead()) {
+                            Token arg_name = parser.current;
+                            advance_token(); // consume identifier
+                            advance_token(); // consume '='
+                            ASTNode* named = create_node(AST_NAMED_ARG, arg_name);
+                            named->named_arg_name = arg_name;
+                            named->right = expression();
+                            add_child(call, named);
+                        } else {
+                            add_child(call, expression());
+                        }
+                    } while (match_token(TOKEN_COMMA));
+                }
+                consume(TOKEN_RPAREN, "Expect ')' after arguments.");
+                node = call;
+                continue;
+            }
+            break;
         }
         return node;
     }

@@ -8,6 +8,9 @@ void predeclare_global(ASTNode* node) {
         case AST_IMPORT:
             register_import(node->token);
             break;
+        case AST_VAR_DECL:
+            node->is_global = true;
+            break;
         case AST_FUNC_DECL:
             define_symbol(node->token, TOKEN_FUNC, true, NULL, node);
             break;

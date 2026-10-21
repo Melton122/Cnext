@@ -1,0 +1,232 @@
+// Self-hosting bootstrap: port of src/parser_macro.c
+// Provides: macro_depth_ok, macro_depth_push, macro_depth_pop,
+//           register_macro, lookup_macro, deep_copy_ast, substitute_params.
+// MacroEntry class is defined in parser_types.cn.
+// Depends on: src2/parser_types.cn, src2/parser_core.cn, src2/lexer.cn.
+
+// ---------------------------------------------------------------------------
+// Macro registry state
+// ---------------------------------------------------------------------------
+MacroEntry? g_macro_table = null
+int g_macro_expansion_depth = 0
+const int MAX_MACRO_DEPTH = 32
+
+// ---------------------------------------------------------------------------
+// macro_depth_ok — returns true if the expansion depth is within limits.
+// Mirrors parser_macro.c:macro_depth_ok().
+// ---------------------------------------------------------------------------
+func macro_depth_ok(): bool {
+    return g_macro_expansion_depth < MAX_MACRO_DEPTH
+}
+
+// ---------------------------------------------------------------------------
+// macro_depth_push — increment macro expansion depth.
+// Mirrors parser_macro.c:macro_depth_push().
+// ---------------------------------------------------------------------------
+func macro_depth_push() {
+    g_macro_expansion_depth = g_macro_expansion_depth + 1
+}
+
+// ---------------------------------------------------------------------------
+// macro_depth_pop — decrement macro expansion depth (floor at 0).
+// Mirrors parser_macro.c:macro_depth_pop().
+// ---------------------------------------------------------------------------
+func macro_depth_pop() {
+    if g_macro_expansion_depth > 0 {
+        g_macro_expansion_depth = g_macro_expansion_depth - 1
+    }
+}
+
+// ---------------------------------------------------------------------------
+// register_macro — register a macro declaration node in the global table.
+// Mirrors parser_macro.c:register_macro().
+// ---------------------------------------------------------------------------
+func register_macro(ASTNode decl) {
+    var entry = new MacroEntry(decl.token.text, decl)
+    entry.next = g_macro_table
+    g_macro_table = entry
+}
+
+// ---------------------------------------------------------------------------
+// lookup_macro — look up a macro by name, returning its declaration ASTNode.
+// Mirrors parser_macro.c:lookup_macro().
+// Returns null if not found.
+// ---------------------------------------------------------------------------
+func lookup_macro(str name): ASTNode? {
+    MacroEntry? e = g_macro_table
+    while e != null {
+        if e.name == name {
+            return e.decl
+        }
+        e = e.next
+    }
+    return null
+}
+
+// ---------------------------------------------------------------------------
+// deep_copy_ast — recursively deep-copy an ASTNode tree.
+// Mirrors parser_macro.c:deep_copy_ast().
+// Returns null if node is null.
+// ---------------------------------------------------------------------------
+func deep_copy_ast(ASTNode? node): ASTNode? {
+    if node == null {
+        return null
+    }
+    var copy = new ASTNode(node.kind, node.token)
+
+    // Copy all scalar flags and tokens
+    copy.is_const           = node.is_const
+    copy.is_array           = node.is_array
+    copy.is_pointer         = node.is_pointer
+    copy.is_class           = node.is_class
+    copy.is_pointer_access  = node.is_pointer_access
+    copy.is_union_type      = node.is_union_type
+    copy.is_variadic        = node.is_variadic
+    copy.is_generator       = node.is_generator
+    copy.is_static          = node.is_static
+    copy.is_abstract        = node.is_abstract
+    copy.is_final           = node.is_final
+    copy.is_tail_call_optimized = node.is_tail_call_optimized
+    copy.type_is_inferred   = node.type_is_inferred
+    copy.operator_token     = node.operator_token
+    copy.var_type           = node.var_type
+    copy.return_type        = node.return_type
+    copy.expr_type          = node.expr_type
+    copy.named_arg_name     = node.named_arg_name
+
+    // Copy string metadata
+    copy.type_name          = node.type_name
+    copy.parent_name        = node.parent_name
+    copy.implements_names   = node.implements_names
+    copy.attribute_name     = node.attribute_name
+
+    // Deep-copy children array
+    int ci = 0
+    while ci < len(node.children) {
+        ASTNode? child_copy = deep_copy_ast(node.children[ci])
+        if child_copy != null {
+            node_add_child(copy, child_copy)
+        }
+        ci = ci + 1
+    }
+
+    // Deep-copy type_params array
+    int pi = 0
+    while pi < len(node.type_params) {
+        ASTNode? param_copy = deep_copy_ast(node.type_params[pi])
+        if param_copy != null {
+            node_add_type_param(copy, param_copy)
+        }
+        pi = pi + 1
+    }
+
+    // Deep-copy type_args array
+    int ai = 0
+    while ai < len(node.type_args) {
+        ASTNode? arg_copy = deep_copy_ast(node.type_args[ai])
+        if arg_copy != null {
+            node_add_type_arg(copy, arg_copy)
+        }
+        ai = ai + 1
+    }
+
+    // Deep-copy structural nullable slots
+    copy.left          = deep_copy_ast(node.left)
+    copy.right         = deep_copy_ast(node.right)
+    copy.condition     = deep_copy_ast(node.condition)
+    copy.init          = deep_copy_ast(node.init)
+    copy.increment     = deep_copy_ast(node.increment)
+    copy.default_value = deep_copy_ast(node.default_value)
+
+    return copy
+}
+
+// ---------------------------------------------------------------------------
+// substitute_params — walk an AST tree and substitute macro parameters with
+// their corresponding argument nodes.
+// Mirrors parser_macro.c:substitute_params().
+// params and args are parallel arrays of ASTNode.
+// ---------------------------------------------------------------------------
+func substitute_params(ASTNode? node, ASTNode[] params, ASTNode[] args) {
+    if node == null {
+        return
+    }
+
+    // If this node is an identifier, check if it matches a macro parameter
+    if node.kind == AST_IDENTIFIER {
+        int param_count = len(params)
+        int arg_count   = len(args)
+        int i = 0
+        while i < param_count && i < arg_count {
+            if node.token.text == params[i].token.text {
+                // Deep-copy the argument and graft its data into node
+                ASTNode? arg_copy_n = deep_copy_ast(args[i])
+                if arg_copy_n != null {
+                    var arg_copy = arg_copy_n
+                    node.kind               = arg_copy.kind
+                    node.token              = arg_copy.token
+                    node.is_const           = arg_copy.is_const
+                    node.is_array           = arg_copy.is_array
+                    node.is_pointer         = arg_copy.is_pointer
+                    node.is_class           = arg_copy.is_class
+                    node.expr_type          = arg_copy.expr_type
+                    node.is_pointer_access  = arg_copy.is_pointer_access
+                    node.is_variadic        = arg_copy.is_variadic
+                    node.is_generator       = arg_copy.is_generator
+                    node.operator_token     = arg_copy.operator_token
+                    node.var_type           = arg_copy.var_type
+                    node.return_type        = arg_copy.return_type
+                    node.named_arg_name     = arg_copy.named_arg_name
+                    node.type_name          = arg_copy.type_name
+                    node.parent_name        = arg_copy.parent_name
+                    node.implements_names   = arg_copy.implements_names
+                    node.attribute_name     = arg_copy.attribute_name
+
+                    // Graft arg_copy children into node
+                    int j = 0
+                    while j < len(arg_copy.children) {
+                        node_add_child(node, arg_copy.children[j])
+                        j = j + 1
+                    }
+
+                    // Graft arg_copy type_params into node
+                    int k = 0
+                    while k < len(arg_copy.type_params) {
+                        node_add_type_param(node, arg_copy.type_params[k])
+                        k = k + 1
+                    }
+
+                    // Graft arg_copy type_args into node
+                    int m = 0
+                    while m < len(arg_copy.type_args) {
+                        node_add_type_arg(node, arg_copy.type_args[m])
+                        m = m + 1
+                    }
+
+                    node.left          = arg_copy.left
+                    node.right         = arg_copy.right
+                    node.condition     = arg_copy.condition
+                    node.init          = arg_copy.init
+                    node.increment     = arg_copy.increment
+                    node.default_value = arg_copy.default_value
+                }
+                return
+            }
+            i = i + 1
+        }
+    }
+
+    // Recurse into children
+    int ci = 0
+    while ci < len(node.children) {
+        substitute_params(node.children[ci], params, args)
+        ci = ci + 1
+    }
+
+    // Recurse into structural slots
+    substitute_params(node.left,      params, args)
+    substitute_params(node.right,     params, args)
+    substitute_params(node.condition, params, args)
+    substitute_params(node.init,      params, args)
+    substitute_params(node.increment, params, args)
+}

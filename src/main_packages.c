@@ -11,11 +11,51 @@ bool is_standard_module(const char* name) {
 
 static bool is_safe_url(const char* url) {
     if (!url || url[0] == '\0') return false;
+    if (url[0] == '-') return false;
     for (const char* p = url; *p; p++) {
         if (*p == '"' || *p == '\'' || *p == '`' || *p == '$' || *p == '\\')
             return false;
     }
     return true;
+}
+
+/* The package name is embedded in a filesystem path, so it must stay inside the
+   packages/ directory: no absolute paths, no traversal, no colon/backslash
+   tricks, and no characters that could terminate a quoting context in the
+   PowerShell fallback below. A single '/' is allowed so scoped names such as
+   "vendor/lib" keep working. */
+static bool is_safe_package_name(const char* name) {
+    if (!name || name[0] == '\0') return false;
+    if (name[0] == '-' || name[0] == '.' || name[0] == '/') return false;
+    size_t len = strlen(name);
+    if (name[len - 1] == '/') return false;
+    if (strstr(name, "..") || strstr(name, "//")) return false;
+    for (const char* p = name; *p; p++) {
+        unsigned char c = (unsigned char)*p;
+        if (c < 0x20 || c == 0x7f) return false;
+        if (c == '\\' || c == ':') return false;
+        if (c == '"' || c == '\'' || c == '`' || c == '$' || c == ';' || c == '&' ||
+            c == '|' || c == '<' || c == '>' || c == '(' || c == ')' || c == '{' ||
+            c == '}' || c == '*' || c == '?' || c == '!') return false;
+    }
+    return true;
+}
+
+/* Copy src into dst as a PowerShell single-quoted string literal. Inside such a
+   literal the only escape is a doubled quote, so every ' becomes ''. */
+static void ps_quote(char* dst, size_t cap, const char* src) {
+    size_t o = 0;
+    if (o < cap - 1) dst[o++] = '\'';
+    for (const char* p = src; *p; p++) {
+        if (*p == '\'') {
+            if (o < cap - 2) dst[o++] = '\'';
+            if (o < cap - 1) dst[o++] = '\'';
+        } else if (o < cap - 1) {
+            dst[o++] = *p;
+        }
+    }
+    if (o < cap - 1) dst[o++] = '\'';
+    dst[o] = '\0';
 }
 
 bool find_registry_path(const char* argv0, char* registry_path, size_t registry_path_size) {
@@ -60,6 +100,10 @@ bool resolve_package_url(const char* name, const char* registry_path, char* url,
 }
 
 bool download_package(const char* name, const char* url) {
+    if (!is_safe_package_name(name)) {
+        fprintf(stderr, "Invalid package name '%s'.\n", name ? name : "(null)");
+        return false;
+    }
     make_dir("packages");
     char out_path[CNEXT_PATH_MAX];
     int w = snprintf(out_path, sizeof(out_path), "packages%c%s.cn", CNEXT_PATH_SEP, name);
@@ -85,26 +129,32 @@ bool download_package(const char* name, const char* url) {
 
     // Try curl with safe argument array (no shell injection)
     {
-        const char* const curl_args[] = {"curl", "-fsSL", url, "-o", out_path, NULL};
+        const char* const curl_args[] = {"curl", "-fsSL", "--", url, "-o", out_path, NULL};
         int res = run_process("curl", curl_args);
         if (res == 0) return true;
     }
 
     // Try wget
     {
-        const char* const wget_args[] = {"wget", "-q", url, "-O", out_path, NULL};
+        const char* const wget_args[] = {"wget", "-q", "--", url, "-O", out_path, NULL};
         int res = run_process("wget", wget_args);
         if (res == 0) return true;
     }
 
 #ifdef _WIN32
-    // Try PowerShell Invoke-WebRequest
+    // Try PowerShell Invoke-WebRequest. -Command takes the remaining arguments
+    // and evaluates them as one script, so both operands are emitted as
+    // quoted string literals (quotes doubled) rather than bare text.
     {
-        char ps_uri[CNEXT_PATH_MAX + 64];
-        char ps_out[CNEXT_PATH_MAX + 64];
-        snprintf(ps_uri, sizeof(ps_uri), "Invoke-WebRequest -Uri '%s'", url);
-        snprintf(ps_out, sizeof(ps_out), "-OutFile '%s'", out_path);
-        const char* const ps_args[] = {"powershell", "-Command", ps_uri, ps_out, NULL};
+        char q_uri[CNEXT_PATH_MAX * 2 + 64];
+        char q_out[CNEXT_PATH_MAX * 2 + 64];
+        char ps_uri[CNEXT_PATH_MAX * 2 + 128];
+        char ps_out[CNEXT_PATH_MAX * 2 + 128];
+        ps_quote(q_uri, sizeof(q_uri), url);
+        ps_quote(q_out, sizeof(q_out), out_path);
+        snprintf(ps_uri, sizeof(ps_uri), "Invoke-WebRequest -Uri %s", q_uri);
+        snprintf(ps_out, sizeof(ps_out), "-OutFile %s", q_out);
+        const char* const ps_args[] = {"powershell", "-NoProfile", "-Command", ps_uri, ps_out, NULL};
         int res = run_process("powershell", ps_args);
         if (res == 0) return true;
     }

@@ -1,0 +1,59 @@
+// EXPECT: 1
+// EXPECT: 2
+// EXPECT: 2
+// EXPECT: 9
+// EXPECT: 5
+// Regression test: binding an object-array element to a `var`, and assigning
+// directly to an element slot.
+//
+// `var cur = arr[i]` reads the initializer's expr_type to infer cur's type. Index
+// expressions recorded the element class in type_name but left expr_type unset,
+// so the declaration stayed untyped and fell back to __auto_type. C then resolved
+// it to `Num*` from the cast, but the declaration was never marked as a class, so
+// `cur.v` emitted `cur.v` on a pointer and failed to compile.
+//
+// Assigning to an element also has to reach the stored pointer slot. A read
+// yields the element as a cast pointer for a following `->field`, which is not a
+// modifiable lvalue, so `arr[i] = v` has to write the slot itself rather than
+// copy a struct over the instance.
+class Num {
+    int v
+
+    func new(int x) {
+        self.v = x
+    }
+}
+
+class Box {
+    Num[] vals
+
+    func new() {
+    }
+}
+
+main {
+    var b = new Box()
+    b.vals = {new Num(1), new Num(2)}
+
+    // Local object array, element bound to a var inside a loop.
+    var a: Num[] = {new Num(1), new Num(2)}
+    var j = 0
+    while j < a.length {
+        var cur = a[j]
+        printin(cur.v)
+        j = j + 1
+    }
+
+    // Same, but the array is a class field and the index is a local.
+    var i = 1
+    var el = b.vals[i]
+    printin(el.v)
+
+    // Write through the bound element and read it back through the array.
+    el.v = 9
+    printin(b.vals[i].v)
+
+    // Replace the element itself: this has to write the stored pointer slot.
+    b.vals[0] = new Num(5)
+    printin(b.vals[0].v)
+}

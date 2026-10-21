@@ -1,0 +1,44 @@
+// EXPECT: true
+// EXPECT: false
+// EXPECT: true
+// EXPECT: true
+// Regression test: reading a `str` field yields a string-typed expression.
+//
+// Codegen chooses between `==` and `cnext_str_eq` (and `+` and `cnext_concat`)
+// from the operand expression types. Member access recorded only the field's
+// name, never its type, so `a.text == b.text` emitted raw C `==` on two
+// CnextString structs and failed to compile. Comparing a field against a literal
+// happened to work because the literal side carried the type.
+class Tok {
+    str text
+    str other
+}
+
+func same(Tok a, Tok b): bool {
+    return a.text == b.text
+}
+
+func differs(Tok a, Tok b): bool {
+    return a.text != b.text
+}
+
+func same_lit(Tok a): bool {
+    return a.text == "hi"
+}
+
+func joined(Tok a): str {
+    return a.text + a.other
+}
+
+main {
+    var a = new Tok()
+    var b = new Tok()
+    a.text = "hi"
+    a.other = "!"
+    b.text = "hi"
+    b.other = "?"
+    printin(same(a, b))
+    printin(differs(a, b))
+    printin(same_lit(a))
+    printin(joined(a) == "hi!")
+}

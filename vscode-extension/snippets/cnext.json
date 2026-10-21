@@ -254,6 +254,13 @@
     ],
     "description": "Variable declaration"
   },
+  "Typed Input": {
+    "prefix": "input",
+    "body": [
+      "var ${1:name}: ${2:int} = input(${3:\"Enter a value: \"})"
+    ],
+    "description": "Typed input declaration"
+  },
   "Test Block": {
     "prefix": "test",
     "body": [

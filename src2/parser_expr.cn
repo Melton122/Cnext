@@ -1,0 +1,783 @@
+// Self-hosting bootstrap: port of src/parser_expr.c into Cnext (Milestone B).
+// Depends on: src2/lexer.cn, src2/parser_types.cn, src2/parser_core.cn,
+//             src2/parser_type.cn, src2/parser_macro.cn.
+
+// ---------------------------------------------------------------------------
+// Lookahead helpers (raw text scanning)
+// ---------------------------------------------------------------------------
+
+func is_lambda_lookahead(): bool {
+    if g_lexer == null { return false }
+    str src = g_parser_source
+    int src_len = len(src)
+    int depth = 1
+    bool in_string = false
+    str string_char = ""
+    // The reference parser scans from parser.current.start, i.e. the offset of
+    // the token right after the '(' we just consumed. g_lexer.index is the raw
+    // lexing offset and can sit past that token, so it must not be used here.
+    int start_pos = g_parser.current.start_index
+    if start_pos < 0 { start_pos = 0 }
+    if start_pos >= src_len { return false }
+
+    str rest = str_substring(src, start_pos, src_len)
+    int i = 0
+    int rlen = len(rest)
+    while i < rlen {
+        str ch = str_substring(rest, i, i + 1)
+        if in_string {
+            if ch == "\\" && i + 1 < rlen {
+                i = i + 2
+                continue
+            }
+            if ch == string_char {
+                in_string = false
+            }
+        } else {
+            if ch == "\"" || ch == "'" {
+                in_string = true
+                string_char = ch
+            } else if ch == "/" && i + 1 < rlen {
+                str ch2 = str_substring(rest, i + 1, i + 2)
+                if ch2 == "/" {
+                    while i < rlen && str_substring(rest, i, i + 1) != "\n" {
+                        i = i + 1
+                    }
+                    continue
+                }
+                if ch2 == "*" {
+                    i = i + 2
+                    while i + 1 < rlen {
+                        if str_substring(rest, i, i + 1) == "*" && str_substring(rest, i + 1, i + 2) == "/" {
+                            i = i + 2
+                            break
+                        }
+                        i = i + 1
+                    }
+                    continue
+                }
+            } else if ch == "(" {
+                depth = depth + 1
+            } else if ch == ")" {
+                depth = depth - 1
+                if depth == 0 {
+                    i = i + 1
+                    while i < rlen {
+                        str ws = str_substring(rest, i, i + 1)
+                        if ws != " " && ws != "\t" && ws != "\n" && ws != "\r" {
+                            break
+                        }
+                        i = i + 1
+                    }
+                    if i + 1 < rlen {
+                        if str_substring(rest, i, i + 1) == "=" && str_substring(rest, i + 1, i + 2) == ">" {
+                            return true
+                        }
+                    }
+                    return false
+                }
+            }
+        }
+        i = i + 1
+    }
+    return false
+}
+
+func is_paren_after_id(): bool {
+    if g_lexer == null { return false }
+    int start = g_lexer.index
+    int src_len = len(g_parser_source)
+    int i = start
+    while i < src_len {
+        str ch = str_substring(g_parser_source, i, i + 1)
+        if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
+            return ch == "("
+        }
+        i = i + 1
+    }
+    return false
+}
+
+func is_named_arg_lookahead(): bool {
+    if g_lexer == null { return false }
+    int start = g_lexer.index
+    int src_len = len(g_parser_source)
+    int i = start
+    while i < src_len {
+        str ch = str_substring(g_parser_source, i, i + 1)
+        if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
+            if ch != "=" {
+                return false
+            }
+            if i + 1 < src_len {
+                str ch2 = str_substring(g_parser_source, i + 1, i + 2)
+                if ch2 == "=" || ch2 == ">" || ch2 == "+" || ch2 == "-" || ch2 == "*" || ch2 == "/" {
+                    return false
+                }
+            }
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+// ---------------------------------------------------------------------------
+// Primary expression parser
+// Mirrors parser_expr.c:primary().
+// ---------------------------------------------------------------------------
+
+func parse_primary(): ASTNode? {
+    // Array literal: { expr, expr, ... }
+    if match_token(TOKEN_LBRACE) {
+        Token tok = g_parser.previous
+        var node = new ASTNode(AST_LITERAL_ARRAY, tok)
+        if !check_token(TOKEN_RBRACE) {
+            var first = parse_expression()
+            if first != null {
+                node_add_child(node, first)
+            }
+            while match_token(TOKEN_COMMA) {
+                if check_token(TOKEN_RBRACE) {
+                    break
+                }
+                var elem = parse_expression()
+                if elem != null {
+                    node_add_child(node, elem)
+                }
+            }
+        }
+        consume(TOKEN_RBRACE, "Expect '}' after array elements.")
+        return node
+    }
+
+    // Boolean / number / string / char literals
+    if match_token(TOKEN_FALSE) || match_token(TOKEN_TRUE) ||
+       match_token(TOKEN_NUMBER) || match_token(TOKEN_FLOAT_LITERAL) ||
+       match_token(TOKEN_STRING_LITERAL) || match_token(TOKEN_RAW_STRING) ||
+       match_token(TOKEN_CHAR_LITERAL) {
+        return new ASTNode(AST_LITERAL, g_parser.previous)
+    }
+
+    // null literal
+    if match_token(TOKEN_NULL) {
+        return new ASTNode(AST_NULL_LITERAL, g_parser.previous)
+    }
+
+    // none literal (Option::None)
+    if match_token(TOKEN_NONE) {
+        return new ASTNode(AST_OPTION_NONE, g_parser.previous)
+    }
+
+    // typeof(expr)
+    if match_token(TOKEN_TYPEOF) {
+        consume(TOKEN_LPAREN, "Expect '(' after 'typeof'.")
+        var node = new ASTNode(AST_TYPEOF, g_parser.previous)
+        var inner = parse_expression()
+        if inner != null {
+            node.left = inner
+        }
+        consume(TOKEN_RPAREN, "Expect ')' after typeof expression.")
+        return node
+    }
+
+    // own expr
+    if match_token(TOKEN_OWN) {
+        var node = new ASTNode(AST_OWN_EXPR, g_parser.previous)
+        var inner = parse_expression()
+        if inner != null {
+            node.left = inner
+        }
+        return node
+    }
+
+    // option(value)
+    if check_token(TOKEN_IDENTIFIER) && is_paren_after_id() && match_identifier_text("option") {
+        Token opt_tok = g_parser.previous
+        var node = new ASTNode(AST_OPTION_SOME, opt_tok)
+        consume(TOKEN_LPAREN, "Expect '(' after 'option'.")
+        var inner = parse_expression()
+        if inner != null {
+            node.left = inner
+        }
+        consume(TOKEN_RPAREN, "Expect ')' after option value.")
+        return node
+    }
+
+    // ok(value)
+    if check_token(TOKEN_IDENTIFIER) && is_paren_after_id() && match_identifier_text("ok") {
+        Token ok_tok = g_parser.previous
+        var node = new ASTNode(AST_RESULT_OK, ok_tok)
+        consume(TOKEN_LPAREN, "Expect '(' after 'ok'.")
+        var inner = parse_expression()
+        if inner != null {
+            node.left = inner
+        }
+        consume(TOKEN_RPAREN, "Expect ')' after ok value.")
+        return node
+    }
+
+    // err(value)
+    if check_token(TOKEN_IDENTIFIER) && is_paren_after_id() && match_identifier_text("err") {
+        Token err_tok = g_parser.previous
+        var node = new ASTNode(AST_RESULT_ERR, err_tok)
+        consume(TOKEN_LPAREN, "Expect '(' after 'err'.")
+        var inner = parse_expression()
+        if inner != null {
+            node.left = inner
+        }
+        consume(TOKEN_RPAREN, "Expect ')' after err value.")
+        return node
+    }
+
+    // Identifier — with optional generic call, postfix chain
+    if match_token(TOKEN_IDENTIFIER) {
+        var node = new ASTNode(AST_IDENTIFIER, g_parser.previous)
+
+        // Generic call: func_name<T, U>(args)
+        if check_token(TOKEN_LESS) && is_generic_call_lookahead() {
+            advance_token()  // consume '<'
+            var generic_node = new ASTNode(AST_IDENTIFIER, node.token)
+            var targ = parse_type()
+            if targ != null {
+                node_add_type_arg(generic_node, targ)
+            }
+            while match_token(TOKEN_COMMA) {
+                var ta = parse_type()
+                if ta != null {
+                    node_add_type_arg(generic_node, ta)
+                }
+            }
+            consume(TOKEN_GREATER, "Expect '>' after generic type arguments.")
+            node = generic_node
+            if match_token(TOKEN_LPAREN) {
+                var call = new ASTNode(AST_CALL, node.token)
+                call.left = node
+                if !check_token(TOKEN_RPAREN) {
+                    var arg = parse_expression()
+                    if arg != null {
+                        node_add_child(call, arg)
+                    }
+                    while match_token(TOKEN_COMMA) {
+                        var a = parse_expression()
+                        if a != null {
+                            node_add_child(call, a)
+                        }
+                    }
+                }
+                consume(TOKEN_RPAREN, "Expect ')' after arguments.")
+                return call
+            }
+            return node
+        }
+
+        // Postfix chain loop
+        while true {
+            if match_token(TOKEN_DOT) {
+                if check_token(TOKEN_NUMBER) || check_token(TOKEN_FLOAT_LITERAL) {
+                    advance_token()
+                    var access = new ASTNode(AST_TUPLE_ACCESS, g_parser.previous)
+                    access.left = node
+                    node = access
+                    continue
+                }
+                consume_name("Expect property name after '.'.")
+                Token member_name = g_parser.previous
+                if match_token(TOKEN_LPAREN) {
+                    var member = new ASTNode(AST_MEMBER_ACCESS, member_name)
+                    member.left = node
+                    var call = new ASTNode(AST_CALL, member_name)
+                    call.left = member
+                    if !check_token(TOKEN_RPAREN) {
+                        var arg = parse_expression()
+                        if arg != null {
+                            node_add_child(call, arg)
+                        }
+                        while match_token(TOKEN_COMMA) {
+                            var a = parse_expression()
+                            if a != null {
+                                node_add_child(call, a)
+                            }
+                        }
+                    }
+                    consume(TOKEN_RPAREN, "Expect ')' after arguments.")
+                    node = call
+                    continue
+                }
+                var access = new ASTNode(AST_MEMBER_ACCESS, member_name)
+                access.left = node
+                node = access
+                continue
+            }
+
+            if match_token(TOKEN_QUESTION_DOT) {
+                consume_name("Expect property name after '?.'.")
+                Token member_name = g_parser.previous
+                if match_token(TOKEN_LPAREN) {
+                    var member = new ASTNode(AST_SAFE_ACCESS, member_name)
+                    member.left = node
+                    var call = new ASTNode(AST_CALL, member_name)
+                    call.left = member
+                    if !check_token(TOKEN_RPAREN) {
+                        var arg = parse_expression()
+                        if arg != null {
+                            node_add_child(call, arg)
+                        }
+                        while match_token(TOKEN_COMMA) {
+                            var a = parse_expression()
+                            if a != null {
+                                node_add_child(call, a)
+                            }
+                        }
+                    }
+                    consume(TOKEN_RPAREN, "Expect ')' after arguments.")
+                    node = call
+                    continue
+                }
+                var access = new ASTNode(AST_SAFE_ACCESS, member_name)
+                access.left = node
+                node = access
+                continue
+            }
+
+            if match_token(TOKEN_LBRACKET) {
+                if check_token(TOKEN_COLON) {
+                    advance_token()
+                    var slice = new ASTNode(AST_SLICE, g_parser.previous)
+                    slice.left = node
+                    if !check_token(TOKEN_RBRACKET) {
+                        var rhs = parse_expression()
+                        if rhs != null {
+                            slice.right = rhs
+                        }
+                    }
+                    consume(TOKEN_RBRACKET, "Expect ']' after slice.")
+                    node = slice
+                    continue
+                }
+                var first = parse_expression()
+                if match_token(TOKEN_COLON) {
+                    var slice = new ASTNode(AST_SLICE, g_parser.previous)
+                    slice.left = node
+                    slice.init = first
+                    if !check_token(TOKEN_RBRACKET) {
+                        var rhs = parse_expression()
+                        if rhs != null {
+                            slice.right = rhs
+                        }
+                    }
+                    consume(TOKEN_RBRACKET, "Expect ']' after slice.")
+                    node = slice
+                    continue
+                }
+                var index = new ASTNode(AST_INDEX, g_parser.previous)
+                index.left = node
+                index.right = first
+                consume(TOKEN_RBRACKET, "Expect ']' after index.")
+                node = index
+                continue
+            }
+
+            if match_token(TOKEN_LPAREN) {
+                var call = new ASTNode(AST_CALL, g_parser.previous)
+                call.left = node
+
+                var macro_decl = lookup_macro(node.token.text)
+                if macro_decl != null && macro_decl.kind == AST_MACRO_DECL {
+                    if !macro_depth_ok() {
+                        error_at_current("Macro expansion depth limit exceeded (possible recursive macro).")
+                        return node
+                    }
+                    ASTNode[] args = {}
+                    if !check_token(TOKEN_RPAREN) {
+                        var a = parse_expression()
+                        if a != null {
+                            push(args, a)
+                        }
+                        while match_token(TOKEN_COMMA) {
+                            var b = parse_expression()
+                            if b != null {
+                                push(args, b)
+                            }
+                        }
+                    }
+                    consume(TOKEN_RPAREN, "Expect ')' after arguments.")
+                    macro_depth_push()
+                    var expanded = deep_copy_ast(macro_decl.left)
+                    if expanded != null {
+                        substitute_params(expanded, macro_decl.children, args)
+                    }
+                    macro_depth_pop()
+                    var es = new ASTNode(AST_EXPR_STMT, node.token)
+                    es.left = expanded
+                    return es
+                }
+
+                if !check_token(TOKEN_RPAREN) {
+                    while true {
+                        if check_token(TOKEN_IDENTIFIER) && is_named_arg_lookahead() {
+                            Token arg_name = g_parser.current
+                            advance_token()
+                            advance_token()
+                            var named = new ASTNode(AST_NAMED_ARG, arg_name)
+                            named.named_arg_name = arg_name
+                            var rhs = parse_expression()
+                            if rhs != null {
+                                named.right = rhs
+                            }
+                            node_add_child(call, named)
+                        } else {
+                            var arg = parse_expression()
+                            if arg != null {
+                                node_add_child(call, arg)
+                            }
+                        }
+                        if !match_token(TOKEN_COMMA) {
+                            break
+                        }
+                    }
+                }
+                consume(TOKEN_RPAREN, "Expect ')' after arguments.")
+                node = call
+                continue
+            }
+
+            break
+        }
+        return node
+    }
+
+    if match_token(TOKEN_LPAREN) {
+        if is_lambda_lookahead() {
+            var lambda_node = new ASTNode(AST_LAMBDA, g_parser.previous)
+            if !check_token(TOKEN_RPAREN) {
+                while true {
+                    var typeNode = parse_type()
+                    if typeNode == null {
+                        return null
+                    }
+                    consume(TOKEN_IDENTIFIER, "Expect parameter name.")
+                    var param = new ASTNode(AST_VAR_DECL, g_parser.previous)
+                    assign_type_from_node(param, typeNode)
+                    node_add_child(lambda_node, param)
+                    if !match_token(TOKEN_COMMA) {
+                        break
+                    }
+                }
+            }
+            consume(TOKEN_RPAREN, "Expect ')' after lambda parameters.")
+            consume(TOKEN_FAT_ARROW, "Expect '=>' after lambda parameters.")
+            if check_token(TOKEN_LBRACE) {
+                var body = parse_block()
+                lambda_node.left = body
+            } else {
+                var body = parse_expression()
+                lambda_node.left = body
+            }
+            return lambda_node
+        }
+        var first = parse_expression()
+        if match_token(TOKEN_COMMA) {
+            var tuple = new ASTNode(AST_TUPLE, g_parser.previous)
+            node_add_child(tuple, first)
+            while true {
+                var elem = parse_expression()
+                if elem != null {
+                    node_add_child(tuple, elem)
+                }
+                if !match_token(TOKEN_COMMA) {
+                    break
+                }
+            }
+            consume(TOKEN_RPAREN, "Expect ')' after tuple elements.")
+            return tuple
+        }
+        consume(TOKEN_RPAREN, "Expect ')' after expression.")
+        return first
+    }
+
+    if match_token(TOKEN_NEW) {
+        consume(TOKEN_IDENTIFIER, "Expect class name after 'new'.")
+        Token class_tok = g_parser.previous
+        var node = new ASTNode(AST_NEW_EXPR, class_tok)
+        if match_token(TOKEN_LESS) {
+            while true {
+                var ta = parse_type()
+                if ta != null {
+                    node_add_type_arg(node, ta)
+                }
+                if !match_token(TOKEN_COMMA) {
+                    break
+                }
+            }
+            consume(TOKEN_GREATER, "Expect '>' after generic type arguments.")
+        }
+        consume(TOKEN_LPAREN, "Expect '(' after class name in 'new'.")
+        if !check_token(TOKEN_RPAREN) {
+            while true {
+                var arg = parse_expression()
+                if arg != null {
+                    node_add_child(node, arg)
+                }
+                if !match_token(TOKEN_COMMA) {
+                    break
+                }
+            }
+        }
+        consume(TOKEN_RPAREN, "Expect ')' after 'new' arguments.")
+        return node
+    }
+
+    if match_token(TOKEN_SUPER) {
+        consume(TOKEN_DOT, "Expect '.' after 'super'.")
+        if check_token(TOKEN_IDENTIFIER) || check_token(TOKEN_NEW) {
+            advance_token()
+        } else {
+            error_at_current("Expect method name after 'super.'.")
+        }
+        Token member_name = g_parser.previous
+        var super_node = new ASTNode(AST_SUPER_EXPR, member_name)
+        if match_token(TOKEN_LPAREN) {
+            var call = new ASTNode(AST_CALL, member_name)
+            call.left = super_node
+            if !check_token(TOKEN_RPAREN) {
+                while true {
+                    var arg = parse_expression()
+                    if arg != null {
+                        node_add_child(call, arg)
+                    }
+                    if !match_token(TOKEN_COMMA) {
+                        break
+                    }
+                }
+            }
+            consume(TOKEN_RPAREN, "Expect ')' after super call arguments.")
+            return call
+        }
+        return super_node
+    }
+
+    if match_token(TOKEN_AWAIT) {
+        var node = new ASTNode(AST_AWAIT_EXPR, g_parser.previous)
+        var inner = parse_expression()
+        if inner != null {
+            node.left = inner
+        }
+        return node
+    }
+
+    if match_token(TOKEN_WHEN) {
+        var node = new ASTNode(AST_WHEN, g_parser.previous)
+        consume(TOKEN_LBRACE, "Expect '{' after 'when'.")
+        while !check_token(TOKEN_RBRACE) && !check_token(TOKEN_EOF) {
+            var arm = new ASTNode(AST_WHEN_ARM, g_parser.current)
+            if check_identifier_text("else") {
+                advance_token()
+                arm.is_const = true
+            } else {
+                var cond = parse_expression()
+                if cond != null {
+                    arm.condition = cond
+                }
+            }
+            consume(TOKEN_FAT_ARROW, "Expect '=>' after when condition.")
+            var body = parse_expression()
+            if body != null {
+                arm.left = body
+            }
+            match_token(TOKEN_COMMA)
+            node_add_child(node, arm)
+        }
+        consume(TOKEN_RBRACE, "Expect '}' after when body.")
+        return node
+    }
+
+    error_at_current("Expect expression.")
+    return null
+}
+
+func parse_postfix(): ASTNode? {
+    var node = parse_primary()
+    while true {
+        if match_token(TOKEN_INCREMENT) || match_token(TOKEN_DECREMENT) {
+            var op = new ASTNode(AST_POSTFIX, g_parser.previous)
+            op.left = node
+            node = op
+        } else if match_token(TOKEN_AS) {
+            var cast_node = new ASTNode(AST_CAST, g_parser.previous)
+            cast_node.left = node
+            var typeNode = parse_type()
+            if typeNode != null {
+                assign_type_from_node(cast_node, typeNode)
+            }
+            node = cast_node
+        } else {
+            break
+        }
+    }
+    return node
+}
+
+func parse_unary(): ASTNode? {
+    if match_token(TOKEN_BANG) || match_token(TOKEN_MINUS) {
+        var node = new ASTNode(AST_UNARY, g_parser.previous)
+        var rhs = parse_unary()
+        if rhs != null {
+            node.right = rhs
+        }
+        return node
+    }
+    return parse_postfix()
+}
+
+func parse_factor(): ASTNode? {
+    var expr = parse_unary()
+    while match_token(TOKEN_STAR) || match_token(TOKEN_SLASH) || match_token(TOKEN_PERCENT) {
+        var node = new ASTNode(AST_BINARY, g_parser.previous)
+        node.left = expr
+        var rhs = parse_unary()
+        if rhs != null {
+            node.right = rhs
+        }
+        expr = node
+    }
+    return expr
+}
+
+func parse_term(): ASTNode? {
+    var expr = parse_factor()
+    while match_token(TOKEN_PLUS) || match_token(TOKEN_MINUS) {
+        var node = new ASTNode(AST_BINARY, g_parser.previous)
+        node.left = expr
+        var rhs = parse_factor()
+        if rhs != null {
+            node.right = rhs
+        }
+        expr = node
+    }
+    return expr
+}
+
+func parse_comparison(): ASTNode? {
+    var expr = parse_term()
+    while match_token(TOKEN_GREATER) || match_token(TOKEN_GREATER_EQ) ||
+          match_token(TOKEN_LESS) || match_token(TOKEN_LESS_EQ) {
+        var node = new ASTNode(AST_BINARY, g_parser.previous)
+        node.left = expr
+        var rhs = parse_term()
+        if rhs != null {
+            node.right = rhs
+        }
+        expr = node
+    }
+    return expr
+}
+
+func parse_equality(): ASTNode? {
+    var expr = parse_comparison()
+    while match_token(TOKEN_BANG_EQ) || match_token(TOKEN_EQ_EQ) {
+        var node = new ASTNode(AST_BINARY, g_parser.previous)
+        node.left = expr
+        var rhs = parse_comparison()
+        if rhs != null {
+            node.right = rhs
+        }
+        expr = node
+    }
+    return expr
+}
+
+func parse_logic_and(): ASTNode? {
+    var expr = parse_equality()
+    while match_token(TOKEN_AND_AND) {
+        var node = new ASTNode(AST_BINARY, g_parser.previous)
+        node.left = expr
+        var rhs = parse_equality()
+        if rhs != null {
+            node.right = rhs
+        }
+        expr = node
+    }
+    return expr
+}
+
+func parse_null_coalesce(): ASTNode? {
+    var expr = parse_logic_and()
+    while match_token(TOKEN_QUESTION_QUESTION) {
+        var node = new ASTNode(AST_NULL_COALESCE, g_parser.previous)
+        node.left = expr
+        var rhs = parse_logic_and()
+        if rhs != null {
+            node.right = rhs
+        }
+        expr = node
+    }
+    return expr
+}
+
+func parse_logic_or(): ASTNode? {
+    var expr = parse_null_coalesce()
+    while match_token(TOKEN_OR_OR) {
+        var node = new ASTNode(AST_BINARY, g_parser.previous)
+        node.left = expr
+        var rhs = parse_null_coalesce()
+        if rhs != null {
+            node.right = rhs
+        }
+        expr = node
+    }
+    return expr
+}
+
+func parse_range_expr(): ASTNode? {
+    var expr = parse_logic_or()
+    while match_token(TOKEN_RANGE) || match_token(TOKEN_RANGE_INCLUSIVE) {
+        int kind = AST_RANGE
+        if g_parser.previous.kind == TOKEN_RANGE_INCLUSIVE {
+            kind = AST_RANGE_INCLUSIVE
+        }
+        var node = new ASTNode(kind, g_parser.previous)
+        node.left = expr
+        var rhs = parse_logic_or()
+        if rhs != null {
+            node.right = rhs
+        }
+        expr = node
+    }
+    return expr
+}
+
+func parse_expression(): ASTNode? {
+    var node = parse_range_expr()
+    if check_token(TOKEN_QUESTION) {
+        advance_token()
+        bool is_ternary = !check_token(TOKEN_COLON) &&
+                          !check_token(TOKEN_SEMICOLON) &&
+                          !check_token(TOKEN_RPAREN) &&
+                          !check_token(TOKEN_RBRACE) &&
+                          !check_token(TOKEN_COMMA) &&
+                          !check_token(TOKEN_EOF) &&
+                          !check_token(TOKEN_DOT) &&
+                          !check_token(TOKEN_INCREMENT) &&
+                          !check_token(TOKEN_DECREMENT)
+        if is_ternary {
+            var ternary = new ASTNode(AST_TERNARY, g_parser.previous)
+            ternary.condition = node
+            var then_expr = parse_expression()
+            if then_expr != null {
+                ternary.left = then_expr
+            }
+            consume(TOKEN_COLON, "Expect ':' in ternary expression.")
+            var else_expr = parse_expression()
+            if else_expr != null {
+                ternary.right = else_expr
+            }
+            return ternary
+        } else {
+            var try_node = new ASTNode(AST_TRY_EXPR, g_parser.previous)
+            try_node.left = node
+            return try_node
+        }
+    }
+    return node
+}

@@ -1,0 +1,550 @@
+// Self-hosting bootstrap: port of src/parser_stmt.c into Cnext (Milestone B).
+// Depends on: lexer.cn, parser_types.cn, parser_core.cn, parser_type.cn,
+//             parser_expr.cn.
+
+// ---------------------------------------------------------------------------
+// var_declaration — port of parser_stmt.c:var_declaration()
+// ---------------------------------------------------------------------------
+func parse_var_declaration(bool is_const): ASTNode? {
+    if check_token(TOKEN_VAR) {
+        Token var_tok = g_parser.current
+        advance_token()
+        consume(TOKEN_IDENTIFIER, "Expect variable name.")
+        if g_parser.had_error && g_parser.previous.kind != TOKEN_IDENTIFIER {
+            return null
+        }
+        Token name = g_parser.previous
+        var node = new ASTNode(AST_VAR_DECL, name)
+        node.var_type = var_tok
+        node.is_const = is_const
+        if match_token(TOKEN_COLON) {
+            var typeNode = parse_type()
+            if typeNode == null {
+                return null
+            }
+            assign_type_from_node(node, typeNode)
+        }
+        if match_token(TOKEN_EQUAL) {
+            var init = parse_expression()
+            node.init = init
+        }
+        optionally_consume_semicolon()
+        return node
+    }
+
+    var typeNode = parse_type()
+    if typeNode == null {
+        return null
+    }
+    consume(TOKEN_IDENTIFIER, "Expect variable name.")
+    if g_parser.had_error && g_parser.previous.kind != TOKEN_IDENTIFIER {
+        return null
+    }
+    var node = new ASTNode(AST_VAR_DECL, g_parser.previous)
+    assign_type_from_node(node, typeNode)
+    node.is_const = is_const
+    if match_token(TOKEN_EQUAL) {
+        var init = parse_expression()
+        node.init = init
+    }
+    optionally_consume_semicolon()
+    return node
+}
+
+func parse_assign_stmt(ASTNode? expr): ASTNode? {
+    if match_token(TOKEN_EQUAL) || match_token(TOKEN_PLUS_EQUAL) ||
+       match_token(TOKEN_MINUS_EQUAL) || match_token(TOKEN_STAR_EQUAL) ||
+       match_token(TOKEN_SLASH_EQUAL) {
+        var assign = new ASTNode(AST_ASSIGN, g_parser.previous)
+        assign.left = expr
+        var rhs = parse_expression()
+        assign.right = rhs
+        optionally_consume_semicolon()
+        return assign
+    }
+    parser_error("Invalid assignment target.")
+    return null
+}
+
+func parse_expr_stmt(): ASTNode? {
+    var expr = parse_expression()
+    if check_token(TOKEN_EQUAL) || check_token(TOKEN_PLUS_EQUAL) ||
+       check_token(TOKEN_MINUS_EQUAL) || check_token(TOKEN_STAR_EQUAL) ||
+       check_token(TOKEN_SLASH_EQUAL) {
+        return parse_assign_stmt(expr)
+    }
+    var stmt = new ASTNode(AST_EXPR_STMT, g_parser.previous)
+    stmt.left = expr
+    optionally_consume_semicolon()
+    return stmt
+}
+
+func parse_block(): ASTNode? {
+    consume(TOKEN_LBRACE, "Expect '{' before block.")
+    var node = new ASTNode(AST_BLOCK, g_parser.previous)
+    while !check_token(TOKEN_RBRACE) && !check_token(TOKEN_EOF) {
+        int before = g_parser.current.start_index
+        var decl = parse_declaration()
+        if decl != null {
+            node_add_child(node, decl)
+        }
+        if g_parser.panic_mode {
+            synchronize()
+        }
+        if !check_token(TOKEN_EOF) && !check_token(TOKEN_RBRACE) &&
+           g_parser.current.start_index == before {
+            // declaration() reported an error without consuming anything, so
+            // looping would emit the same error forever. Force progress.
+            advance_token()
+        }
+    }
+    consume(TOKEN_RBRACE, "Expect '}' after block.")
+    return node
+}
+
+func parse_break_statement(): ASTNode? {
+    var node = new ASTNode(AST_BREAK, g_parser.previous)
+    optionally_consume_semicolon()
+    return node
+}
+
+func parse_continue_statement(): ASTNode? {
+    var node = new ASTNode(AST_CONTINUE, g_parser.previous)
+    optionally_consume_semicolon()
+    return node
+}
+
+func parse_if_statement(): ASTNode? {
+    var node = new ASTNode(AST_IF, g_parser.previous)
+    var cond = parse_expression()
+    node.condition = cond
+    var then_block = parse_block()
+    node.left = then_block
+    if match_token(TOKEN_ELSE) {
+        if check_token(TOKEN_IF) {
+            advance_token()
+            var elif_node = parse_if_statement()
+            node.right = elif_node
+        } else {
+            var else_block = parse_block()
+            node.right = else_block
+        }
+    }
+    return node
+}
+
+func parse_while_statement(): ASTNode? {
+    var node = new ASTNode(AST_WHILE, g_parser.previous)
+    var cond = parse_expression()
+    node.condition = cond
+    var body = parse_block()
+    node.left = body
+    return node
+}
+
+func parse_for_statement(): ASTNode? {
+    var node = new ASTNode(AST_FOR, g_parser.previous)
+
+    if match_token(TOKEN_CONST) {
+        var init = parse_var_declaration(true)
+        node.init = init
+    } else if g_parser.current.kind == TOKEN_VAR {
+        match_token(TOKEN_VAR)
+        if check_token(TOKEN_IDENTIFIER) {
+            Token name = g_parser.current
+            advance_token()
+            if match_token(TOKEN_IN) {
+                node.kind = AST_FOR_IN
+                var vdecl = new ASTNode(AST_VAR_DECL, name)
+                vdecl.var_type = make_kind_token(TOKEN_VAR)
+                node.init = vdecl
+                var cond = parse_expression()
+                node.condition = cond
+                var body = parse_block()
+                node.left = body
+                return node
+            }
+            var vdecl = new ASTNode(AST_VAR_DECL, name)
+            vdecl.var_type = make_kind_token(TOKEN_VAR)
+            vdecl.is_const = false
+            if match_token(TOKEN_EQUAL) {
+                var init_expr = parse_expression()
+                vdecl.init = init_expr
+            }
+            optionally_consume_semicolon()
+            node.init = vdecl
+        } else {
+            var init = parse_expr_stmt()
+            node.init = init
+        }
+    } else if g_parser.current.kind == TOKEN_IDENTIFIER {
+        Token name = g_parser.current
+        advance_token()
+        if match_token(TOKEN_IN) {
+            node.kind = AST_FOR_IN
+            var vdecl = new ASTNode(AST_VAR_DECL, name)
+            vdecl.var_type = make_kind_token(TOKEN_IDENTIFIER)
+            node.init = vdecl
+            var cond = parse_expression()
+            node.condition = cond
+            var body = parse_block()
+            node.left = body
+            return node
+        }
+        var id = new ASTNode(AST_IDENTIFIER, name)
+        if check_token(TOKEN_EQUAL) || check_token(TOKEN_PLUS_EQUAL) ||
+           check_token(TOKEN_MINUS_EQUAL) || check_token(TOKEN_STAR_EQUAL) ||
+           check_token(TOKEN_SLASH_EQUAL) {
+            var init = parse_assign_stmt(id)
+            node.init = init
+        } else {
+            var stmt = new ASTNode(AST_EXPR_STMT, g_parser.previous)
+            stmt.left = id
+            node.init = stmt
+        }
+    } else if is_type() {
+        Token saved_type = g_parser.current
+        advance_token()
+        if g_parser.current.kind == TOKEN_IDENTIFIER {
+            Token name = g_parser.current
+            advance_token()
+            if match_token(TOKEN_IN) {
+                node.kind = AST_FOR_IN
+                var vdecl = new ASTNode(AST_VAR_DECL, name)
+                vdecl.var_type = saved_type
+                node.init = vdecl
+                var cond = parse_expression()
+                node.condition = cond
+                var body = parse_block()
+                node.left = body
+                return node
+            }
+            var vdecl = new ASTNode(AST_VAR_DECL, name)
+            vdecl.var_type = saved_type
+            vdecl.is_const = false
+            if match_token(TOKEN_EQUAL) {
+                var init_expr = parse_expression()
+                vdecl.init = init_expr
+            }
+            node.init = vdecl
+        } else {
+            var init = parse_var_declaration(false)
+            node.init = init
+        }
+    } else {
+        var init = parse_expr_stmt()
+        node.init = init
+    }
+
+    if g_parser.previous.kind != TOKEN_SEMICOLON {
+        consume(TOKEN_SEMICOLON, "Expect ';' after for loop init.")
+    }
+    var cond = parse_expression()
+    node.condition = cond
+    consume(TOKEN_SEMICOLON, "Expect ';' after loop condition.")
+    var inc_expr = parse_expression()
+    if check_token(TOKEN_EQUAL) || check_token(TOKEN_PLUS_EQUAL) ||
+       check_token(TOKEN_MINUS_EQUAL) || check_token(TOKEN_STAR_EQUAL) ||
+       check_token(TOKEN_SLASH_EQUAL) {
+        var inc = parse_assign_stmt(inc_expr)
+        node.increment = inc
+    } else {
+        var inc_stmt = new ASTNode(AST_EXPR_STMT, g_parser.previous)
+        inc_stmt.left = inc_expr
+        node.increment = inc_stmt
+    }
+    var body = parse_block()
+    node.left = body
+    return node
+}
+
+func parse_return_statement(): ASTNode? {
+    var node = new ASTNode(AST_RETURN, g_parser.previous)
+    if !check_token(TOKEN_SEMICOLON) && !check_token(TOKEN_RBRACE) {
+        var val = parse_expression()
+        node.left = val
+    }
+    optionally_consume_semicolon()
+    return node
+}
+
+func parse_yield_statement(): ASTNode? {
+    var node = new ASTNode(AST_YIELD, g_parser.previous)
+    if !check_token(TOKEN_SEMICOLON) && !check_token(TOKEN_RBRACE) {
+        var val = parse_expression()
+        node.left = val
+    }
+    optionally_consume_semicolon()
+    return node
+}
+
+func parse_switch_statement(): ASTNode? {
+    var node = new ASTNode(AST_SWITCH, g_parser.previous)
+    var cond = parse_expression()
+    node.condition = cond
+    consume(TOKEN_LBRACE, "Expect '{' before switch body.")
+    while !check_token(TOKEN_RBRACE) && !check_token(TOKEN_EOF) {
+        if match_token(TOKEN_CASE) {
+            var c_node = new ASTNode(AST_CASE, g_parser.previous)
+            var case_cond = parse_expression()
+            c_node.condition = case_cond
+            consume(TOKEN_COLON, "Expect ':' after case expression.")
+            if check_token(TOKEN_LBRACE) {
+                var body = parse_block()
+                c_node.left = body
+            } else {
+                var body = new ASTNode(AST_BLOCK, g_parser.previous)
+                while !check_token(TOKEN_CASE) && !check_token(TOKEN_DEFAULT) &&
+                      !check_token(TOKEN_RBRACE) && !check_token(TOKEN_EOF) {
+                    var decl = parse_declaration()
+                    if decl != null {
+                        node_add_child(body, decl)
+                    }
+                    if g_parser.panic_mode {
+                        synchronize()
+                    }
+                }
+                c_node.left = body
+            }
+            node_add_child(node, c_node)
+        } else if match_token(TOKEN_DEFAULT) {
+            var d_node = new ASTNode(AST_DEFAULT, g_parser.previous)
+            consume(TOKEN_COLON, "Expect ':' after default.")
+            if check_token(TOKEN_LBRACE) {
+                var body = parse_block()
+                d_node.left = body
+            } else {
+                var body = new ASTNode(AST_BLOCK, g_parser.previous)
+                while !check_token(TOKEN_CASE) && !check_token(TOKEN_DEFAULT) &&
+                      !check_token(TOKEN_RBRACE) && !check_token(TOKEN_EOF) {
+                    var decl = parse_declaration()
+                    if decl != null {
+                        node_add_child(body, decl)
+                    }
+                    if g_parser.panic_mode {
+                        synchronize()
+                    }
+                }
+                d_node.left = body
+            }
+            node_add_child(node, d_node)
+        } else {
+            error_at_current("Expect 'case' or 'default' inside switch.")
+            break
+        }
+    }
+    consume(TOKEN_RBRACE, "Expect '}' after switch body.")
+    return node
+}
+
+func parse_try_statement(): ASTNode? {
+    var node = new ASTNode(AST_TRY, g_parser.previous)
+    var try_body = parse_block()
+    node.left = try_body
+
+    if match_token(TOKEN_CATCH) {
+        var catch_node = new ASTNode(AST_CATCH, g_parser.previous)
+        if match_token(TOKEN_LPAREN) {
+            if is_type() {
+                var typeNode = parse_type()
+                if typeNode != null {
+                    consume(TOKEN_IDENTIFIER, "Expect error variable name.")
+                    catch_node.token = g_parser.previous
+                    assign_type_from_node(catch_node, typeNode)
+                }
+            } else {
+                consume(TOKEN_IDENTIFIER, "Expect error variable name.")
+                catch_node.token = g_parser.previous
+                catch_node.var_type = make_kind_token(TOKEN_STR_TYPE)
+            }
+            consume(TOKEN_RPAREN, "Expect ')' after catch parameter.")
+        }
+        var catch_body = parse_block()
+        catch_node.left = catch_body
+        node.right = catch_node
+    }
+
+    if match_token(TOKEN_FINALLY) {
+        var finally_body = parse_block()
+        node.condition = finally_body
+    }
+
+    return node
+}
+
+func parse_throw_statement(): ASTNode? {
+    var node = new ASTNode(AST_THROW, g_parser.previous)
+    var val = parse_expression()
+    node.left = val
+    optionally_consume_semicolon()
+    return node
+}
+
+func parse_match_statement(): ASTNode? {
+    var node = new ASTNode(AST_MATCH, g_parser.previous)
+    var cond = parse_expression()
+    node.condition = cond
+    consume(TOKEN_LBRACE, "Expect '{' before match body.")
+    while !check_token(TOKEN_RBRACE) && !check_token(TOKEN_EOF) {
+        var arm = new ASTNode(AST_MATCH_ARM, g_parser.current)
+
+        if check_token(TOKEN_IDENTIFIER) && len(g_parser.current.text) == 1 &&
+           g_parser.current.text == "_" {
+            advance_token()
+            arm.token = g_parser.previous
+            arm.is_const = true
+        } else {
+            var pat = parse_expression()
+            if pat != null {
+                node_add_child(arm, pat)
+            }
+            while match_token(TOKEN_COMMA) {
+                var extra = parse_expression()
+                if extra != null {
+                    node_add_child(arm, extra)
+                }
+            }
+        }
+
+        if match_token(TOKEN_IF) {
+            var guard_cond = parse_expression()
+            arm.condition = guard_cond
+        }
+
+        consume(TOKEN_FAT_ARROW, "Expect '=>' after match pattern.")
+
+        if check_token(TOKEN_LBRACE) {
+            var body = parse_block()
+            arm.left = body
+        } else {
+            var body = new ASTNode(AST_BLOCK, g_parser.previous)
+            var stmt = parse_statement()
+            if stmt != null {
+                node_add_child(body, stmt)
+            }
+            arm.left = body
+        }
+
+        node_add_child(node, arm)
+    }
+    consume(TOKEN_RBRACE, "Expect '}' after match body.")
+    return node
+}
+
+func parse_destructure_declaration(): ASTNode? {
+    var node = new ASTNode(AST_DESTRUCTURE, g_parser.previous)
+
+    var typeNode = parse_type()
+    if typeNode == null {
+        return null
+    }
+    consume(TOKEN_IDENTIFIER, "Expect variable name.")
+    var var1 = new ASTNode(AST_VAR_DECL, g_parser.previous)
+    assign_type_from_node(var1, typeNode)
+    node_add_child(node, var1)
+
+    while match_token(TOKEN_COMMA) {
+        var tn = parse_type()
+        if tn == null {
+            return null
+        }
+        consume(TOKEN_IDENTIFIER, "Expect variable name.")
+        var v = new ASTNode(AST_VAR_DECL, g_parser.previous)
+        assign_type_from_node(v, tn)
+        node_add_child(node, v)
+    }
+
+    consume(TOKEN_EQUAL, "Expect '=' after destructuring pattern.")
+    var rhs = parse_expression()
+    node.right = rhs
+    optionally_consume_semicolon()
+    return node
+}
+
+func parse_statement(): ASTNode? {
+    if match_token(TOKEN_SWITCH) { return parse_switch_statement() }
+    if match_token(TOKEN_IF)     { return parse_if_statement() }
+    if match_token(TOKEN_WHILE)  { return parse_while_statement() }
+    if match_token(TOKEN_FOR)    { return parse_for_statement() }
+    if match_token(TOKEN_RETURN) { return parse_return_statement() }
+    if match_token(TOKEN_YIELD)  { return parse_yield_statement() }
+    if match_token(TOKEN_BREAK)  { return parse_break_statement() }
+    if match_token(TOKEN_CONTINUE){ return parse_continue_statement() }
+    if match_token(TOKEN_TRY)    { return parse_try_statement() }
+    if match_token(TOKEN_THROW)  { return parse_throw_statement() }
+    if match_token(TOKEN_MATCH)  { return parse_match_statement() }
+    if match_token(TOKEN_ASSERT) { return parse_assert_statement() }
+    if match_token(TOKEN_BENCH)  { return parse_bench_statement() }
+
+    if match_token(TOKEN_DEFER) {
+        var node = new ASTNode(AST_DEFER, g_parser.previous)
+        if check_token(TOKEN_LBRACE) {
+            var body = parse_block()
+            node.left = body
+        } else {
+            var body = parse_expression()
+            node.left = body
+        }
+        optionally_consume_semicolon()
+        return node
+    }
+
+    if match_token(TOKEN_RUN_ASYNC) {
+        var node = new ASTNode(AST_RUN_ASYNC, g_parser.previous)
+        consume(TOKEN_IDENTIFIER, "Expect function name after 'run_async'.")
+        var callee = new ASTNode(AST_IDENTIFIER, g_parser.previous)
+        var call = new ASTNode(AST_CALL, g_parser.previous)
+        call.left = callee
+        consume(TOKEN_LPAREN, "Expect '(' after function name.")
+        if !check_token(TOKEN_RPAREN) {
+            while true {
+                var arg = parse_expression()
+                if arg != null {
+                    node_add_child(call, arg)
+                }
+                if !match_token(TOKEN_COMMA) {
+                    break
+                }
+            }
+        }
+        consume(TOKEN_RPAREN, "Expect ')' after arguments.")
+        node.left = call
+        optionally_consume_semicolon()
+        return node
+    }
+
+    if check_token(TOKEN_RESUME) {
+        var node = new ASTNode(AST_RESUME_EXPR, g_parser.current)
+        advance_token()
+        var co = parse_expression()
+        node.left = co
+        if match_token(TOKEN_WITH) {
+            var val = parse_expression()
+            node.right = val
+        }
+        optionally_consume_semicolon()
+        return node
+    }
+
+    if check_token(TOKEN_LBRACE) {
+        return parse_block()
+    }
+
+    if is_type() {
+        Token saved_type = g_parser.current
+        advance_token()
+        if g_parser.current.kind == TOKEN_IDENTIFIER {
+            advance_token()
+            if g_parser.current.kind == TOKEN_COMMA {
+                g_parser.current = saved_type
+                return parse_destructure_declaration()
+            }
+            g_parser.current = saved_type
+        } else {
+            g_parser.current = saved_type
+        }
+        return parse_var_declaration(false)
+    }
+
+    return parse_expr_stmt()
+}

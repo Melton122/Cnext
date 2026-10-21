@@ -1,0 +1,632 @@
+// Self-hosting bootstrap: port of src/parser_decl.c into Cnext (Milestone B).
+// Depends on: lexer.cn, parser_types.cn, parser_core.cn, parser_type.cn,
+//             parser_macro.cn, parser_expr.cn, parser_stmt.cn.
+
+func parse_assert_statement(): ASTNode? {
+    var node = new ASTNode(AST_ASSERT, g_parser.previous)
+    var expr = parse_expression()
+    node.left = expr
+    optionally_consume_semicolon()
+    return node
+}
+
+func parse_bench_statement(): ASTNode? {
+    var node = new ASTNode(AST_BENCH_DECL, g_parser.previous)
+    var body = parse_block()
+    node.left = body
+    return node
+}
+
+func parse_function_declaration(bool require_body): ASTNode? {
+    consume(TOKEN_IDENTIFIER, "Expect function name.")
+    if g_parser.had_error && g_parser.previous.kind != TOKEN_IDENTIFIER {
+        return null
+    }
+    var node = new ASTNode(AST_FUNC_DECL, g_parser.previous)
+
+    if match_token(TOKEN_LESS) {
+        while true {
+            consume_name("Expect type parameter name.")
+            var tp = new ASTNode(AST_TYPE_PARAM, g_parser.previous)
+            node_add_type_param(node, tp)
+            if !match_token(TOKEN_COMMA) {
+                break
+            }
+        }
+        consume(TOKEN_GREATER, "Expect '>' after generic type parameters.")
+    }
+
+    consume(TOKEN_LPAREN, "Expect '(' after function name.")
+    if !check_token(TOKEN_RPAREN) {
+        while true {
+            var typeNode = parse_type()
+            if typeNode == null {
+                return node
+            }
+            bool variadic = match_token(TOKEN_ELLIPSIS)
+            consume(TOKEN_IDENTIFIER, "Expect parameter name.")
+            if g_parser.had_error && g_parser.previous.kind != TOKEN_IDENTIFIER {
+                return node
+            }
+            var param = new ASTNode(AST_VAR_DECL, g_parser.previous)
+            assign_type_from_node(param, typeNode)
+            param.is_variadic = variadic
+            if match_token(TOKEN_EQUAL) {
+                var def_val = parse_expression()
+                param.default_value = def_val
+            }
+            node_add_child(node, param)
+            if !match_token(TOKEN_COMMA) {
+                break
+            }
+        }
+    }
+    consume(TOKEN_RPAREN, "Expect ')' after parameters.")
+
+    if check_token(TOKEN_ARROW) {
+        parser_error("Return type syntax changed: use ':' instead of '->'. Example: func name(params): Type { }")
+        advance_token()
+    }
+    if match_token(TOKEN_COLON) {
+        var retTypeNode = parse_type()
+        if retTypeNode != null {
+            assign_return_type_from_node(node, retTypeNode)
+        }
+    }
+    if require_body {
+        var body = parse_block()
+        node.left = body
+    }
+    return node
+}
+
+func parse_operator_declaration(): ASTNode? {
+    consume(TOKEN_OPERATOR, "Expect 'operator' keyword.")
+    Token op_token = make_eof_token()
+    if match_token(TOKEN_PLUS) || match_token(TOKEN_MINUS) ||
+       match_token(TOKEN_STAR) || match_token(TOKEN_SLASH) ||
+       match_token(TOKEN_EQ_EQ) || match_token(TOKEN_BANG_EQ) ||
+       match_token(TOKEN_LESS) || match_token(TOKEN_LESS_EQ) ||
+       match_token(TOKEN_GREATER) || match_token(TOKEN_GREATER_EQ) ||
+       match_token(TOKEN_LBRACKET) || match_token(TOKEN_LBRACE) {
+        op_token = g_parser.previous
+    } else {
+        error_at_current("Expect operator token (+, -, *, /, ==, !=, <, <=, >, >=, [, {).")
+        return null
+    }
+
+    var node = new ASTNode(AST_OPERATOR_DECL, op_token)
+    node.operator_token = op_token
+
+    consume(TOKEN_LPAREN, "Expect '(' after operator.")
+    // The C parser builds this token with a 4-field initializer, so the
+    // column stays 0. Keep that, or the AST dumps drift apart.
+    Token self_token = make_token(TOKEN_IDENTIFIER, "self", op_token.line, 0)
+    var self_param = new ASTNode(AST_VAR_DECL, self_token)
+    node_add_child(node, self_param)
+
+    if !check_token(TOKEN_RPAREN) {
+        while true {
+            var typeNode = parse_type()
+            if typeNode == null {
+                return node
+            }
+            consume(TOKEN_IDENTIFIER, "Expect parameter name.")
+            if g_parser.had_error && g_parser.previous.kind != TOKEN_IDENTIFIER {
+                return node
+            }
+            var param = new ASTNode(AST_VAR_DECL, g_parser.previous)
+            assign_type_from_node(param, typeNode)
+            node_add_child(node, param)
+            if !match_token(TOKEN_COMMA) {
+                break
+            }
+        }
+    }
+    consume(TOKEN_RPAREN, "Expect ')' after parameters.")
+
+    if check_token(TOKEN_ARROW) {
+        parser_error("Return type syntax changed: use ':' instead of '->'. Example: func name(params): Type { }")
+        advance_token()
+    }
+    if match_token(TOKEN_COLON) {
+        var retTypeNode = parse_type()
+        if retTypeNode != null {
+            assign_return_type_from_node(node, retTypeNode)
+            if len(node.children) > 0 {
+                assign_type_from_node(node.children[0], retTypeNode)
+            }
+        }
+    }
+
+    var body = parse_block()
+    node.left = body
+    return node
+}
+
+func parse_macro_declaration(): ASTNode? {
+    consume(TOKEN_IDENTIFIER, "Expect macro name.")
+    if g_parser.had_error && g_parser.previous.kind != TOKEN_IDENTIFIER {
+        return null
+    }
+    var node = new ASTNode(AST_MACRO_DECL, g_parser.previous)
+    consume(TOKEN_LPAREN, "Expect '(' after macro name.")
+    if !check_token(TOKEN_RPAREN) {
+        while true {
+            consume(TOKEN_IDENTIFIER, "Expect macro parameter name.")
+            if g_parser.had_error && g_parser.previous.kind != TOKEN_IDENTIFIER {
+                return null
+            }
+            var param = new ASTNode(AST_VAR_DECL, g_parser.previous)
+            node_add_child(node, param)
+            if !match_token(TOKEN_COMMA) {
+                break
+            }
+        }
+    }
+    consume(TOKEN_RPAREN, "Expect ')' after macro parameters.")
+    var body = parse_block()
+    node.left = body
+    register_macro(node)
+    return node
+}
+
+func parse_class_declaration(): ASTNode? {
+    bool is_abstract = match_token(TOKEN_ABSTRACT)
+    bool is_final = match_token(TOKEN_FINAL)
+
+    consume(TOKEN_IDENTIFIER, "Expect class name.")
+    Token class_name_token = g_parser.previous
+    var node = new ASTNode(AST_CLASS_DECL, class_name_token)
+    node.is_abstract = is_abstract
+    node.is_final = is_final
+
+    if match_token(TOKEN_LESS) {
+        while true {
+            consume_name("Expect type parameter name.")
+            var tp = new ASTNode(AST_TYPE_PARAM, g_parser.previous)
+            node_add_type_param(node, tp)
+            if !match_token(TOKEN_COMMA) {
+                break
+            }
+        }
+        consume(TOKEN_GREATER, "Expect '>' after generic type parameters.")
+    }
+
+    if match_token(TOKEN_EXTENDS) {
+        consume(TOKEN_IDENTIFIER, "Expect parent class name after 'extends'.")
+        node.parent_name = g_parser.previous.text
+    }
+
+    if match_token(TOKEN_IMPLEMENTS) {
+        str impl_buf = ""
+        while true {
+            consume(TOKEN_IDENTIFIER, "Expect interface or trait name after 'implements'.")
+            if len(impl_buf) > 0 {
+                impl_buf = impl_buf + ","
+            }
+            impl_buf = impl_buf + g_parser.previous.text
+            if !match_token(TOKEN_COMMA) {
+                break
+            }
+        }
+        node.implements_names = impl_buf
+    }
+
+    consume(TOKEN_LBRACE, "Expect '{' before class body.")
+    while !check_token(TOKEN_RBRACE) && !check_token(TOKEN_EOF) {
+        bool method_is_static = match_token(TOKEN_STATIC)
+        bool method_is_abstract = match_token(TOKEN_ABSTRACT)
+        if method_is_abstract {
+            consume(TOKEN_FUNC, "Expect 'func' after 'abstract'.")
+            var method = parse_function_declaration(false)
+            if method != null {
+                method.is_abstract = true
+                node_add_child(node, method)
+            }
+            if g_parser.panic_mode { synchronize() }
+            continue
+        }
+
+        if match_token(TOKEN_FUNC) {
+            if check_token(TOKEN_NEW) {
+                advance_token()
+                var ctor = new ASTNode(AST_CONSTRUCTOR, g_parser.previous)
+                ctor.var_type = class_name_token
+                ctor.is_pointer = true
+                consume(TOKEN_LPAREN, "Expect '(' after 'new'.")
+                if !check_token(TOKEN_RPAREN) {
+                    while true {
+                        var typeNode = parse_type()
+                        if typeNode == null { break }
+                        consume(TOKEN_IDENTIFIER, "Expect parameter name.")
+                        var param = new ASTNode(AST_VAR_DECL, g_parser.previous)
+                        assign_type_from_node(param, typeNode)
+                        node_add_child(ctor, param)
+                        if !match_token(TOKEN_COMMA) { break }
+                    }
+                }
+                consume(TOKEN_RPAREN, "Expect ')' after constructor parameters.")
+                var body = parse_block()
+                ctor.left = body
+                node_add_child(node, ctor)
+            } else if check_token(TOKEN_OPERATOR) {
+                var method = parse_operator_declaration()
+                if method != null {
+                    Token self_tok = make_token(TOKEN_IDENTIFIER, "self", class_name_token.line, 0)
+                    var self_param = new ASTNode(AST_VAR_DECL, self_tok)
+                    self_param.var_type = class_name_token
+                    self_param.is_pointer = true
+                    if len(method.children) > 0 {
+                        method.children[0] = self_param
+                    }
+                    int j = 1
+                    while j < len(method.children) {
+                        var param = method.children[j]
+                        if param.var_type.kind == TOKEN_IDENTIFIER {
+                            param.is_pointer = true
+                            param.is_class = true
+                        }
+                        j = j + 1
+                    }
+                    node_add_child(node, method)
+                }
+            } else {
+                bool is_override = false
+                if check_token(TOKEN_OVERRIDE) {
+                    advance_token()
+                    is_override = true
+                }
+                var method = parse_function_declaration(true)
+                if method != null {
+                    if method_is_static {
+                        method.is_static = true
+                        node_add_child(node, method)
+                    } else {
+                        Token self_tok = make_token(TOKEN_IDENTIFIER, "self", class_name_token.line, 0)
+                        var self_param = new ASTNode(AST_VAR_DECL, self_tok)
+                        self_param.var_type = class_name_token
+                        self_param.is_pointer = true
+
+                        ASTNode[] new_children = {}
+                        push(new_children, self_param)
+                        int i = 0
+                        while i < len(method.children) {
+                            push(new_children, method.children[i])
+                            i = i + 1
+                        }
+                        method.children = new_children
+                        node_add_child(node, method)
+                    }
+                }
+            }
+        } else if match_token(TOKEN_OVERRIDE) {
+            consume(TOKEN_FUNC, "Expect 'func' after 'override'.")
+            var method = parse_function_declaration(true)
+            if method != null {
+                Token self_tok = make_token(TOKEN_IDENTIFIER, "self", class_name_token.line, 0)
+                var self_param = new ASTNode(AST_VAR_DECL, self_tok)
+                self_param.var_type = class_name_token
+                self_param.is_pointer = true
+                ASTNode[] new_children = {}
+                push(new_children, self_param)
+                int i = 0
+                while i < len(method.children) {
+                    push(new_children, method.children[i])
+                    i = i + 1
+                }
+                method.children = new_children
+                node_add_child(node, method)
+            }
+        } else {
+            var decl = parse_var_declaration(false)
+            if decl != null {
+                node_add_child(node, decl)
+            }
+        }
+        if g_parser.panic_mode { synchronize() }
+    }
+    consume(TOKEN_RBRACE, "Expect '}' after class body.")
+    return node
+}
+
+func parse_interface_declaration(): ASTNode? {
+    consume(TOKEN_IDENTIFIER, "Expect interface name.")
+    var node = new ASTNode(AST_INTERFACE_DECL, g_parser.previous)
+    consume(TOKEN_LBRACE, "Expect '{' before interface body.")
+    while !check_token(TOKEN_RBRACE) && !check_token(TOKEN_EOF) {
+        consume(TOKEN_FUNC, "Expect 'func' in interface body.")
+        var method = parse_function_declaration(false)
+        if method != null {
+            node_add_child(node, method)
+        }
+        if g_parser.panic_mode { synchronize() }
+    }
+    consume(TOKEN_RBRACE, "Expect '}' after interface body.")
+    return node
+}
+
+func parse_trait_declaration(): ASTNode? {
+    consume(TOKEN_IDENTIFIER, "Expect trait name.")
+    Token trait_name_tok = g_parser.previous
+    var node = new ASTNode(AST_TRAIT_DECL, trait_name_tok)
+    consume(TOKEN_LBRACE, "Expect '{' before trait body.")
+    while !check_token(TOKEN_RBRACE) && !check_token(TOKEN_EOF) {
+        consume(TOKEN_FUNC, "Expect 'func' in trait body.")
+        var method = parse_function_declaration(true)
+        if method != null {
+            Token self_tok = make_token(TOKEN_IDENTIFIER, "self", trait_name_tok.line, 0)
+            var self_param = new ASTNode(AST_VAR_DECL, self_tok)
+            self_param.var_type = trait_name_tok
+            self_param.is_pointer = true
+            ASTNode[] new_children = {}
+            push(new_children, self_param)
+            int i = 0
+            while i < len(method.children) {
+                push(new_children, method.children[i])
+                i = i + 1
+            }
+            method.children = new_children
+            node_add_child(node, method)
+        }
+        if g_parser.panic_mode { synchronize() }
+    }
+    consume(TOKEN_RBRACE, "Expect '}' after trait body.")
+    return node
+}
+
+func parse_struct_declaration(): ASTNode? {
+    consume(TOKEN_IDENTIFIER, "Expect struct name.")
+    var node = new ASTNode(AST_STRUCT_DECL, g_parser.previous)
+    consume(TOKEN_LBRACE, "Expect '{' before struct body.")
+    while !check_token(TOKEN_RBRACE) && !check_token(TOKEN_EOF) {
+        var decl = parse_var_declaration(false)
+        if decl != null {
+            node_add_child(node, decl)
+        }
+        if g_parser.panic_mode { synchronize() }
+    }
+    consume(TOKEN_RBRACE, "Expect '}' after struct body.")
+    return node
+}
+
+func parse_enum_declaration(): ASTNode? {
+    consume(TOKEN_IDENTIFIER, "Expect enum name.")
+    var node = new ASTNode(AST_ENUM_DECL, g_parser.previous)
+
+    if match_token(TOKEN_LESS) {
+        while true {
+            consume(TOKEN_IDENTIFIER, "Expect type parameter name.")
+            var tp = new ASTNode(AST_IDENTIFIER, g_parser.previous)
+            node_add_type_param(node, tp)
+            if !match_token(TOKEN_COMMA) {
+                break
+            }
+        }
+        consume(TOKEN_GREATER, "Expect '>' after type parameters.")
+    }
+
+    consume(TOKEN_LBRACE, "Expect '{' before enum body.")
+    while !check_token(TOKEN_RBRACE) && !check_token(TOKEN_EOF) {
+        if match_token(TOKEN_IDENTIFIER) {
+            Token member_tok = g_parser.previous
+            if check_token(TOKEN_LPAREN) {
+                advance_token()
+                var variant = new ASTNode(AST_VARIANT, member_tok)
+                if !check_token(TOKEN_RPAREN) {
+                    while true {
+                        var payload_type = parse_type()
+                        if payload_type != null {
+                            node_add_child(variant, payload_type)
+                        }
+                        if !match_token(TOKEN_COMMA) { break }
+                    }
+                }
+                consume(TOKEN_RPAREN, "Expect ')' after variant payload types.")
+                node_add_child(node, variant)
+            } else {
+                var member = new ASTNode(AST_IDENTIFIER, member_tok)
+                if match_token(TOKEN_EQUAL) {
+                    var val = parse_expression()
+                    member.left = val
+                }
+                node_add_child(node, member)
+            }
+            match_token(TOKEN_COMMA)
+        } else {
+            error_at_current("Expect enum member name.")
+            break
+        }
+    }
+    consume(TOKEN_RBRACE, "Expect '}' after enum body.")
+    return node
+}
+
+func parse_constexpr_declaration(): ASTNode? {
+    var typeNode = parse_type()
+    if typeNode == null { return null }
+    consume(TOKEN_IDENTIFIER, "Expect constant name after type.")
+    var node = new ASTNode(AST_CONSTEXPR_DECL, g_parser.previous)
+    assign_type_from_node(node, typeNode)
+    consume(TOKEN_EQUAL, "Expect '=' after constexpr name.")
+    var val = parse_expression()
+    node.left = val
+    optionally_consume_semicolon()
+    return node
+}
+
+func parse_test_declaration(): ASTNode? {
+    consume(TOKEN_STRING_LITERAL, "Expect test description string after 'test'.")
+    var node = new ASTNode(AST_TEST, g_parser.previous)
+    var body = parse_block()
+    node.left = body
+    return node
+}
+
+func parse_coroutine_declaration(): ASTNode? {
+    consume(TOKEN_FUNC, "Expect 'func' after 'coroutine'.")
+    var node = parse_function_declaration(true)
+    if node != null {
+        node.kind = AST_COROUTINE_DECL
+        node.is_generator = true
+    }
+    return node
+}
+
+func parse_async_func_declaration(): ASTNode? {
+    consume(TOKEN_FUNC, "Expect 'func' after 'async'.")
+    var node = parse_function_declaration(true)
+    if node != null {
+        node.kind = AST_ASYNC_FUNC_DECL
+        node.is_generator = true
+    }
+    return node
+}
+
+func parse_main_block(): ASTNode? {
+    var node = new ASTNode(AST_MAIN, g_parser.previous)
+    var body = parse_block()
+    node.left = body
+    return node
+}
+
+func parse_import_declaration(): ASTNode? {
+    var node = new ASTNode(AST_IMPORT, g_parser.previous)
+    if check_token(TOKEN_IDENTIFIER) || check_token(TOKEN_THREAD) {
+        advance_token()
+    } else {
+        consume(TOKEN_IDENTIFIER, "Expect module name after import.")
+    }
+    node.token = g_parser.previous
+    optionally_consume_semicolon()
+    return node
+}
+
+func parse_extend_declaration(): ASTNode? {
+    if check_token(TOKEN_IDENTIFIER) || is_type() {
+        advance_token()
+    } else {
+        error_at_current("Expect type name after 'extend'.")
+    }
+    var node = new ASTNode(AST_EXTEND_DECL, g_parser.previous)
+
+    consume(TOKEN_LBRACE, "Expect '{' after type name in 'extend'.")
+    while !check_token(TOKEN_RBRACE) && !check_token(TOKEN_EOF) {
+        if match_token(TOKEN_FUNC) {
+            var method = parse_function_declaration(true)
+            if method != null {
+                Token self_tok = make_token(TOKEN_IDENTIFIER, "self", node.token.line, 0)
+                var self_param = new ASTNode(AST_VAR_DECL, self_tok)
+                self_param.var_type = node.token
+                self_param.is_pointer = false
+                ASTNode[] new_children = {}
+                push(new_children, self_param)
+                int i = 0
+                while i < len(method.children) {
+                    push(new_children, method.children[i])
+                    i = i + 1
+                }
+                method.children = new_children
+                node_add_child(node, method)
+            }
+        } else {
+            error_at_current("Expect 'func' in extend body.")
+            break
+        }
+        if g_parser.panic_mode { synchronize() }
+    }
+    consume(TOKEN_RBRACE, "Expect '}' after extend body.")
+    return node
+}
+
+func parse_type_alias_declaration(): ASTNode? {
+    consume(TOKEN_IDENTIFIER, "Expect type alias name.")
+    Token name = g_parser.previous
+    var node = new ASTNode(AST_TYPE_ALIAS, name)
+    consume(TOKEN_EQUAL, "Expect '=' after type alias name.")
+    var target_type = parse_type()
+    node.left = target_type
+    optionally_consume_semicolon()
+    return node
+}
+
+func parse_extern_declaration(): ASTNode? {
+    var node = new ASTNode(AST_EXTERN_DECL, g_parser.previous)
+    if match_token(TOKEN_STRING_LITERAL) {
+    }
+    consume(TOKEN_LBRACE, "Expect '{' after 'extern'.")
+    while !check_token(TOKEN_RBRACE) && !check_token(TOKEN_EOF) {
+        if match_token(TOKEN_FUNC) {
+            consume(TOKEN_IDENTIFIER, "Expect function name.")
+            var func_node = new ASTNode(AST_FUNC_DECL, g_parser.previous)
+            consume(TOKEN_LPAREN, "Expect '(' after function name.")
+            if !check_token(TOKEN_RPAREN) {
+                while true {
+                    var typeNode = parse_type()
+                    bool variadic = match_token(TOKEN_ELLIPSIS)
+                    consume(TOKEN_IDENTIFIER, "Expect parameter name.")
+                    var param = new ASTNode(AST_VAR_DECL, g_parser.previous)
+                    if typeNode != null {
+                        assign_type_from_node(param, typeNode)
+                    }
+                    param.is_variadic = variadic
+                    node_add_child(func_node, param)
+                    if !match_token(TOKEN_COMMA) { break }
+                }
+            }
+            consume(TOKEN_RPAREN, "Expect ')' after parameters.")
+            if match_token(TOKEN_COLON) {
+                var typeNode = parse_type()
+                if typeNode != null {
+                    assign_return_type_from_node(func_node, typeNode)
+                }
+            }
+            node_add_child(node, func_node)
+        }
+        optionally_consume_semicolon()
+    }
+    consume(TOKEN_RBRACE, "Expect '}' after extern block.")
+    return node
+}
+
+// ---------------------------------------------------------------------------
+// parse_declaration — main declaration dispatcher.
+// ---------------------------------------------------------------------------
+func parse_declaration(): ASTNode? {
+    str attr_name = ""
+    if check_token(TOKEN_AT) {
+        attr_name = parse_attribute_name()
+    }
+
+    ASTNode? node = null
+    if match_token(TOKEN_CONST)         { node = parse_var_declaration(true) }
+    else if match_token(TOKEN_CONSTEXPR){ node = parse_constexpr_declaration() }
+    else if match_token(TOKEN_TYPE_ALIAS){ node = parse_type_alias_declaration() }
+    else if match_token(TOKEN_IMPORT)   { node = parse_import_declaration() }
+    else if match_token(TOKEN_STRUCT)   { node = parse_struct_declaration() }
+    else if match_token(TOKEN_ENUM)     { node = parse_enum_declaration() }
+    else if match_token(TOKEN_CLASS)    { node = parse_class_declaration() }
+    else if match_token(TOKEN_INTERFACE){ node = parse_interface_declaration() }
+    else if match_token(TOKEN_TRAIT)    { node = parse_trait_declaration() }
+    else if match_token(TOKEN_TEST)     { node = parse_test_declaration() }
+    else if match_token(TOKEN_MACRO)    { node = parse_macro_declaration() }
+    else if match_token(TOKEN_COROUTINE){ node = parse_coroutine_declaration() }
+    else if match_token(TOKEN_ASYNC)    { node = parse_async_func_declaration() }
+    else if match_token(TOKEN_FUNC) {
+        if check_token(TOKEN_OPERATOR) {
+            node = parse_operator_declaration()
+        } else {
+            node = parse_function_declaration(true)
+        }
+    }
+    else if match_token(TOKEN_EXTEND)   { node = parse_extend_declaration() }
+    else if match_token(TOKEN_EXTERN)   { node = parse_extern_declaration() }
+    else if match_token(TOKEN_MAIN)     { node = parse_main_block() }
+    else if is_type()                    { node = parse_var_declaration(false) }
+    else                                { node = parse_statement() }
+
+    if node != null && len(attr_name) > 0 {
+        node.attribute_name = attr_name
+    }
+    return node
+}

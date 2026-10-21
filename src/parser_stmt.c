@@ -1,6 +1,29 @@
 #include "parser_internal.h"
 
 ASTNode* var_declaration(bool is_const) {
+    if (check(TOKEN_VAR)) {
+        Token var_token = parser.current;
+        advance_token();
+        consume(TOKEN_IDENTIFIER, "Expect variable name.");
+        if (parser.had_error && parser.previous.type != TOKEN_IDENTIFIER) return NULL;
+        Token name = parser.previous;
+        ASTNode* node = create_node(AST_VAR_DECL, name);
+        node->var_type = var_token;
+        node->is_const = is_const;
+        if (match_token(TOKEN_COLON)) {
+            ASTNode* explicit_type = parse_type();
+            if (!explicit_type) {
+                free_ast(node);
+                return NULL;
+            }
+            assign_type_from_node(node, explicit_type);
+            free_ast(explicit_type);
+        }
+        if (match_token(TOKEN_EQUAL)) node->init = expression();
+        optionally_consume_semicolon();
+        return node;
+    }
+
     ASTNode* typeNode = parse_type();
     if (!typeNode) return NULL;
     consume(TOKEN_IDENTIFIER, "Expect variable name.");
@@ -205,9 +228,11 @@ ASTNode* block() {
     consume(TOKEN_LBRACE, "Expect '{' before block.");
     ASTNode* node = create_node(AST_BLOCK, parser.previous);
     while (!check(TOKEN_RBRACE) && !check(TOKEN_EOF)) {
+        const char* before = parser.current.start;
         ASTNode* decl = declaration();
         if (decl) add_child(node, decl);
         if (parser.panic_mode) synchronize();
+        if (!check(TOKEN_EOF) && !check(TOKEN_RBRACE) && parser.current.start == before) advance_token();
     }
     consume(TOKEN_RBRACE, "Expect '}' after block.");
     return node;

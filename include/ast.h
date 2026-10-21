@@ -158,6 +158,7 @@ typedef struct ASTNode {
     Token var_type; // the token representing the type
     Token return_type;
     CnextTokenType expr_type;
+    bool type_is_inferred;
     // Text allocated by an optimizer pass for token replacement. Source tokens
     // borrow the parser source buffer; these tokens must be released with AST.
     char* owned_token_text;
@@ -172,6 +173,8 @@ typedef struct ASTNode {
     Token operator_token;
     // v3.5: Generator function flag
     bool is_generator;
+    // Declared at file scope rather than inside a function body.
+    bool is_global;
     // Tail-call optimization marker (NOT the same as is_generator)
     bool is_tail_call_optimized;
     // v11.0: Class modifiers

@@ -73,6 +73,7 @@ static ASTNode* class_declaration() {
     
     consume(TOKEN_LBRACE, "Expect '{' before class body.");
     while (!check(TOKEN_RBRACE) && !check(TOKEN_EOF)) {
+        const char* before = parser.current.start;
         // Check for static/abstract modifiers before func
         bool method_is_static = match_token(TOKEN_STATIC);
         bool method_is_abstract = match_token(TOKEN_ABSTRACT);
@@ -85,6 +86,7 @@ static ASTNode* class_declaration() {
                 add_child(node, method);
             }
             if (parser.panic_mode) synchronize();
+            if (!check(TOKEN_EOF) && !check(TOKEN_RBRACE) && parser.current.start == before) advance_token();
             continue;
         }
         
@@ -93,6 +95,13 @@ static ASTNode* class_declaration() {
             if (check(TOKEN_NEW)) {
                 advance_token(); // consume 'new'
                 ASTNode* ctor = create_node(AST_CONSTRUCTOR, parser.previous);
+                // Codegen hardcodes the receiver as the first constructor
+                // parameter, so the constructor has no explicit `self`
+                // parameter (unlike methods). Record the enclosing class on the
+                // node so the semantic analyzer can still bind `self` for the
+                // body, which is what `self.field` resolution depends on.
+                ctor->var_type = class_name_token;
+                ctor->is_pointer = true;
                 consume(TOKEN_LPAREN, "Expect '(' after 'new'.");
                 if (!check(TOKEN_RPAREN)) {
                     do {
@@ -195,6 +204,7 @@ static ASTNode* class_declaration() {
             if (decl) add_child(node, decl);
         }
         if (parser.panic_mode) synchronize();
+        if (!check(TOKEN_EOF) && !check(TOKEN_RBRACE) && parser.current.start == before) advance_token();
     }
     consume(TOKEN_RBRACE, "Expect '}' after class body.");
     return node;
@@ -205,10 +215,12 @@ static ASTNode* interface_declaration() {
     ASTNode* node = create_node(AST_INTERFACE_DECL, parser.previous);
     consume(TOKEN_LBRACE, "Expect '{' before interface body.");
     while (!check(TOKEN_RBRACE) && !check(TOKEN_EOF)) {
+        const char* before = parser.current.start;
         consume(TOKEN_FUNC, "Expect 'func' in interface body.");
         ASTNode* method = function_declaration(false);
         if (method) add_child(node, method);
         if (parser.panic_mode) synchronize();
+        if (!check(TOKEN_EOF) && !check(TOKEN_RBRACE) && parser.current.start == before) advance_token();
     }
     consume(TOKEN_RBRACE, "Expect '}' after interface body.");
     return node;
@@ -220,6 +232,7 @@ static ASTNode* trait_declaration() {
     ASTNode* node = create_node(AST_TRAIT_DECL, trait_name_token);
     consume(TOKEN_LBRACE, "Expect '{' before trait body.");
     while (!check(TOKEN_RBRACE) && !check(TOKEN_EOF)) {
+        const char* before = parser.current.start;
         consume(TOKEN_FUNC, "Expect 'func' in trait body.");
         ASTNode* method = function_declaration(true);
         if (method) {
@@ -241,6 +254,7 @@ static ASTNode* trait_declaration() {
             add_child(node, method);
         }
         if (parser.panic_mode) synchronize();
+        if (!check(TOKEN_EOF) && !check(TOKEN_RBRACE) && parser.current.start == before) advance_token();
     }
     consume(TOKEN_RBRACE, "Expect '}' after trait body.");
     return node;
@@ -251,9 +265,11 @@ static ASTNode* struct_declaration() {
     ASTNode* node = create_node(AST_STRUCT_DECL, parser.previous);
     consume(TOKEN_LBRACE, "Expect '{' before struct body.");
     while (!check(TOKEN_RBRACE) && !check(TOKEN_EOF)) {
+        const char* before = parser.current.start;
         ASTNode* decl = var_declaration(false);
         if (decl) add_child(node, decl);
         if (parser.panic_mode) synchronize();
+        if (!check(TOKEN_EOF) && !check(TOKEN_RBRACE) && parser.current.start == before) advance_token();
     }
     consume(TOKEN_RBRACE, "Expect '}' after struct body.");
     return node;

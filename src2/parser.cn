@@ -1,0 +1,194 @@
+// Self-hosting bootstrap: top-level parser driver and AST dumper (Milestone B).
+// Port of src/parser.c + AST serializer matching tools/astdump.c.
+//
+// Usage when compiled to executable (e.g., parser_selfhost.exe <file.cn>):
+//   1. Prints input file path
+//   2. Parses file with parse_program()
+//   3. Dumps AST tree (or !PARSE_ERROR on failure)
+
+// ---------------------------------------------------------------------------
+// String escaping helper matching tools/astdump.c
+//
+// The reference dumper escapes raw *bytes*: anything outside 32..126 becomes
+// \xNN, so a UTF-8 literal prints as its byte sequence. The lexer's escape()
+// already does exactly that, so reuse it rather than re-escaping by code
+// point, which would print the character itself.
+// ---------------------------------------------------------------------------
+func print_escaped_str(str s) {
+    print("\"")
+    print(escape(s))
+    print("\"")
+}
+
+func print_token_attr(str name, Token tok) {
+    print(" " + name + "=")
+    print_escaped_str(tok.text)
+}
+
+func print_indent(int depth) {
+    int i = 0
+    while i < depth {
+        print("  ")
+        i = i + 1
+    }
+}
+
+// ---------------------------------------------------------------------------
+// AST node printer matching tools/astdump.c output format:
+// <indent>[<slot> ]KIND@<line>:<col>[ token="..."][ var_type="..."]...
+// ---------------------------------------------------------------------------
+func print_ast_node(ASTNode? node, int depth, str slot) {
+    if node == null {
+        return
+    }
+    print_indent(depth)
+    if len(slot) > 0 {
+        print(slot + " ")
+    }
+    print(ast_kind_name(node.kind))
+    print("@" + to_str(node.token.line) + ":" + to_str(node.token.col))
+
+    // Token attributes
+    print_token_attr("token", node.token)
+    if node.var_type.kind != TOKEN_EOF {
+        print_token_attr("var_type", node.var_type)
+    }
+    if node.return_type.kind != TOKEN_EOF {
+        print_token_attr("return_type", node.return_type)
+    }
+
+    // Flags
+    str flags_str = ""
+    str sep = ""
+    if node.is_const { flags_str = flags_str + sep + "const"; sep = "," }
+    if node.is_array { flags_str = flags_str + sep + "array"; sep = "," }
+    if node.is_pointer { flags_str = flags_str + sep + "pointer"; sep = "," }
+    if node.is_class { flags_str = flags_str + sep + "class"; sep = "," }
+    if node.is_pointer_access { flags_str = flags_str + sep + "ptraccess"; sep = "," }
+    if node.is_union_type { flags_str = flags_str + sep + "union"; sep = "," }
+    if node.type_is_inferred { flags_str = flags_str + sep + "inferred"; sep = "," }
+    if node.is_variadic { flags_str = flags_str + sep + "variadic"; sep = "," }
+    if node.is_generator { flags_str = flags_str + sep + "generator"; sep = "," }
+    if node.is_tail_call_optimized { flags_str = flags_str + sep + "tailcall"; sep = "," }
+    if node.is_static { flags_str = flags_str + sep + "static"; sep = "," }
+    if node.is_abstract { flags_str = flags_str + sep + "abstract"; sep = "," }
+    if node.is_final { flags_str = flags_str + sep + "final"; sep = "," }
+
+    if len(flags_str) > 0 {
+        print(" flags=" + flags_str)
+    }
+
+    if len(node.type_name) > 0 {
+        print(" type_name=")
+        print_escaped_str(node.type_name)
+    }
+    if len(node.parent_name) > 0 {
+        print(" parent=")
+        print_escaped_str(node.parent_name)
+    }
+    if len(node.implements_names) > 0 {
+        print(" implements=")
+        print_escaped_str(node.implements_names)
+    }
+    if len(node.attribute_name) > 0 {
+        print(" attribute=")
+        print_escaped_str(node.attribute_name)
+    }
+    if node.named_arg_name.kind != TOKEN_EOF {
+        print_token_attr("named_arg", node.named_arg_name)
+    }
+    if node.operator_token.kind != TOKEN_EOF {
+        print_token_attr("operator", node.operator_token)
+    }
+    printin("")
+
+    // Children
+    int i = 0
+    while i < len(node.children) {
+        print_ast_node(node.children[i], depth + 1, "")
+        i = i + 1
+    }
+    i = 0
+    while i < len(node.type_params) {
+        print_ast_node(node.type_params[i], depth + 1, "type_param")
+        i = i + 1
+    }
+    i = 0
+    while i < len(node.type_args) {
+        print_ast_node(node.type_args[i], depth + 1, "type_arg")
+        i = i + 1
+    }
+
+    print_ast_node(node.left, depth + 1, "left")
+    print_ast_node(node.right, depth + 1, "right")
+    print_ast_node(node.condition, depth + 1, "condition")
+    print_ast_node(node.init, depth + 1, "init")
+    print_ast_node(node.increment, depth + 1, "increment")
+    print_ast_node(node.default_value, depth + 1, "default_value")
+}
+
+// ---------------------------------------------------------------------------
+// parse_program — top-level entry point (port of src/parser.c:parse_program)
+// ---------------------------------------------------------------------------
+func parse_program(str source): ASTNode? {
+    init_parser(source)
+
+    Token eof_tok = make_eof_token()
+    // The reference parser takes the program's token from parser.previous before
+    // anything has been scanned, so its column is still 0. The dump records that
+    // position, so it has to match exactly.
+    eof_tok.col = 0
+    var program = new ASTNode(AST_PROGRAM, eof_tok)
+
+    while !match_token(TOKEN_EOF) {
+        int before = g_parser.current.start_index
+        var decl = parse_declaration()
+        if decl != null {
+            int k = decl.kind
+            if k == AST_EXPR_STMT || k == AST_IF || k == AST_WHILE ||
+               k == AST_FOR || k == AST_FOR_IN || k == AST_SWITCH ||
+               k == AST_RETURN || k == AST_BREAK || k == AST_CONTINUE ||
+               k == AST_ASSIGN || k == AST_BLOCK || k == AST_TRY ||
+               k == AST_THROW || k == AST_MATCH || k == AST_ASSERT ||
+               k == AST_RESUME_EXPR || k == AST_AWAIT_EXPR || k == AST_RUN_ASYNC {
+                error_at_tok(decl.token, "Statements cannot appear at the top level.")
+            } else {
+                node_add_child(program, decl)
+            }
+        }
+        if g_parser.panic_mode {
+            synchronize()
+        }
+        if !check_token(TOKEN_EOF) && g_parser.current.start_index == before {
+            // parse_declaration() reported an error without consuming anything
+            // (and synchronize() can stop immediately when current is already a
+            // statement boundary), so looping would repeat the same error forever.
+            advance_token()
+        }
+    }
+
+    if g_parser.had_error {
+        return null
+    }
+    return program
+}
+
+// ---------------------------------------------------------------------------
+// Main program driver
+// ---------------------------------------------------------------------------
+main {
+    if sys_args_count() < 2 {
+        printin("Usage: parser_selfhost <file.cn>")
+    } else {
+        str file_path = sys_arg_at(1)
+        printin(file_path)
+
+        str source = read_file(file_path)
+        var program = parse_program(source)
+        if program == null {
+            printin("!PARSE_ERROR")
+        } else {
+            print_ast_node(program, 0, "")
+        }
+    }
+}

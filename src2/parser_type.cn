@@ -1,0 +1,245 @@
+// Self-hosting bootstrap: port of src/parser_type.c into Cnext (Milestone B).
+// Provides: parse_type, parse_type_union, is_generic_call_lookahead.
+// Note: is_name_token, consume_name, is_type are defined in parser_core.cn
+//       and must NOT be redefined here.
+// Depends on: src2/parser_types.cn, src2/parser_core.cn, src2/lexer.cn.
+
+// ---------------------------------------------------------------------------
+// parse_type — parse a single type expression and return its ASTNode.
+// Mirrors parser_type.c:parse_type().
+// Returns null on error.
+// ---------------------------------------------------------------------------
+func parse_type(): ASTNode? {
+    // Check for tuple type: (Type1, Type2, ...)
+    if match_token(TOKEN_LPAREN) {
+        var tuple_type = new ASTNode(AST_TUPLE, g_parser.previous)
+        while true {
+            var elem_type = parse_type()
+            if elem_type == null {
+                return null
+            }
+            node_add_child(tuple_type, elem_type)
+            if !match_token(TOKEN_COMMA) {
+                break
+            }
+        }
+        consume(TOKEN_RPAREN, "Expect ')' after tuple type.")
+        return tuple_type
+    }
+
+    // Check for Optional<T> type (identifier text match since optional is not a keyword)
+    if check_identifier_text("optional") || check_identifier_text("Optional") {
+        advance_token()
+        var opt_type = new ASTNode(AST_IDENTIFIER, g_parser.previous)
+        consume(TOKEN_LESS, "Expect '<' after 'Optional'.")
+        var inner_type = parse_type()
+        if inner_type == null {
+            return null
+        }
+        node_add_type_arg(opt_type, inner_type)
+        consume(TOKEN_GREATER, "Expect '>' after Optional type argument.")
+        return opt_type
+    }
+
+    // Check for Result<T, E> type (identifier text match since result is not a keyword)
+    if check_identifier_text("result") || check_identifier_text("Result") {
+        advance_token()
+        var res_type = new ASTNode(AST_IDENTIFIER, g_parser.previous)
+        consume(TOKEN_LESS, "Expect '<' after 'Result'.")
+        var ok_type = parse_type()
+        if ok_type == null {
+            return null
+        }
+        node_add_type_arg(res_type, ok_type)
+        consume(TOKEN_COMMA, "Expect ',' after Result ok type.")
+        var err_type = parse_type()
+        if err_type == null {
+            return null
+        }
+        node_add_type_arg(res_type, err_type)
+        consume(TOKEN_GREATER, "Expect '>' after Result type arguments.")
+        return res_type
+    }
+
+    // Check for iter<T> type
+    if check_token(TOKEN_ITER) {
+        advance_token()
+        var iter_type = new ASTNode(AST_IDENTIFIER, g_parser.previous)
+        consume(TOKEN_LESS, "Expect '<' after 'iter'.")
+        var elem_type = parse_type()
+        if elem_type == null {
+            return null
+        }
+        node_add_type_arg(iter_type, elem_type)
+        consume(TOKEN_GREATER, "Expect '>' after iter type argument.")
+        return iter_type
+    }
+
+    // Check for func type (opaque function pointer)
+    if check_token(TOKEN_FUNC) {
+        advance_token()
+        var node = new ASTNode(AST_IDENTIFIER, g_parser.previous)
+        return node
+    }
+
+    if is_type() {
+        advance_token()
+        Token typeToken = g_parser.previous
+        var node = new ASTNode(AST_IDENTIFIER, typeToken)
+
+        if match_token(TOKEN_LESS) {
+            // Generic type arguments: Type<A, B>
+            while true {
+                var arg = parse_type()
+                if arg == null {
+                    return null
+                }
+                node_add_type_arg(node, arg)
+                if !match_token(TOKEN_COMMA) {
+                    break
+                }
+            }
+            consume(TOKEN_GREATER, "Expect '>' after generic type arguments.")
+        }
+
+        if match_token(TOKEN_LBRACKET) {
+            consume(TOKEN_RBRACKET, "Expect ']' after '[' for array type.")
+            node.is_array = true
+        }
+
+        // Nullable type: str?, int?, etc.
+        if match_token(TOKEN_QUESTION) {
+            node.is_pointer = true  // Reuse is_pointer flag for nullable
+        }
+
+        // Handle union types: Type1 | Type2 | Type3
+        if match_token(TOKEN_PIPE) {
+            var union_node = new ASTNode(AST_UNION_TYPE, typeToken)
+            union_node.is_union_type = true
+            node_add_child(union_node, node)
+            while true {
+                var next_type = parse_type()
+                if next_type == null {
+                    return null
+                }
+                node_add_child(union_node, next_type)
+                if !match_token(TOKEN_PIPE) {
+                    break
+                }
+            }
+            return union_node
+        }
+
+        return node
+    }
+
+    error_at_current("Expect type.")
+    return null
+}
+
+// ---------------------------------------------------------------------------
+// parse_type_union — parse a type that may be a union (Type1 | Type2 | ...).
+// Mirrors parser_type.c:parse_type_union().
+// Returns null on error.
+// ---------------------------------------------------------------------------
+func parse_type_union(): ASTNode? {
+    var left = parse_type()
+    if left == null {
+        return null
+    }
+
+    // Handle union types: Type1 | Type2 | Type3
+    if match_token(TOKEN_PIPE) {
+        var union_node = new ASTNode(AST_UNION_TYPE, left.token)
+        union_node.is_union_type = true
+        node_add_child(union_node, left)
+        while true {
+            var next_type = parse_type()
+            if next_type == null {
+                return null
+            }
+            node_add_child(union_node, next_type)
+            if !match_token(TOKEN_PIPE) {
+                break
+            }
+        }
+        return union_node
+    }
+
+    return left
+}
+
+// ---------------------------------------------------------------------------
+// is_generic_call_lookahead — scan forward in the current token text to see
+// if `<TypeName[,TypeName]*>(` follows the identifier.
+// Mirrors parser_type.c:is_generic_call_lookahead().
+// ---------------------------------------------------------------------------
+func skip_space_forward(str src, int i): int {
+    int rlen = len(src)
+    while i < rlen {
+        str ch = str_substring(src, i, i + 1)
+        if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
+            break
+        }
+        i = i + 1
+    }
+    return i
+}
+
+func is_name_start_char(str ch): bool {
+    return (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || ch == "_"
+}
+
+func is_name_char(str ch): bool {
+    return is_name_start_char(ch) || (ch >= "0" && ch <= "9")
+}
+
+func is_generic_call_lookahead(): bool {
+    str src = g_parser_source
+    int rlen = len(src)
+    // The scan starts at the current token, which is the '<' itself.
+    int i = g_parser.current.start_index
+
+    i = skip_space_forward(src, i)
+    if i >= rlen || str_substring(src, i, i + 1) != "<" {
+        return false
+    }
+    i = i + 1
+
+    i = skip_space_forward(src, i)
+
+    // Must be a type name (alpha/underscore or built-in type keyword)
+    if i >= rlen { return false }
+    if !is_name_start_char(str_substring(src, i, i + 1)) {
+        return false
+    }
+    while i < rlen && is_name_char(str_substring(src, i, i + 1)) {
+        i = i + 1
+    }
+
+    i = skip_space_forward(src, i)
+
+    // Handle comma-separated type list
+    while i < rlen && str_substring(src, i, i + 1) == "," {
+        i = i + 1
+        i = skip_space_forward(src, i)
+        if i >= rlen { return false }
+        if !is_name_start_char(str_substring(src, i, i + 1)) {
+            return false
+        }
+        while i < rlen && is_name_char(str_substring(src, i, i + 1)) {
+            i = i + 1
+        }
+        i = skip_space_forward(src, i)
+    }
+
+    if i >= rlen || str_substring(src, i, i + 1) != ">" {
+        return false
+    }
+    i = i + 1
+
+    i = skip_space_forward(src, i)
+
+    // Must be followed by '(' for a function call
+    return i < rlen && str_substring(src, i, i + 1) == "("
+}

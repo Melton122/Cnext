@@ -1,0 +1,292 @@
+// Self-hosting bootstrap: AST node kind constants and the ASTNode/Token/Parser
+// data-structure definitions used by all parser modules in src2/.
+// Mirrors include/ast.h and include/parser_internal.h.
+
+// ---------------------------------------------------------------------------
+// AST node kind constants (values must match ASTNodeType enum in include/ast.h)
+// ---------------------------------------------------------------------------
+const int AST_PROGRAM          = 0
+const int AST_MAIN             = 1
+const int AST_BLOCK            = 2
+const int AST_VAR_DECL         = 3
+const int AST_FUNC_DECL        = 4
+const int AST_MACRO_DECL       = 5
+const int AST_CLASS_DECL       = 6
+const int AST_STRUCT_DECL      = 7
+const int AST_ENUM_DECL        = 8
+const int AST_EXPR_STMT        = 9
+const int AST_IF               = 10
+const int AST_WHILE            = 11
+const int AST_FOR              = 12
+const int AST_FOR_IN           = 13
+const int AST_SWITCH           = 14
+const int AST_CASE             = 15
+const int AST_DEFAULT          = 16
+const int AST_IMPORT           = 17
+const int AST_RETURN           = 18
+const int AST_ASSIGN           = 19
+const int AST_BINARY           = 20
+const int AST_UNARY            = 21
+const int AST_POSTFIX          = 22
+const int AST_CALL             = 23
+const int AST_IDENTIFIER       = 24
+const int AST_LITERAL          = 25
+const int AST_LITERAL_ARRAY    = 26
+const int AST_MEMBER_ACCESS    = 27
+const int AST_INDEX            = 28
+const int AST_SLICE            = 29
+const int AST_BREAK            = 30
+const int AST_CONTINUE         = 31
+const int AST_TRY              = 32
+const int AST_CATCH            = 33
+const int AST_THROW            = 34
+const int AST_INTERFACE_DECL   = 35
+const int AST_TRAIT_DECL       = 36
+const int AST_CONSTRUCTOR      = 37
+const int AST_NEW_EXPR         = 38
+const int AST_SUPER_EXPR       = 39
+const int AST_TYPEOF           = 40
+const int AST_MATCH            = 41
+const int AST_MATCH_ARM        = 42
+const int AST_LAMBDA           = 43
+const int AST_CAST             = 44
+const int AST_NULL_LITERAL     = 45
+const int AST_TEST             = 46
+const int AST_ASSERT           = 47
+const int AST_TYPE_PARAM       = 48
+const int AST_TUPLE            = 49
+const int AST_TUPLE_ACCESS     = 50
+const int AST_NAMED_ARG        = 51
+const int AST_VARIADIC         = 52
+const int AST_OPERATOR_DECL    = 53
+const int AST_EXTEND_DECL      = 54
+const int AST_DESTRUCTURE      = 55
+const int AST_OPTION_SOME      = 56
+const int AST_OPTION_NONE      = 57
+const int AST_RESULT_OK        = 58
+const int AST_RESULT_ERR       = 59
+const int AST_NULL_COALESCE    = 60
+const int AST_TERNARY          = 61
+const int AST_SAFE_ACCESS      = 62
+const int AST_YIELD            = 63
+const int AST_COROUTINE_DECL   = 64
+const int AST_RESUME_EXPR      = 65
+const int AST_ASYNC_FUNC_DECL  = 66
+const int AST_AWAIT_EXPR       = 67
+const int AST_RUN_ASYNC        = 68
+const int AST_ATTRIBUTE        = 69
+const int AST_CONSTEXPR_DECL   = 70
+const int AST_MACRO_INVOCATION = 71
+const int AST_GUARD            = 72
+const int AST_EXTERN_DECL      = 73
+const int AST_BENCH_DECL       = 74
+const int AST_OWN_EXPR         = 75
+const int AST_TYPE_ALIAS       = 76
+const int AST_DEFER            = 77
+const int AST_RANGE            = 78
+const int AST_UNION_TYPE       = 79
+const int AST_STATIC_METHOD    = 80
+const int AST_ABSTRACT_METHOD  = 81
+const int AST_VARIANT          = 82
+const int AST_TRY_EXPR         = 83
+const int AST_RANGE_INCLUSIVE  = 84
+const int AST_WHEN             = 85
+const int AST_WHEN_ARM         = 86
+
+// Kind-name table (index == AST_xxx constant, matches tools/astdump.c)
+func ast_kind_name(int kind): str {
+    str[] names = {
+        "PROGRAM", "MAIN", "BLOCK", "VAR_DECL", "FUNC_DECL", "MACRO_DECL",
+        "CLASS_DECL", "STRUCT_DECL", "ENUM_DECL", "EXPR_STMT", "IF", "WHILE",
+        "FOR", "FOR_IN", "SWITCH", "CASE", "DEFAULT", "IMPORT", "RETURN",
+        "ASSIGN", "BINARY", "UNARY", "POSTFIX", "CALL", "IDENTIFIER", "LITERAL",
+        "LITERAL_ARRAY", "MEMBER_ACCESS", "INDEX", "SLICE", "BREAK", "CONTINUE",
+        "TRY", "CATCH", "THROW", "INTERFACE_DECL", "TRAIT_DECL", "CONSTRUCTOR",
+        "NEW_EXPR", "SUPER_EXPR", "TYPEOF", "MATCH", "MATCH_ARM", "LAMBDA",
+        "CAST", "NULL_LITERAL", "TEST", "ASSERT", "TYPE_PARAM", "TUPLE",
+        "TUPLE_ACCESS", "NAMED_ARG", "VARIADIC", "OPERATOR_DECL", "EXTEND_DECL",
+        "DESTRUCTURE", "OPTION_SOME", "OPTION_NONE", "RESULT_OK", "RESULT_ERR",
+        "NULL_COALESCE", "TERNARY", "SAFE_ACCESS", "YIELD", "COROUTINE_DECL",
+        "RESUME_EXPR", "ASYNC_FUNC_DECL", "AWAIT_EXPR", "RUN_ASYNC", "ATTRIBUTE",
+        "CONSTEXPR_DECL", "MACRO_INVOCATION", "GUARD", "EXTERN_DECL", "BENCH_DECL",
+        "OWN_EXPR", "TYPE_ALIAS", "DEFER", "RANGE", "UNION_TYPE", "STATIC_METHOD",
+        "ABSTRACT_METHOD", "VARIANT", "TRY_EXPR", "RANGE_INCLUSIVE", "WHEN",
+        "WHEN_ARM"
+    }
+    if kind >= 0 && kind < len(names) {
+        return names[kind]
+    }
+    return "UNKNOWN"
+}
+
+// ---------------------------------------------------------------------------
+// Token — struct type passed by value in C.
+// ---------------------------------------------------------------------------
+struct Token {
+    int kind      // TOKEN_xxx constant
+    str text      // Source text of token
+    int line
+    int col
+    int start_index // Offset of the token's first character in the source
+}
+
+func make_token(int k, str t, int ln, int c): Token {
+    Token tok
+    tok.kind = k
+    tok.text = t
+    tok.line = ln
+    tok.col  = c
+    tok.start_index = 0
+    return tok
+}
+
+func make_eof_token(): Token {
+    Token tok
+    tok.kind = 0
+    tok.text = ""
+    tok.line = 1
+    tok.col  = 1
+    tok.start_index = 0
+    return tok
+}
+
+// A token that carries nothing but its kind. The C parser sets `.type` on a
+// zero-initialized token in a few places, which leaves the text and position
+// empty; the AST dump prints that as var_type="".
+func make_kind_token(int k): Token {
+    return make_token(k, "", 0, 0)
+}
+
+// ---------------------------------------------------------------------------
+// ASTNode — mirrors C ASTNode struct.
+// ---------------------------------------------------------------------------
+class ASTNode {
+    int kind               // AST_xxx constant
+
+    // Primary token
+    Token token
+
+    // Declared type
+    Token var_type
+    // Return type
+    Token return_type
+    // Resolved expression type
+    int expr_type
+
+    // Boolean flags
+    bool is_const
+    bool is_array
+    bool is_pointer         // nullable (str?)
+    bool is_class
+    bool is_pointer_access
+    bool is_union_type
+    bool type_is_inferred
+    bool is_variadic
+    bool is_generator
+    bool is_tail_call_optimized
+    bool is_static
+    bool is_abstract
+    bool is_final
+
+    // Metadata
+    str type_name
+    str parent_name
+    str implements_names
+    str attribute_name
+
+    Token named_arg_name
+    Token operator_token
+
+    // Child lists
+    ASTNode[] children
+    ASTNode[] type_params
+    ASTNode[] type_args
+
+    // Structural slots
+    ASTNode? left
+    ASTNode? right
+    ASTNode? condition
+    ASTNode? init
+    ASTNode? increment
+    ASTNode? default_value
+
+    func new(int k, Token tok) {
+        self.kind           = k
+        self.token          = tok
+        self.var_type       = make_eof_token()
+        self.return_type    = make_eof_token()
+        self.expr_type      = 0
+        self.is_const       = false
+        self.is_array       = false
+        self.is_pointer     = false
+        self.is_class       = false
+        self.is_pointer_access = false
+        self.is_union_type  = false
+        self.type_is_inferred = false
+        self.is_variadic    = false
+        self.is_generator   = false
+        self.is_tail_call_optimized = false
+        self.is_static      = false
+        self.is_abstract    = false
+        self.is_final       = false
+        self.type_name      = ""
+        self.parent_name    = ""
+        self.implements_names = ""
+        self.attribute_name = ""
+        self.named_arg_name = make_eof_token()
+        self.operator_token = make_eof_token()
+        self.children       = {}
+        self.type_params    = {}
+        self.type_args      = {}
+        self.left           = null
+        self.right          = null
+        self.condition      = null
+        self.init           = null
+        self.increment      = null
+        self.default_value  = null
+    }
+}
+
+func node_add_child(ASTNode parent, ASTNode child) {
+    push(parent.children, child)
+}
+
+func node_add_type_param(ASTNode parent, ASTNode param) {
+    push(parent.type_params, param)
+}
+
+func node_add_type_arg(ASTNode parent, ASTNode arg) {
+    push(parent.type_args, arg)
+}
+
+// ---------------------------------------------------------------------------
+// ParserState
+// ---------------------------------------------------------------------------
+class ParserState {
+    Token current
+    Token previous
+    bool had_error
+    bool panic_mode
+
+    func new() {
+        self.current    = make_eof_token()
+        self.previous   = make_eof_token()
+        self.had_error  = false
+        self.panic_mode = false
+    }
+}
+
+// ---------------------------------------------------------------------------
+// MacroEntry
+// ---------------------------------------------------------------------------
+class MacroEntry {
+    str       name
+    ASTNode   decl
+    MacroEntry? next
+
+    func new(str n, ASTNode d) {
+        self.name = n
+        self.decl = d
+        self.next = null
+    }
+}

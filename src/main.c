@@ -479,7 +479,15 @@ static int run_tests(int argc, char** argv) {
         int expect_count = parse_expect_lines(input_path, expects, MAX_EXPECT_LINES);
         char captured[65536];
         const char* run_argv[] = { output_path, NULL };
-        int run_status = run_process_captured(output_path, run_argv, captured, sizeof(captured));
+        // A test that reads input says what it reads with `// STDIN:` lines.
+        char stdin_data[16384];
+        size_t stdin_len = parse_stdin_lines(input_path, stdin_data, sizeof(stdin_data));
+        int run_status;
+        if (stdin_len > 0) {
+            run_status = run_process_with_stdin(output_path, run_argv, captured, sizeof(captured), stdin_data);
+        } else {
+            run_status = run_process_captured(output_path, run_argv, captured, sizeof(captured));
+        }
         remove(output_path);
 
         bool ok = expect_count > 0

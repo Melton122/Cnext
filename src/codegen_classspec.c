@@ -60,7 +60,7 @@ void generate_generic_class_specialization(ASTNode* class_decl, const char* mang
     for (int i = 0; i < class_decl->child_count; i++) {
         if (class_decl->children[i]->type == AST_VAR_DECL) {
             write_indent();
-            generate_type(class_decl->children[i]->var_type, false);
+            generate_node_type(class_decl->children[i], false);
             fprintf(out, " %.*s;\n", class_decl->children[i]->token.length, class_decl->children[i]->token.start);
         }
     }
@@ -71,14 +71,29 @@ void generate_generic_class_specialization(ASTNode* class_decl, const char* mang
         if (class_decl->children[i]->type == AST_CONSTRUCTOR) {
             fprintf(out, "void %s_new(%s* self", mangled_name, mangled_name);
             for (int j = 0; j < class_decl->children[i]->child_count; j++) {
+                ASTNode* param = class_decl->children[i]->children[j];
                 fprintf(out, ", ");
-                generate_type(class_decl->children[i]->children[j]->var_type, false);
-                fprintf(out, " %.*s", class_decl->children[i]->children[j]->token.length,
-                    class_decl->children[i]->children[j]->token.start);
+                // Matches generate_node's constructor emission: a class-typed
+                // parameter is a pointer.
+                generate_node_type(param, param->is_pointer);
+                fprintf(out, " %.*s", param->token.length,
+                    param->token.start);
             }
             fprintf(out, ") ");
             generate_block(class_decl->children[i]->left);
             fprintf(out, "\n");
+        }
+    }
+    // A specialization of a class with no constructor still needs the entry
+    // point that `new Klass<...>()` calls. See the equivalent case in
+    // generate_node().
+    {
+        bool has_ctor = false;
+        for (int i = 0; i < class_decl->child_count; i++) {
+            if (class_decl->children[i]->type == AST_CONSTRUCTOR) { has_ctor = true; break; }
+        }
+        if (!has_ctor) {
+            fprintf(out, "void %s_new(%s* self) { (void)self; }\n\n", mangled_name, mangled_name);
         }
     }
 
@@ -131,7 +146,7 @@ void generate_generic_class_specialization(ASTNode* class_decl, const char* mang
                     fprintf(out, "%s* self", mangled_name);
                 } else {
                     bool param_is_class = (op->children[j]->var_type.type == TOKEN_IDENTIFIER);
-                    generate_type(op->children[j]->var_type, param_is_class);
+                    generate_node_type(op->children[j], param_is_class);
                     fprintf(out, " %.*s", op->children[j]->token.length, op->children[j]->token.start);
                 }
             }

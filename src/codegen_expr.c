@@ -171,6 +171,11 @@ static const struct {
     {NULL, NULL}
 };
 
+static bool is_null_comparison(ASTNode* node) {
+    return (node->left && node->left->type == AST_NULL_LITERAL) ||
+           (node->right && node->right->type == AST_NULL_LITERAL);
+}
+
 static void gen_with_parens(ASTNode* child, CnextTokenType parent_op, bool is_right) {
     if (child && child->type == AST_BINARY && needs_parens(parent_op, child->token.type, is_right)) {
         fprintf(out, "(");
@@ -269,6 +274,52 @@ static void gen_lambda_expr(ASTNode* node) {
         fprintf(out, "(void*)_lambda_%d", lambda_id);
         free_captures(captures);
     }
+}
+
+/* --- Reads ---
+   `input()` reads text unless its destination says otherwise, so the reader
+   is chosen from the type the semantic analyzer gave the call. */
+static const char* input_reader_for_type(CnextTokenType type) {
+    switch (type) {
+        case TOKEN_INT_TYPE: return "cnext_input_int";
+        case TOKEN_UINT_TYPE: return "cnext_input_uint";
+        case TOKEN_LONG_TYPE: return "cnext_input_long";
+        case TOKEN_ULONG_TYPE: return "cnext_input_ulong";
+        case TOKEN_FLOAT_TYPE: return "cnext_input_float";
+        case TOKEN_DOUBLE_TYPE: return "cnext_input_double";
+        case TOKEN_BOOL_TYPE: return "cnext_input_bool";
+        case TOKEN_CHAR_TYPE: return "cnext_input_char";
+        case TOKEN_BYTE_TYPE: return "cnext_input_byte";
+        case TOKEN_USHORT_TYPE: return "cnext_input_ushort";
+        case TOKEN_UBYTE_TYPE: return "cnext_input_ubyte";
+        default: return "cnext_input";
+    }
+}
+
+/* The explicitly typed readers. Each names its own type, so it needs no
+   destination context: `input_int()` reads an integer wherever it stands. */
+static const char* explicit_input_reader(Token token) {
+    static const struct { const char* name; int len; const char* reader; } readers[] = {
+        {"input_int", 9, "cnext_input_int"},
+        {"input_uint", 10, "cnext_input_uint"},
+        {"input_long", 10, "cnext_input_long"},
+        {"input_ulong", 11, "cnext_input_ulong"},
+        {"input_float", 11, "cnext_input_float"},
+        {"input_double", 12, "cnext_input_double"},
+        {"input_bool", 10, "cnext_input_bool"},
+        {"input_char", 10, "cnext_input_char"},
+        {"input_byte", 10, "cnext_input_byte"},
+        {"input_ushort", 12, "cnext_input_ushort"},
+        {"input_ubyte", 11, "cnext_input_ubyte"},
+        {NULL, 0, NULL}
+    };
+    for (int i = 0; readers[i].name; i++) {
+        if (token.length == readers[i].len &&
+            strncmp(token.start, readers[i].name, readers[i].len) == 0) {
+            return readers[i].reader;
+        }
+    }
+    return NULL;
 }
 
 static void generate_call_expr(ASTNode* node) {
@@ -451,6 +502,7 @@ static void generate_call_expr(ASTNode* node) {
         bool is_printin = (node->left->token.length == 7 && strncmp(node->left->token.start, "printin", 7) == 0);
         bool is_print = (node->left->token.length == 5 && strncmp(node->left->token.start, "print", 5) == 0);
         bool is_input = (node->left->token.length == 5 && strncmp(node->left->token.start, "input", 5) == 0);
+        bool is_input_key = (node->left->token.length == 9 && strncmp(node->left->token.start, "input_key", 9) == 0);
         bool is_free = (node->left->token.length == 4 && strncmp(node->left->token.start, "free", 4) == 0);
         bool is_len = (node->left->token.length == 3 && strncmp(node->left->token.start, "len", 3) == 0);
         bool is_is_null = (node->left->token.length == 7 && strncmp(node->left->token.start, "is_null", 7) == 0);
@@ -464,8 +516,21 @@ static void generate_call_expr(ASTNode* node) {
         bool is_exit = (node->left->token.length == 4 && strncmp(node->left->token.start, "exit", 4) == 0);
         bool is_assert = (node->left->token.length == 6 && strncmp(node->left->token.start, "assert", 6) == 0);
         bool is_typeof = (node->left->token.length == 6 && strncmp(node->left->token.start, "typeof", 6) == 0);
+        bool is_push = (node->left->token.length == 4 && strncmp(node->left->token.start, "push", 4) == 0);
 
-        if (is_printin) {
+        if (is_push) {
+            // push(arr, value) grows the array in place. The macro yields the
+            // updated struct, so it is assigned back to the array lvalue, which
+            // works for locals, fields and indexed elements alike.
+            if (node->child_count >= 2) {
+                generate_expression(node->children[0]);
+                fprintf(out, " = CNEXT_ARRAY_PUSH(");
+                generate_expression(node->children[0]);
+                fprintf(out, ", ");
+                generate_expression(node->children[1]);
+                fprintf(out, ")");
+            }
+        } else if (is_printin) {
             if (node->child_count > 1) {
                 for (int pi = 0; pi < node->child_count - 1; pi++) {
                     fprintf(out, "print_raw(");
@@ -493,9 +558,22 @@ static void generate_call_expr(ASTNode* node) {
                 if (node->child_count > 0) generate_expression(node->children[0]);
                 fprintf(out, ")");
             }
+        } else if (is_input_key) {
+            fprintf(out, "cnext_input_key()");
         } else if (is_input) {
-            fprintf(out, "cnext_input(");
+            // A typed destination annotates input() during semantic analysis.
+            // Unannotated input() remains the string form.
+            const char* input_fn = input_reader_for_type(node->expr_type);
+            fprintf(out, "%s(", input_fn);
             if (node->child_count > 0) generate_expression(node->children[0]);
+            else fprintf(out, "(CnextString){NULL, 0}");
+            fprintf(out, ")");
+        } else if (explicit_input_reader(node->left->token)) {
+            // `input_int()` and friends name their own type, so they need no
+            // destination context.
+            fprintf(out, "%s(", explicit_input_reader(node->left->token));
+            if (node->child_count > 0) generate_expression(node->children[0]);
+            else fprintf(out, "(CnextString){NULL, 0}");
             fprintf(out, ")");
         } else if (is_free) {
             fprintf(out, "cnext_free(");
@@ -845,11 +923,23 @@ void generate_expression(ASTNode* node) {
             fprintf(out, "._%.*s", node->token.length, node->token.start);
             break;
         case AST_INDEX:
-            fprintf(out, "CNEXT_ARRAY_IDX(");
-            generate_expression(node->left);
-            fprintf(out, ", ");
-            generate_expression(node->right);
-            fprintf(out, ")");
+            if (node->is_class && node->type_name) {
+                // Object array: the element is a reference, so fetch it and cast
+                // back to its concrete type for any following member access.
+                // Fully parenthesized so a trailing '->field' binds to the cast
+                // rather than to the untyped element.
+                fprintf(out, "((%s*)CNEXT_ARRAY_IDX_OBJ(", node->type_name);
+                generate_expression(node->left);
+                fprintf(out, ", ");
+                generate_expression(node->right);
+                fprintf(out, "))");
+            } else {
+                fprintf(out, "CNEXT_ARRAY_IDX(");
+                generate_expression(node->left);
+                fprintf(out, ", ");
+                generate_expression(node->right);
+                fprintf(out, ")");
+            }
             break;
         case AST_SLICE:
             fprintf(out, "CNEXT_SLICE(");
@@ -890,13 +980,29 @@ void generate_expression(ASTNode* node) {
                 fprintf(out, ", ");
                 generate_expression(node->right);
                 fprintf(out, ")");
+            } else if ((node->token.type == TOKEN_LESS || node->token.type == TOKEN_LESS_EQ ||
+                        node->token.type == TOKEN_GREATER || node->token.type == TOKEN_GREATER_EQ) &&
+                       ((node->left && node->left->expr_type == TOKEN_STR_TYPE) ||
+                        (node->right && node->right->expr_type == TOKEN_STR_TYPE))) {
+                // Strings are structs, so `<` and friends have no C meaning for
+                // them; route to the ordering helpers in the runtime.
+                const char* fn = "cnext_str_lt";
+                if (node->token.type == TOKEN_LESS_EQ) fn = "cnext_str_le";
+                else if (node->token.type == TOKEN_GREATER) fn = "cnext_str_gt";
+                else if (node->token.type == TOKEN_GREATER_EQ) fn = "cnext_str_ge";
+                fprintf(out, "%s(", fn);
+                generate_expression(node->left);
+                fprintf(out, ", ");
+                generate_expression(node->right);
+                fprintf(out, ")");
             } else if (node->expr_type == TOKEN_STR_TYPE && node->token.type == TOKEN_PLUS) {
                 fprintf(out, "cnext_concat(cnext_to_string(");
                 generate_expression(node->left);
                 fprintf(out, "), cnext_to_string(");
                 generate_expression(node->right);
                 fprintf(out, "))");
-            } else if (node->left && node->left->type_name && node->left->type_name[0] != '\0') {
+            } else if (node->left && node->left->type_name && node->left->type_name[0] != '\0' &&
+                       !is_null_comparison(node)) {
                 Token subst_type;
                 bool subst_array;
                 char resolved_name[256] = {0};
@@ -950,9 +1056,14 @@ void generate_expression(ASTNode* node) {
             }
             break;
         case AST_ASSIGN:
+            if (emit_object_array_element_assignment(node)) break;
             generate_expression(node->left);
             fprintf(out, " %.*s ", node->token.length, node->token.start);
-            generate_expression(node->right);
+            if (is_array_literal_assignment(node)) {
+                generate_array_literal_assignment(node->right);
+            } else {
+                generate_expression(node->right);
+            }
             break;
         case AST_NEW_EXPR: {
             const char* cname = NULL;
@@ -984,6 +1095,13 @@ void generate_expression(ASTNode* node) {
             }
             fprintf(out, "({ %.*s* _obj; if (_cnext_cur_arena) { _obj = (%.*s*)cnext_arena_alloc(_cnext_cur_arena, sizeof(%.*s)); } else { _obj = (%.*s*)malloc(sizeof(%.*s)); if (!_obj) { fprintf(stderr, \"Cnext runtime: out of memory.\\n\"); exit(70); } _cnext_track(_obj); } ",
                 cname_len, cname, cname_len, cname, cname_len, cname, cname_len, cname, cname_len, cname);
+            // Fields have no initializers (see ERR_SEM_FIELD_INIT), so a field is
+            // only ever assigned from the constructor. Zero the instance first so
+            // that a constructor which does not assign every field still leaves a
+            // defined value behind. This matters most for array fields: an
+            // uninitialized CnextArrayObj holds a garbage data pointer, so
+            // reading .length or calling push on it is undefined behaviour.
+            fprintf(out, "memset(_obj, 0, sizeof(%.*s)); ", cname_len, cname);
             fprintf(out, "%.*s_new(_obj", cname_len, cname);
             for (int i = 0; i < node->child_count; i++) {
                 fprintf(out, ", ");

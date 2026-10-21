@@ -80,7 +80,7 @@ static bool http_get(const char* url, char** out_body, long* out_status, long* o
 
     // Use argument array instead of shell command (no shell injection)
     char stdout_buf[64] = "";
-    const char* const curl_args[] = {"curl", "-s", "-w", "%{http_code}", "-o", tmpfile_path, url, NULL};
+    const char* const curl_args[] = {"curl", "-s", "-w", "%{http_code}", "-o", tmpfile_path, "--", url, NULL};
     run_process_captured("curl", curl_args, stdout_buf, sizeof(stdout_buf));
 
     *out_status = atol(stdout_buf);
@@ -128,7 +128,7 @@ static bool http_post(const char* url, const char* body, const char* token, long
     }
 
     // Build curl args array (no shell interpretation)
-    const char* curl_args[16];
+    const char* curl_args[17];
     int argc = 0;
     curl_args[argc++] = "curl";
     curl_args[argc++] = "-s";
@@ -151,6 +151,7 @@ static bool http_post(const char* url, const char* body, const char* token, long
         snprintf(data_arg, sizeof(data_arg), "-d@%s", body_tmpfile);
         curl_args[argc++] = data_arg;
     }
+    curl_args[argc++] = "--";
     curl_args[argc++] = url;
     curl_args[argc] = NULL;
 

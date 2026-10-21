@@ -51,6 +51,7 @@ bool dirname_from_path(const char* path, char* buffer, size_t buffer_size);
 bool build_include_path(const char* argv0, char* include_path, size_t include_path_size);
 int run_process(const char* program, const char* const args[]);
 int run_process_captured(const char* program, const char* const args[], char* output_buf, size_t output_buf_size);
+int run_process_with_stdin(const char* program, const char* const args[], char* output_buf, size_t output_buf_size, const char* stdin_data);
 const char* executable_command(const char* output_exe, char* buffer, size_t buffer_size);
 int make_dir(const char* path);
 int join_path(char* out, size_t out_size, const char* base, const char* name);
@@ -64,6 +65,9 @@ typedef struct {
 } ExpectedLine;
 
 int parse_expect_lines(const char* source_path, ExpectedLine* out, int max);
+/* Collect the `// STDIN: ...` lines of a test file into a block of text that
+   is fed to the program under test. Returns the number of bytes written. */
+size_t parse_stdin_lines(const char* source_path, char* out, size_t out_size);
 
 /* --- Package Manager (main_packages.c) --- */
 bool is_standard_module(const char* name);

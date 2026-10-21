@@ -1,0 +1,47 @@
+// The explicitly typed readers name their own type, so they read that type
+// wherever they stand, with or without a destination.
+// EXPECT: 42
+// EXPECT: 1.500000
+// EXPECT: 2.500000
+// EXPECT: true
+// EXPECT: 99
+// EXPECT: 7
+// EXPECT: 8
+// EXPECT: 5
+// EXPECT: 6.500000
+// EXPECT: 0
+main {
+    var n = input_int()
+    printin(n)
+    var f = input_float()
+    printin(f)
+    var d = input_double()
+    printin(d)
+    var b = input_bool()
+    printin(b)
+    var l = input_long()
+    printin(l)
+    var u = input_uint()
+    printin(u)
+    var c = input_char()
+    printin(c)
+
+    // A prompt is optional.
+    printin(input_int("give me a number: "))
+    printin(input_float("and a float: "))
+
+    // A line that is not a number reads as zero rather than failing.
+    var bad: int = input_int()
+    printin(bad)
+}
+
+// STDIN: 42
+// STDIN: 1.5
+// STDIN: 2.5
+// STDIN: true
+// STDIN: 99
+// STDIN: 7
+// STDIN: 8
+// STDIN: 5
+// STDIN: 6.5
+// STDIN: not a number

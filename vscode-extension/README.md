@@ -20,14 +20,14 @@ Syntax highlighting, snippets, linting, formatting, and build tasks for the Cnex
    cd vscode-extension
    npm install -g @vscode/vsce
    vsce package
-   code --install-extension cnext-10.0.2.vsix
+   code --install-extension cnext-10.0.4.vsix
    ```
 
 ### Option 2: Manual Installation
 
 1. Copy this `vscode-extension/` folder to your extensions directory:
-   - **Windows:** `%USERPROFILE%\.vscode\extensions\cnext-10.0.2`
-   - **macOS/Linux:** `~/.vscode/extensions/cnext-10.0.0`
+   - **Windows:** `%USERPROFILE%\.vscode\extensions\cnext-10.0.4`
+   - **macOS/Linux:** `~/.vscode/extensions/cnext-10.0.4`
 2. Restart VS Code
 
 ### Option 3: From Marketplace
@@ -37,6 +37,7 @@ Search for "Cnext" in the VS Code Extensions panel (Ctrl+Shift+X).
 ## Features
 
 - **Syntax Highlighting** — Full syntax highlighting for all Cnext language features (keywords, types, builtins, string interpolation, doc comments)
+- **Typed Input Support** — Highlights `input()` and typed declarations such as `var count: int = input()`
 - **Code Snippets** — 25+ snippets for common patterns (classes, functions, closures, etc.)
 - **IntelliSense (LSP)** — Real-time diagnostics, autocomplete, hover docs, and go-to-definition via the bundled language server
 - **Format** — Format on save or with `Shift+Alt+F` (LSP for in-place edits, compiler fallback)

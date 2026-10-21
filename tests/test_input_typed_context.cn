@@ -1,0 +1,120 @@
+// A typed read takes its type from the context it appears in: the declared
+// type of a variable, the type of a field or array element it is assigned
+// to, the parameter type of a call it is passed to, or the return type of the
+// function it is returned from.
+func ask_int(): int {
+    return input()
+}
+
+func ask_int_prompted(): int {
+    return input("number: ")
+}
+
+func takes_int(int x): int { return x }
+func takes_float(float x): float { return x }
+func takes_double(double x): double { return x }
+func takes_bool(bool x): bool { return x }
+func takes_long(long x): long { return x }
+
+class Reader {
+    int count
+    float ratio
+
+    func read_count(): int {
+        self.count = input()
+        return self.count
+    }
+}
+
+// EXPECT: 42
+// EXPECT: 1.500000
+// EXPECT: 2.250000
+// EXPECT: true
+// EXPECT: 100
+// EXPECT: 9
+// EXPECT: 7
+// EXPECT: 1
+// EXPECT: 2
+// EXPECT: 3
+// EXPECT: 4.500000
+// EXPECT: 6.500000
+// EXPECT: false
+// EXPECT: 77
+// EXPECT: 55
+// EXPECT: 66
+// EXPECT: 8
+// EXPECT: 1.500000
+// EXPECT: 3
+main {
+    // A declared type selects the reader.
+    var n: int = input()
+    printin(n)
+    var f: float = input()
+    printin(f)
+    var d: double = input()
+    printin(d)
+    var b: bool = input()
+    printin(b)
+    var l: long = input()
+    printin(l)
+    var u: uint = input()
+    printin(u)
+    var c: char = input()
+    printin(c)
+
+    // Without a declared type the read is text.
+    var text = input()
+    printin(len(text))
+
+    // A return type selects the reader.
+    printin(ask_int())
+    printin(ask_int_prompted())
+
+    // A parameter type selects the reader.
+    printin(takes_int(input()))
+    printin(takes_float(input()))
+    printin(takes_double(input()))
+    printin(takes_bool(input()))
+    printin(takes_long(input()))
+
+    // An assignment to an already typed variable selects the reader.
+    var total: int = 0
+    total = input()
+    printin(total)
+
+    // An array element's type selects the reader.
+    var numbers: int[] = {0, 0}
+    numbers[0] = input()
+    printin(numbers[0])
+
+    // A field's type selects the reader.
+    var reader = new Reader()
+    printin(reader.read_count())
+    reader.ratio = input()
+    printin(reader.ratio)
+
+    // A read inside an expression is typed by the destination.
+    var sum: int = input() + 1
+    printin(sum)
+}
+
+// STDIN: 42
+// STDIN: 1.5
+// STDIN: 2.25
+// STDIN: true
+// STDIN: 100
+// STDIN: 9
+// STDIN: 7
+// STDIN: hello
+// STDIN: 1
+// STDIN: 2
+// STDIN: 3
+// STDIN: 4.5
+// STDIN: 6.5
+// STDIN: false
+// STDIN: 77
+// STDIN: 55
+// STDIN: 66
+// STDIN: 8
+// STDIN: 1.5
+// STDIN: 2

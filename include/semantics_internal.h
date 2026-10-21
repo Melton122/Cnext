@@ -32,6 +32,7 @@ extern bool has_semantic_error;
 extern int loop_depth;
 extern int switch_depth;
 extern int generator_depth;
+extern CnextTokenType sem_current_return_type;
 
 /* --- Core Functions (semantics_scope.c) --- */
 char* copy_cstring(const char* value);
@@ -66,10 +67,14 @@ void predeclare_global(ASTNode* node);
 /* --- Statement Analysis (semantics_analyze.c) --- */
 void analyze_function(ASTNode* node, bool define_name);
 void analyze_assignment(ASTNode* node);
+ASTNode* resolve_field_decl(ASTNode* access);
 void analyze_postfix(ASTNode* node);
 void analyze_node(ASTNode* node);
 
 /* --- Expression Analysis (semantics_expr.c) --- */
 CnextTokenType analyze_expression(ASTNode* node);
+/* Give a context-sensitive read such as `input()` the type its surroundings
+   ask for. Returns true when a read was found and typed. */
+bool sem_apply_expected_type(ASTNode* expr, CnextTokenType expected);
 
 #endif /* SEMANTICS_INTERNAL_H */

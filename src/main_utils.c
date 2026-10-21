@@ -297,6 +297,70 @@ int parse_expect_lines(const char* source_path, ExpectedLine* out, int max) {
     return count;
 }
 
+/* Collect the `// STDIN: ...` lines of a test file. Each line becomes one
+   line of input for the program under test, so a test that reads typed input
+   can say what it reads. */
+size_t parse_stdin_lines(const char* source_path, char* out, size_t out_size) {
+    if (out_size == 0) return 0;
+    out[0] = '\0';
+    FILE* f = fopen(source_path, "r");
+    if (!f) return 0;
+
+    size_t total = 0;
+    char line[4096];
+    while (fgets(line, sizeof(line), f)) {
+        const char* prefix = "// STDIN:";
+        size_t prefix_len = strlen(prefix);
+        if (strncmp(line, prefix, prefix_len) == 0) {
+            const char* text = line + prefix_len;
+            /* One optional space separates the marker from the text, so an
+               empty marker line is an empty line of input. */
+            if (*text == ' ') text++;
+            size_t len = strlen(text);
+            while (len > 0 && (text[len - 1] == '\n' || text[len - 1] == '\r')) len--;
+            if (total + len + 1 >= out_size) break;
+            memcpy(out + total, text, len);
+            total += len;
+            out[total++] = '\n';
+            out[total] = '\0';
+        }
+    }
+    fclose(f);
+    return total;
+}
+
+/* Append arg to dst as a single CommandLineToArgvW-quoted token, starting the
+   token with a leading double quote (argv entries are space separated) and
+   returning the new write position. Quoting rule: runs of backslashes are
+   doubled, and a run immediately before a literal '"' gains one extra so the
+   quote survives as data instead of closing the token. */
+static size_t append_quoted_arg(char* dst, size_t cap, size_t pos, const char* arg) {
+    if (pos < cap - 1) dst[pos++] = '"';
+    if (!*arg) {
+        if (pos < cap - 1) dst[pos++] = '"';
+        return pos;
+    }
+    int slashes = 0;
+    for (const char* p = arg; *p; p++) {
+        if (*p == '\\') {
+            slashes++;
+            continue;
+        }
+        /* A run of backslashes is doubled only when it precedes a quote (the
+           extra one escapes the quote). Before an ordinary character the run
+           is emitted verbatim. */
+        int n = (*p == '"') ? slashes * 2 + 1 : slashes;
+        for (int s = 0; s < n; s++)
+            if (pos < cap - 1) dst[pos++] = '\\';
+        slashes = 0;
+        if (pos < cap - 1) dst[pos++] = *p;
+    }
+    for (int s = 0; s < slashes * 2; s++)
+        if (pos < cap - 1) dst[pos++] = '\\';
+    if (pos < cap - 1) dst[pos++] = '"';
+    return pos;
+}
+
 int run_process_captured(const char* program, const char* const args[], char* output_buf, size_t output_buf_size) {
     output_buf[0] = '\0';
 
@@ -312,14 +376,23 @@ int run_process_captured(const char* program, const char* const args[], char* ou
     }
     SetHandleInformation(hReadPipe, HANDLE_FLAG_INHERIT, 0);
 
-    /* Build command line: "program" "arg1" "arg2" ... */
+    /* Build the command line using the CommandLineToArgvW quoting rules:
+       wrap each argument in double quotes and backslash-escape any embedded
+       quote, doubling every run of backslashes that precedes one. Without
+       this an argument containing '"' or a trailing backslash can terminate
+       the quoting early and inject further argv entries. */
     char cmdline[4096];
-    int pos = 0;
-    pos += snprintf(cmdline + pos, sizeof(cmdline) - pos, "\"%s\"", program);
+    size_t pos = 0;
+    cmdline[pos++] = '"';
+    for (const char* p = program; *p; p++)
+        if (pos < sizeof(cmdline) - 1) cmdline[pos++] = *p;
+    if (pos < sizeof(cmdline) - 1) cmdline[pos++] = '"';
     for (int i = 1; args[i]; i++) {
-        pos += snprintf(cmdline + pos, sizeof(cmdline) - pos, " \"%s\"", args[i]);
-        if (pos >= (int)sizeof(cmdline) - 128) break;
+        if (pos >= sizeof(cmdline) - 256) break;
+        cmdline[pos++] = ' ';
+        pos = append_quoted_arg(cmdline, sizeof(cmdline), pos, args[i]);
     }
+    cmdline[pos] = '\0';
 
     PROCESS_INFORMATION pi = {0};
     STARTUPINFOA si = {0};
@@ -406,4 +479,141 @@ bool is_safe_path_component(const char* name) {
         if (*p == '/' || *p == '\\') return false;         // no path separators
     }
     return true;
+}
+
+/* Run a program with its standard input connected to a block of text, and
+   capture its output. The input is written before the output is read, so the
+   program sees the whole block; the block has to fit in a pipe buffer, which
+   is far more than a test needs. */
+int run_process_with_stdin(const char* program, const char* const args[], char* output_buf, size_t output_buf_size, const char* stdin_data) {
+    output_buf[0] = '\0';
+    if (!stdin_data) stdin_data = "";
+
+#ifdef _WIN32
+    SECURITY_ATTRIBUTES sa;
+    sa.nLength = sizeof(SECURITY_ATTRIBUTES);
+    sa.bInheritHandle = TRUE;
+    sa.lpSecurityDescriptor = NULL;
+
+    HANDLE hStdinRead, hStdinWrite;
+    HANDLE hStdoutRead, hStdoutWrite;
+    if (!CreatePipe(&hStdinRead, &hStdinWrite, &sa, 0) ||
+        !CreatePipe(&hStdoutRead, &hStdoutWrite, &sa, 0)) {
+        return run_process_captured(program, args, output_buf, output_buf_size);
+    }
+    /* The parent keeps the write end of stdin and the read end of stdout; the
+       child must not inherit them, or it would hold stdin open and never see
+       the end of the input. */
+    SetHandleInformation(hStdinWrite, HANDLE_FLAG_INHERIT, 0);
+    SetHandleInformation(hStdoutRead, HANDLE_FLAG_INHERIT, 0);
+
+    char cmdline[4096];
+    size_t pos = 0;
+    cmdline[pos++] = '"';
+    for (const char* p = program; *p; p++)
+        if (pos < sizeof(cmdline) - 1) cmdline[pos++] = *p;
+    if (pos < sizeof(cmdline) - 1) cmdline[pos++] = '"';
+    for (int i = 1; args[i]; i++) {
+        if (pos >= sizeof(cmdline) - 256) break;
+        cmdline[pos++] = ' ';
+        cmdline[pos] = '\0';
+        pos = append_quoted_arg(cmdline, sizeof(cmdline), pos, args[i]);
+    }
+    cmdline[pos] = '\0';
+
+    PROCESS_INFORMATION pi = {0};
+    STARTUPINFOA si = {0};
+    si.cb = sizeof(si);
+    si.hStdInput = hStdinRead;
+    si.hStdOutput = hStdoutWrite;
+    si.hStdError = hStdoutWrite;
+    si.dwFlags = STARTF_USESTDHANDLES;
+
+    BOOL ok = CreateProcessA(NULL, cmdline, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi);
+    CloseHandle(hStdinRead);
+    CloseHandle(hStdoutWrite);
+
+    if (!ok) {
+        CloseHandle(hStdinWrite);
+        CloseHandle(hStdoutRead);
+        return run_process_captured(program, args, output_buf, output_buf_size);
+    }
+
+    size_t input_len = strlen(stdin_data);
+    if (input_len > 0) {
+        DWORD written = 0;
+        WriteFile(hStdinWrite, stdin_data, (DWORD)input_len, &written, NULL);
+    }
+    CloseHandle(hStdinWrite);
+
+    size_t total = 0;
+    DWORD n;
+    char tmpbuf[4096];
+    while (ReadFile(hStdoutRead, tmpbuf, sizeof(tmpbuf), &n, NULL) && n > 0) {
+        if (total + n < output_buf_size - 1) {
+            memcpy(output_buf + total, tmpbuf, n);
+            total += n;
+        }
+    }
+    output_buf[total] = '\0';
+    CloseHandle(hStdoutRead);
+
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    DWORD exit_code = 0;
+    GetExitCodeProcess(pi.hProcess, &exit_code);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    return (int)exit_code;
+#else
+    int in_pipe[2];
+    int out_pipe[2];
+    if (pipe(in_pipe) != 0 || pipe(out_pipe) != 0) {
+        return run_process_captured(program, args, output_buf, output_buf_size);
+    }
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        close(in_pipe[0]); close(in_pipe[1]);
+        close(out_pipe[0]); close(out_pipe[1]);
+        return run_process_captured(program, args, output_buf, output_buf_size);
+    }
+
+    if (pid == 0) {
+        close(in_pipe[1]);
+        close(out_pipe[0]);
+        dup2(in_pipe[0], STDIN_FILENO);
+        dup2(out_pipe[1], STDOUT_FILENO);
+        dup2(out_pipe[1], STDERR_FILENO);
+        close(in_pipe[0]);
+        close(out_pipe[1]);
+        execvp(program, (char* const*)args);
+        _exit(127);
+    }
+
+    close(in_pipe[0]);
+    close(out_pipe[1]);
+
+    size_t input_len = strlen(stdin_data);
+    size_t written_total = 0;
+    while (written_total < input_len) {
+        ssize_t w = write(in_pipe[1], stdin_data + written_total, input_len - written_total);
+        if (w <= 0) break;
+        written_total += (size_t)w;
+    }
+    close(in_pipe[1]);
+
+    size_t total = 0;
+    ssize_t n;
+    while (total < output_buf_size - 1 && (n = read(out_pipe[0], output_buf + total, output_buf_size - 1 - total)) > 0) {
+        total += n;
+    }
+    output_buf[total] = '\0';
+    close(out_pipe[0]);
+
+    int status = 0;
+    if (waitpid(pid, &status, 0) < 0) return 127;
+    if (WIFEXITED(status)) return WEXITSTATUS(status);
+    if (WIFSIGNALED(status)) return 128 + WTERMSIG(status);
+    return 127;
+#endif
 }

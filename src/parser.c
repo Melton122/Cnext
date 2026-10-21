@@ -12,6 +12,7 @@ ASTNode* parse_program(const char* source) {
     
     ASTNode* program = create_node(AST_PROGRAM, parser.previous);
     while (!match_token(TOKEN_EOF)) {
+        const char* before = parser.current.start;
         ASTNode* decl = declaration();
         if (decl) {
             if (decl->type == AST_EXPR_STMT || decl->type == AST_IF || decl->type == AST_WHILE ||
@@ -27,6 +28,7 @@ ASTNode* parse_program(const char* source) {
             }
         }
         if (parser.panic_mode) synchronize();
+        if (!check(TOKEN_EOF) && parser.current.start == before) advance_token();
     }
     if (parser.had_error) {
         free_ast(program);
