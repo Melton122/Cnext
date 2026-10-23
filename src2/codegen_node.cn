@@ -1,6 +1,8 @@
 ﻿// Self-hosting bootstrap: codegen node dispatch.
 // Port of src/codegen_node.c (simplified)
 
+extern func print(str s)
+
 func codegen_init(ASTNode? program) {
 }
 
@@ -44,7 +46,7 @@ func generate_node(ASTNode? node) {
 
 func generate_class_declaration(ASTNode? node) {
     if node == null { return }
-    print("typedef struct ")
+    print(\"typedef struct \")
     print(node.token.text)
     print(\" {\n\")
     print(\"} \")
@@ -76,6 +78,32 @@ func generate_trait_declaration(ASTNode? node) {
 
 func generate_function(ASTNode? node, str prefix) {
     if node == null { return }
+    if node.token.text == \"main\" {
+        print(\"int main(int argc, char** argv) {\n\")
+        if node.left != null {
+            generate_block(node.left)
+        }
+        print(\"    return 0;\n\")
+        print(\"}\n\n\")
+    } else {
+        print(\"void \")
+        print(node.token.text)
+        print(\"()\n\")
+        if node.left != null {
+            generate_block(node.left)
+        }
+        print(\"\n\n\")
+    }
+}
+
+func generate_block(ASTNode? node) {
+    if node == null { return }
+    int i = 0
+    int n = len(node.children)
+    while i < n {
+        generate_statement(node.children[i])
+        i = i + 1
+    }
 }
 
 func generate_var_declaration(ASTNode? node) {
@@ -92,4 +120,52 @@ func generate_extern_declaration(ASTNode? node) {
 
 func generate_statement(ASTNode? node) {
     if node == null { return }
+    if node.kind == AST_EXPR_STMT {
+        print(\"    \")
+        generate_expression_stmt(node.left)
+    } else if node.kind == AST_BLOCK {
+        generate_block(node)
+    } else if node.kind == AST_RETURN {
+        print(\"    return \")
+        if node.left != null {
+            generate_expression(node.left)
+        }
+        print(\";\n\")
+    } else if node.kind == AST_IF {
+        print(\"    if (\")
+        generate_expression(node.condition)
+        print(\") \")
+        generate_statement(node.left)
+        if node.right != null {
+            print(\" else \")
+            generate_statement(node.right)
+        }
+    } else if node.kind == AST_WHILE {
+        print(\"    while (\")
+        generate_expression(node.condition)
+        print(\") \")
+        generate_statement(node.left)
+    } else if node.kind == AST_FOR {
+        print(\"    for (\")
+        if node.init != null { generate_statement(node.init) } else { print(\";\") }
+        if node.condition != null { generate_expression(node.condition) } print(\"; \")
+        if node.right != null { generate_expression(node.right) }
+        print(\") \")
+        generate_statement(node.left)
+    } else if node.kind == AST_VAR_DECL {
+        print(\"    \")
+        print(\"auto \")
+        print(node.token.text)
+        print(\" = \")
+        if node.right != null {
+            generate_expression(node.right)
+        } else {
+            print(\"0\")
+        }
+        print(\";\n\")
+    } else {
+        print(\"    \")
+        generate_expression(node)
+        print(\";\n\")
+    }
 }

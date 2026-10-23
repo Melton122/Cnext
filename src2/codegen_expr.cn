@@ -1,6 +1,8 @@
 ﻿// Self-hosting bootstrap: codegen expression generation.
 // Port of src/codegen_expr.c (simplified)
 
+extern func print(str s)
+
 func generate_expression(ASTNode? node): bool {
     if node == null {
         return false
@@ -8,7 +10,8 @@ func generate_expression(ASTNode? node): bool {
     
     if node.kind == AST_LITERAL {
         if node.token.kind == TOKEN_STRING {
-            print(\"cnext_string_new(\\"\")
+            print(\"cnext_string_new(\"\")
+            // Extract string content without quotes if possible
             print(node.token.text)
             print(\"\")\")
             return true
@@ -68,6 +71,15 @@ func generate_expression(ASTNode? node): bool {
         generate_expression(node.left)
         print(\" = \")
         generate_expression(node.right)
+        return true
+    } else if node.kind == AST_MEMBER_ACCESS {
+        generate_expression(node.left)
+        print(\"->\")
+        if node.right != null {
+            generate_expression(node.right)
+        } else {
+            print(node.token.text)
+        }
         return true
     }
     
