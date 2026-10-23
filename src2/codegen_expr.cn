@@ -1,0 +1,84 @@
+﻿// Self-hosting bootstrap: codegen expression generation.
+// Port of src/codegen_expr.c (simplified)
+
+func generate_expression(ASTNode? node): bool {
+    if node == null {
+        return false
+    }
+    
+    if node.kind == AST_LITERAL {
+        if node.token.kind == TOKEN_STRING {
+            print(\"cnext_string_new(\\"\")
+            print(node.token.text)
+            print(\"\")\")
+            return true
+        } else if node.token.kind == TOKEN_NUMBER {
+            print(node.token.text)
+            return true
+        } else if node.token.kind == TOKEN_FLOAT_LITERAL {
+            print(node.token.text)
+            return true
+        } else if node.token.kind == TOKEN_BOOL_TRUE {
+            print(\"true\")
+            return true
+        } else if node.token.kind == TOKEN_BOOL_FALSE {
+            print(\"false\")
+            return true
+        } else if node.token.kind == TOKEN_NULL {
+            print(\"NULL\")
+            return true
+        }
+        print(node.token.text)
+        return true
+    } else if node.kind == AST_IDENTIFIER {
+        print(node.token.text)
+        return true
+    } else if node.kind == AST_BINARY {
+        generate_expression(node.left)
+        print(\" \")
+        print(node.token.text)
+        print(\" \")
+        generate_expression(node.right)
+        return true
+    } else if node.kind == AST_CALL {
+        if node.left != null {
+            generate_expression(node.left)
+        }
+        print(\"(\")
+        int i = 0
+        int n = len(node.children)
+        while i < n {
+            if i > 0 { print(\", \") }
+            generate_expression(node.children[i])
+            i = i + 1
+        }
+        print(\")\")
+        return true
+    } else if node.kind == AST_BLOCK {
+        print(\"{\n\")
+        int i = 0
+        int n = len(node.children)
+        while i < n {
+            generate_statement(node.children[i])
+            i = i + 1
+        }
+        print(\"}\")
+        return true
+    } else if node.kind == AST_ASSIGN {
+        generate_expression(node.left)
+        print(\" = \")
+        generate_expression(node.right)
+        return true
+    }
+    
+    if node.left != null {
+        generate_expression(node.left)
+    }
+    return true
+}
+
+func generate_expression_stmt(ASTNode? node) {
+    if node == null { return }
+    generate_expression(node)
+    print(\";\n\")
+}
