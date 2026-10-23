@@ -1,0 +1,24 @@
+﻿// Self-hosting bootstrap: main driver
+// Port of src/main.c
+
+extern func print(str s)
+extern func read_file(str path): str
+
+int main(int argc, char** argv) {
+    if argc < 2 {
+        print(\"Usage: cnext <file.cn>\n\")
+        return 1
+    }
+    
+    str source = read_file(argv[1])
+    if source == null {
+        print(\"Error reading file\n\")
+        return 1
+    }
+    
+    print(\"Compiling: \")
+    print(argv[1])
+    print(\"\n\")
+    
+    return 0
+}
