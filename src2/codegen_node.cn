@@ -1,0 +1,95 @@
+﻿// Self-hosting bootstrap: codegen node dispatch.
+// Port of src/codegen_node.c (simplified)
+
+func codegen_init(ASTNode? program) {
+}
+
+func generate_program(ASTNode? program) {
+    if program == null {
+        return
+    }
+    int i = 0
+    int n = len(program.children)
+    while i < n {
+        generate_node(program.children[i])
+        i = i + 1
+    }
+}
+
+func generate_node(ASTNode? node) {
+    if node == null {
+        return
+    }
+    
+    if node.kind == AST_FUNC_DECL {
+        generate_function(node, null)
+    } else if node.kind == AST_CLASS_DECL {
+        generate_class_declaration(node)
+    } else if node.kind == AST_STRUCT_DECL {
+        generate_struct_declaration(node)
+    } else if node.kind == AST_VAR_DECL {
+        generate_var_declaration(node)
+    } else if node.kind == AST_IMPORT {
+        generate_import(node)
+    } else if node.kind == AST_ENUM_DECL {
+        generate_enum_declaration(node)
+    } else if node.kind == AST_TRAIT_DECL {
+        generate_trait_declaration(node)
+    } else if node.kind == AST_EXTERN_DECL {
+        generate_extern_declaration(node)
+    } else {
+        generate_statement(node)
+    }
+}
+
+func generate_class_declaration(ASTNode? node) {
+    if node == null { return }
+    print("typedef struct ")
+    print(node.token.text)
+    print(\" {\n\")
+    print(\"} \")
+    print(node.token.text)
+    print(\";\n\n\")
+}
+
+func generate_struct_declaration(ASTNode? node) {
+    if node == null { return }
+    print(\"typedef struct \")
+    print(node.token.text)
+    print(\" {\n\")
+    print(\"} \")
+    print(node.token.text)
+    print(\";\n\n\")
+}
+
+func generate_enum_declaration(ASTNode? node) {
+    if node == null { return }
+    print(\"typedef enum {\n\")
+    print(\"} \")
+    print(node.token.text)
+    print(\";\n\n\")
+}
+
+func generate_trait_declaration(ASTNode? node) {
+    if node == null { return }
+}
+
+func generate_function(ASTNode? node, str prefix) {
+    if node == null { return }
+}
+
+func generate_var_declaration(ASTNode? node) {
+    if node == null { return }
+}
+
+func generate_import(ASTNode? node) {
+    if node == null { return }
+}
+
+func generate_extern_declaration(ASTNode? node) {
+    if node == null { return }
+}
+
+func generate_statement(ASTNode? node) {
+    if node == null { return }
+}
