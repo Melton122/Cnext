@@ -1,0 +1,110 @@
+﻿// Self-hosting bootstrap: codegen type helpers.
+// Port of src/codegen_types.c
+
+class TypeSubst {
+    str param_name
+    Token concrete_type
+    bool is_array
+    TypeSubst? next
+    func new(str name, Token ttype, bool arr) {
+        self.param_name = name
+        self.concrete_type = ttype
+        self.is_array = arr
+        self.next = null
+    }
+}
+
+class ClassVar {
+    str var_name
+    str class_name
+    ClassVar? next
+    func new(str vname, str cname) {
+        self.var_name = vname
+        self.class_name = cname
+        self.next = null
+    }
+}
+
+class GenSpec {
+    str mangled_name
+    Token return_type
+    bool return_is_array
+    GenSpec? next
+    func new(str name, Token ret, bool ret_arr) {
+        self.mangled_name = name
+        self.return_type = ret
+        self.return_is_array = ret_arr
+        self.next = null
+    }
+}
+
+TypeSubst? g_type_subst_map = null
+ClassVar? g_class_vars = null
+GenSpec? g_gen_specs = null
+
+func push_type_subst(str name, Token ttype, bool is_array) {
+    var ts = new TypeSubst(name, ttype, is_array)
+    ts.next = g_type_subst_map
+    g_type_subst_map = ts
+}
+
+func pop_type_subst() {
+    if g_type_subst_map != null {
+        g_type_subst_map = g_type_subst_map.next
+    }
+}
+
+func clear_type_subst() {
+    while g_type_subst_map != null {
+        g_type_subst_map = g_type_subst_map.next
+    }
+}
+
+func find_type_subst(str name): bool {
+    var ts = g_type_subst_map
+    while ts != null {
+        if ts.param_name == name {
+            return true
+        }
+        ts = ts.next
+    }
+    return false
+}
+
+func track_class_var(str var_name, str class_name) {
+    var cv = new ClassVar(var_name, class_name)
+    cv.next = g_class_vars
+    g_class_vars = cv
+}
+
+func lookup_class_var(str var_name): str {
+    var cv = g_class_vars
+    while cv != null {
+        if cv.var_name == var_name {
+            return cv.class_name
+        }
+        cv = cv.next
+    }
+    return null
+}
+
+func has_gen_spec(str name): bool {
+    var gs = g_gen_specs
+    while gs != null {
+        if gs.mangled_name == name {
+            return true
+        }
+        gs = gs.next
+    }
+    return false
+}
+
+func add_gen_spec(str name, Token ret_type, bool ret_is_array) {
+    var gs = new GenSpec(name, ret_type, ret_is_array)
+    gs.next = g_gen_specs
+    g_gen_specs = gs
+}
+
+func free_gen_specs() {
+    g_gen_specs = null
+}
