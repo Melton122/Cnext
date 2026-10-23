@@ -1,0 +1,75 @@
+﻿// Self-hosting bootstrap: codegen emit utilities.
+// Port of src/codegen_emit_utils.c
+
+// Global codegen state (simplified)
+FILE? g_codegen_out = null
+int g_indent_level = 0
+int g_lambda_counter = 0
+int g_generator_counter = 0
+bool g_codegen_test_mode = false
+bool g_codegen_in_test = false
+bool g_codegen_profile_mode = false
+bool g_codegen_emit_lines = false
+str g_codegen_debug_source = ""
+int g_codegen_gen_line = 0
+int g_codegen_last_emit_line = 0
+
+func write_indent() {
+    int i = 0
+    while i < g_indent_level {
+        print("    ")
+        i = i + 1
+    }
+}
+
+func type_token_to_c_name(int ttype): str {
+    if ttype == TOKEN_INT_TYPE { return "int" }
+    if ttype == TOKEN_LONG_TYPE { return "long long" }
+    if ttype == TOKEN_FLOAT_TYPE { return "float" }
+    if ttype == TOKEN_DOUBLE_TYPE { return "double" }
+    if ttype == TOKEN_STR_TYPE { return "CnextString" }
+    if ttype == TOKEN_BOOL_TYPE { return "bool" }
+    if ttype == TOKEN_CHAR_TYPE { return "char" }
+    if ttype == TOKEN_BYTE_TYPE { return "char" }
+    if ttype == TOKEN_UINT_TYPE { return "unsigned int" }
+    if ttype == TOKEN_ULONG_TYPE { return "unsigned long long" }
+    if ttype == TOKEN_USHORT_TYPE { return "unsigned short" }
+    if ttype == TOKEN_UBYTE_TYPE { return "unsigned char" }
+    if ttype == TOKEN_VOID_TYPE { return "void" }
+    return ""
+}
+
+func copy_token_text(Token token): str {
+    return token.text
+}
+
+func emit_line_directive(int src_line) {
+}
+
+func track_source_line(int src_line) {
+}
+
+func generate_lambda_return_type(ASTNode? body): str {
+    if body == null {
+        return "void"
+    }
+    if body.kind != AST_BLOCK {
+        if body.expr_type == 0 { return "void" }
+        str ct = type_token_to_c_name(body.expr_type)
+        if ct == "" { return "void" }
+        return ct
+    }
+    int i = 0
+    int n = len(body.children)
+    while i < n {
+        if body.children[i].kind == AST_RETURN {
+            if body.children[i].left != null {
+                str ct2 = type_token_to_c_name(body.children[i].left.expr_type)
+                if ct2 == "" { return "void" }
+                return ct2
+            }
+        }
+        i = i + 1
+    }
+    return "void"
+}
