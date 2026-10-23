@@ -1,0 +1,186 @@
+// Self-hosting bootstrap: statement and declaration semantics.
+// Port of src/semantics_analyze.c
+
+func report_error(int code, int line, str message, str detail)
+func report_token_error(int code, Token token, str message)
+func sem_push_scope()
+func sem_pop_scope()
+
+func analyze_assignment(ASTNode? node) {
+    if node == null {
+        return
+    }
+    if node.left != null {
+        analyze_expression(node.left)
+    }
+    if node.right != null {
+        sem_apply_expected_type(node.right, node.left != null ? node.left.expr_type : TOKEN_VAR)
+        analyze_expression(node.right)
+    }
+}
+
+func analyze_function(ASTNode? node, bool define_name) {
+    if node == null {
+        return
+    }
+    // Create scope for function
+    sem_push_scope()
+    // Add parameters
+    int i = 0
+    int n = len(node.children)
+    while i < n {
+        var child = node.children[i]
+        if child.kind == AST_VAR_DECL {
+            var tname = type_name_from_token(child.var_type)
+            define_symbol(child.token, child.var_type.kind, false, tname, child)
+        } else if child.kind == AST_BLOCK {
+            break
+        }
+        i = i + 1
+    }
+    // Save return type
+    int old_return = sem_current_return_type
+    sem_current_return_type = node.return_type.kind
+    // Analyze body
+    if node.left != null {
+        analyze_node(node.left)
+    }
+    sem_current_return_type = old_return
+    sem_pop_scope()
+}
+
+func analyze_node(ASTNode? node) {
+    if node == null {
+        return
+    }
+    
+    if node.kind == AST_PROGRAM {
+        int i = 0
+        int n = len(node.children)
+        while i < n {
+            predeclare_global(node.children[i])
+            i = i + 1
+        }
+        i = 0
+        while i < n {
+            analyze_node(node.children[i])
+            i = i + 1
+        }
+        return
+    } else if node.kind == AST_FUNC_DECL {
+        analyze_function(node, true)
+        return
+    } else if node.kind == AST_CLASS_DECL {
+        sem_push_scope()
+        int i = 0
+        int n = len(node.children)
+        while i < n {
+            var child = node.children[i]
+            if child.kind == AST_FUNC_DECL || child.kind == AST_CONSTRUCTOR {
+                analyze_function(child, false)
+            } else if child.kind == AST_VAR_DECL {
+                analyze_field_declaration(child)
+            }
+            i = i + 1
+        }
+        sem_pop_scope()
+        return
+    } else if node.kind == AST_VAR_DECL {
+        if node.init != null {
+            sem_apply_expected_type(node.init, node.var_type.kind)
+            analyze_expression(node.init)
+        }
+        analyze_var_declaration(node)
+        // Define in current scope if not already
+        if sem_current_scope != null {
+            var existing = resolve_current_symbol(node.token)
+            if existing == null {
+                var tname = type_name_from_token(node.var_type)
+                define_symbol(node.token, node.var_type.kind, node.is_const, tname, node)
+            }
+        }
+        return
+    } else if node.kind == AST_ASSIGN {
+        analyze_assignment(node)
+        return
+    } else if node.kind == AST_RETURN {
+        if node.left != null {
+            sem_apply_expected_type(node.left, sem_current_return_type)
+            analyze_expression(node.left)
+        }
+        return
+    } else if node.kind == AST_BLOCK {
+        sem_push_scope()
+        int i = 0
+        int n = len(node.children)
+        while i < n {
+            analyze_node(node.children[i])
+            i = i + 1
+        }
+        sem_pop_scope()
+        return
+    } else if node.kind == AST_IF {
+        if node.condition != null {
+            analyze_expression(node.condition)
+        }
+        if node.left != null { analyze_node(node.left) }
+        if node.right != null { analyze_node(node.right) }
+        return
+    } else if node.kind == AST_WHILE {
+        if node.condition != null {
+            analyze_expression(node.condition)
+        }
+        if node.left != null { analyze_node(node.left) }
+        return
+    } else if node.kind == AST_FOR {
+        sem_push_scope()
+        if node.init != null { analyze_node(node.init) }
+        if node.condition != null { analyze_expression(node.condition) }
+        if node.increment != null { analyze_expression(node.increment) }
+        if node.left != null { analyze_node(node.left) }
+        sem_pop_scope()
+        return
+    } else if node.kind == AST_FOR_IN {
+        sem_push_scope()
+        if node.init != null { analyze_node(node.init) }
+        if node.condition != null { analyze_expression(node.condition) }
+        if node.left != null { analyze_node(node.left) }
+        sem_pop_scope()
+        return
+    } else if node.kind == AST_EXPR_STMT {
+        if node.left != null {
+            analyze_expression(node.left)
+        }
+        return
+    } else if node.kind == AST_TEST_DECL {
+        sem_push_scope()
+        if node.left != null { analyze_node(node.left) }
+        sem_pop_scope()
+        return
+    } else if node.kind == AST_MAIN {
+        sem_push_scope()
+        if node.left != null { analyze_node(node.left) }
+        sem_pop_scope()
+        return
+    }
+    
+    // Generic recursion
+    if node.left != null { analyze_node(node.left) }
+    if node.right != null { analyze_node(node.right) }
+    if node.condition != null { analyze_node(node.condition) }
+    if node.init != null { analyze_node(node.init) }
+    if node.increment != null { analyze_node(node.increment) }
+    int i = 0
+    int n = len(node.children)
+    while i < n {
+        analyze_node(node.children[i])
+        i = i + 1
+    }
+}
+
+func resolve_field_decl(ASTNode? access): ASTNode? {
+    return null
+}
+
+func analyze_postfix(ASTNode? node) {
+}

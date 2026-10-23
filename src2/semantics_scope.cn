@@ -1,0 +1,138 @@
+// Self-hosting bootstrap: semantics scope and symbol table.
+// Port of src/semantics_scope.c
+
+// ---------------------------------------------------------------------------
+// Global state
+// ---------------------------------------------------------------------------
+str semantics_source = ""
+Scope? sem_current_scope = null
+bool has_semantic_error = false
+int loop_depth = 0
+int switch_depth = 0
+int generator_depth = 0
+int sem_current_return_type = TOKEN_EOF
+
+// ---------------------------------------------------------------------------
+// Symbol and Scope
+// ---------------------------------------------------------------------------
+class Symbol {
+    str name
+    str type_name
+    int sym_type
+    bool is_const
+    ASTNode? decl_node
+    Symbol? next
+
+    func new(str n, int t, bool ic, str tn, ASTNode? dn) {
+        self.name = n
+        self.sym_type = t
+        self.is_const = ic
+        self.type_name = tn
+        self.decl_node = dn
+        self.next = null
+    }
+}
+
+class Scope {
+    Symbol? symbols
+    Scope? parent
+
+    func new(Scope? p) {
+        self.symbols = null
+        self.parent = p
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+func sem_copy_token_text(Token token): str {
+    if len(token.text) == 0 {
+        return ""
+    }
+    return token.text
+}
+
+func token_matches_name(Token token, str name): bool {
+    return token.kind == TOKEN_IDENTIFIER && token.text == name
+}
+
+// ---------------------------------------------------------------------------
+// Scope management
+// ---------------------------------------------------------------------------
+func sem_push_scope() {
+    sem_current_scope = new Scope(sem_current_scope)
+}
+
+func sem_pop_scope() {
+    if sem_current_scope == null {
+        return
+    }
+    var scope = sem_current_scope
+    sem_current_scope = scope.parent
+    // Symbols will be garbage collected
+}
+
+// ---------------------------------------------------------------------------
+// Symbol resolution
+// ---------------------------------------------------------------------------
+func resolve_symbol_in_scope(Scope? scope, Token token): Symbol? {
+    if scope == null {
+        return null
+    }
+    var sym = scope.symbols
+    while sym != null {
+        if sym.name == token.text {
+            return sym
+        }
+        sym = sym.next
+    }
+    return null
+}
+
+func resolve_current_symbol(Token token): Symbol? {
+    return resolve_symbol_in_scope(sem_current_scope, token)
+}
+
+func resolve_symbol(Token token): Symbol? {
+    var scope = sem_current_scope
+    while scope != null {
+        var sym = resolve_symbol_in_scope(scope, token)
+        if sym != null {
+            return sym
+        }
+        scope = scope.parent
+    }
+    return null
+}
+
+// ---------------------------------------------------------------------------
+// Symbol definition
+// ---------------------------------------------------------------------------
+func define_symbol(Token token, int ttype, bool is_const, str type_name, ASTNode? decl_node) {
+    if sem_current_scope == null {
+        return
+    }
+    var existing = resolve_current_symbol(token)
+    if existing != null {
+        return
+    }
+    var sym = new Symbol(token.text, ttype, is_const, type_name, decl_node)
+    sym.next = sem_current_scope.symbols
+    sem_current_scope.symbols = sym
+}
+
+func define_type_symbol(ASTNode node, int ttype) {
+    if sem_current_scope == null {
+        return
+    }
+    var sym = new Symbol(node.token.text, ttype, true, node.token.text, node)
+    sym.next = sem_current_scope.symbols
+    sem_current_scope.symbols = sym
+}
+
+func define_symbol_if_missing(Token token, int ttype, bool is_const, str type_name) {
+    if resolve_current_symbol(token) == null {
+        define_symbol(token, ttype, is_const, type_name, null)
+    }
+}

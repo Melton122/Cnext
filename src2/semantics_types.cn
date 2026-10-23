@@ -1,0 +1,119 @@
+﻿// Self-hosting bootstrap: semantics types and helpers.
+// Port of src/semantics_types.c + type helpers from semantics_internal.h.
+// Depends on: parser_types.cn, parser_core.cn
+
+// ---------------------------------------------------------------------------
+// Builtin type helpers
+// ---------------------------------------------------------------------------
+func is_builtin_value_type_kind(int k): bool {
+    if k == TOKEN_INT_TYPE { return true }
+    if k == TOKEN_LONG_TYPE { return true }
+    if k == TOKEN_FLOAT_TYPE { return true }
+    if k == TOKEN_DOUBLE_TYPE { return true }
+    if k == TOKEN_STR_TYPE { return true }
+    if k == TOKEN_BOOL_TYPE { return true }
+    if k == TOKEN_CHAR_TYPE { return true }
+    if k == TOKEN_BYTE_TYPE { return true }
+    if k == TOKEN_UINT_TYPE { return true }
+    if k == TOKEN_ULONG_TYPE { return true }
+    if k == TOKEN_USHORT_TYPE { return true }
+    if k == TOKEN_UBYTE_TYPE { return true }
+    if k == TOKEN_VAR { return true }
+    return false
+}
+
+func is_named_type_symbol_kind(int k): bool {
+    if k == TOKEN_STRUCT { return true }
+    if k == TOKEN_ENUM { return true }
+    if k == TOKEN_CLASS { return true }
+    return false
+}
+
+// ---------------------------------------------------------------------------
+// Type name helpers
+// ---------------------------------------------------------------------------
+func type_name_from_token(Token token): str {
+    if token.kind == TOKEN_EOF {
+        return ""
+    }
+    if token.kind == TOKEN_INT_TYPE { return "int" }
+    if token.kind == TOKEN_LONG_TYPE { return "long" }
+    if token.kind == TOKEN_FLOAT_TYPE { return "float" }
+    if token.kind == TOKEN_DOUBLE_TYPE { return "double" }
+    if token.kind == TOKEN_STR_TYPE { return "str" }
+    if token.kind == TOKEN_BOOL_TYPE { return "bool" }
+    if token.kind == TOKEN_CHAR_TYPE { return "char" }
+    if token.kind == TOKEN_BYTE_TYPE { return "byte" }
+    if token.kind == TOKEN_UINT_TYPE { return "uint" }
+    if token.kind == TOKEN_ULONG_TYPE { return "ulong" }
+    if token.kind == TOKEN_USHORT_TYPE { return "ushort" }
+    if token.kind == TOKEN_UBYTE_TYPE { return "ubyte" }
+    if token.kind == TOKEN_VAR { return "var" }
+    if token.kind == TOKEN_ITER { return "iter" }
+    if token.kind == TOKEN_FUNC { return "func" }
+    if token.kind == TOKEN_IDENTIFIER { return token.text }
+    return token.text
+}
+
+// ---------------------------------------------------------------------------
+// Assignment compatibility
+// ---------------------------------------------------------------------------
+func assignment_types_compatible(Token expected, int actual): bool {
+    if expected.kind == TOKEN_EOF {
+        return true
+    }
+    if expected.kind == TOKEN_VAR {
+        return true
+    }
+    if expected.kind == actual {
+        return true
+    }
+    if (expected.kind == TOKEN_INT_TYPE && actual == TOKEN_LONG_TYPE) { return true }
+    if (expected.kind == TOKEN_LONG_TYPE && actual == TOKEN_INT_TYPE) { return true }
+    if (expected.kind == TOKEN_FLOAT_TYPE && actual == TOKEN_DOUBLE_TYPE) { return true }
+    if (expected.kind == TOKEN_DOUBLE_TYPE && actual == TOKEN_FLOAT_TYPE) { return true }
+    if (expected.kind == TOKEN_DOUBLE_TYPE && actual == TOKEN_INT_TYPE) { return true }
+    if (expected.kind == TOKEN_DOUBLE_TYPE && actual == TOKEN_LONG_TYPE) { return true }
+    if (expected.kind == TOKEN_FLOAT_TYPE && actual == TOKEN_INT_TYPE) { return true }
+    if (expected.kind == TOKEN_FLOAT_TYPE && actual == TOKEN_LONG_TYPE) { return true }
+    if actual == TOKEN_NULL {
+        return true
+    }
+    return false
+}
+
+func validate_type_token(Token token): bool {
+    if token.kind == TOKEN_EOF { return true }
+    if is_builtin_value_type_kind(token.kind) { return true }
+    if token.kind == TOKEN_ITER { return true }
+    if token.kind == TOKEN_FUNC { return true }
+    if token.kind != TOKEN_IDENTIFIER {
+        return false
+    }
+
+    var tsym = resolve_symbol(token)
+    if tsym == null {
+        return false
+    }
+    if !is_named_type_symbol_kind(tsym.sym_type) {
+        if tsym.sym_type != TOKEN_IDENTIFIER {
+            return false
+        }
+    }
+    return true
+}
+
+func validate_var_initializer(ASTNode node) {
+}
+
+func analyze_var_declaration(ASTNode node) {
+}
+
+func analyze_field_declaration(ASTNode node) {
+}
+
+func register_import(Token module) {
+}
+
+func register_all_builtins(Token module) {
+}

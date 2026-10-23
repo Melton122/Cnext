@@ -1,0 +1,22 @@
+// Self-hosting bootstrap: semantics driver.
+// Port of src/semantics.c
+
+extern func sem_push_scope()
+extern func sem_pop_scope()
+
+func analyze_program(ASTNode? program): bool {
+    if program == null {
+        return false
+    }
+    has_semantic_error = false
+    sem_current_scope = null
+    sem_push_scope()
+    // Initialize global scope with builtins would go here
+    analyze_node(program)
+    sem_pop_scope()
+    return !has_semantic_error
+}
+
+func get_semantics_errors(): bool {
+    return has_semantic_error
+}

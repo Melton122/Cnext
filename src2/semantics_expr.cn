@@ -1,0 +1,143 @@
+﻿// Self-hosting bootstrap: expression semantics.
+// Port of src/semantics_expr.c
+
+func report_error(int code, int line, str message, str detail) { }
+func report_token_error(int code, Token token, str message) { }
+
+func resolve_symbol(Token token): Symbol? { return null }
+func sem_current_return_type_get(): int { return TOKEN_EOF }
+
+func analyze_expression(ASTNode? node): int {
+    if node == null {
+        return TOKEN_EOF
+    }
+    
+    if node.kind == AST_LITERAL {
+        // Determine literal type from token
+        if node.token.kind == TOKEN_STRING || node.token.kind == TOKEN_TEMPLATE_START {
+            node.expr_type = TOKEN_STR_TYPE
+            return TOKEN_STR_TYPE
+        }
+        if node.token.kind == TOKEN_NUMBER {
+            node.expr_type = TOKEN_INT_TYPE
+            return TOKEN_INT_TYPE
+        }
+        if node.token.kind == TOKEN_FLOAT_LITERAL {
+            node.expr_type = TOKEN_FLOAT_TYPE
+            return TOKEN_FLOAT_TYPE
+        }
+        if node.token.kind == TOKEN_BOOL_TRUE || node.token.kind == TOKEN_BOOL_FALSE {
+            node.expr_type = TOKEN_BOOL_TYPE
+            return TOKEN_BOOL_TYPE
+        }
+        if node.token.kind == TOKEN_NULL {
+            node.expr_type = TOKEN_NULL
+            return TOKEN_NULL
+        }
+        node.expr_type = TOKEN_INT_TYPE
+        return TOKEN_INT_TYPE
+    } else if node.kind == AST_IDENTIFIER {
+        var sym = resolve_symbol(node.token)
+        if sym != null {
+            node.expr_type = sym.sym_type
+            return sym.sym_type
+        }
+        node.expr_type = TOKEN_IDENTIFIER
+        return TOKEN_IDENTIFIER
+    } else if node.kind == AST_BINARY {
+        int lt = analyze_expression(node.left)
+        int rt = analyze_expression(node.right)
+        if lt == TOKEN_STR_TYPE || rt == TOKEN_STR_TYPE {
+            node.expr_type = TOKEN_STR_TYPE
+            return TOKEN_STR_TYPE
+        }
+        if lt == TOKEN_DOUBLE_TYPE || rt == TOKEN_DOUBLE_TYPE {
+            node.expr_type = TOKEN_DOUBLE_TYPE
+            return TOKEN_DOUBLE_TYPE
+        }
+        if lt == TOKEN_FLOAT_TYPE || rt == TOKEN_FLOAT_TYPE {
+            node.expr_type = TOKEN_FLOAT_TYPE
+            return TOKEN_FLOAT_TYPE
+        }
+        if lt == TOKEN_LONG_TYPE || rt == TOKEN_LONG_TYPE {
+            node.expr_type = TOKEN_LONG_TYPE
+            return TOKEN_LONG_TYPE
+        }
+        node.expr_type = TOKEN_INT_TYPE
+        return TOKEN_INT_TYPE
+    } else if node.kind == AST_UNARY {
+        int t = analyze_expression(node.left)
+        node.expr_type = t
+        return t
+    } else if node.kind == AST_CALL {
+        if node.left != null {
+            analyze_expression(node.left)
+        }
+        int i = 0
+        int n = len(node.children)
+        while i < n {
+            analyze_expression(node.children[i])
+            i = i + 1
+        }
+        node.expr_type = TOKEN_VAR
+        return TOKEN_VAR
+    } else if node.kind == AST_MEMBER_ACCESS {
+        if node.left != null {
+            analyze_expression(node.left)
+        }
+        node.expr_type = TOKEN_VAR
+        return TOKEN_VAR
+    } else if node.kind == AST_NEW_EXPR {
+        node.expr_type = TOKEN_IDENTIFIER
+        int i = 0
+        int n = len(node.children)
+        while i < n {
+            analyze_expression(node.children[i])
+            i = i + 1
+        }
+        return node.expr_type
+    } else if node.kind == AST_TERNARY {
+        analyze_expression(node.condition)
+        int lt = analyze_expression(node.left)
+        analyze_expression(node.right)
+        node.expr_type = lt
+        return lt
+    } else if node.kind == AST_ARRAY_LITERAL {
+        int i = 0
+        int n = len(node.children)
+        while i < n {
+            analyze_expression(node.children[i])
+            i = i + 1
+        }
+        node.expr_type = TOKEN_IDENTIFIER
+        return TOKEN_IDENTIFIER
+    } else if node.kind == AST_INDEX {
+        analyze_expression(node.left)
+        analyze_expression(node.right)
+        node.expr_type = TOKEN_VAR
+        return TOKEN_VAR
+    }
+    
+    if node.left != null { analyze_expression(node.left) }
+    if node.right != null { analyze_expression(node.right) }
+    if node.condition != null { analyze_expression(node.condition) }
+    if node.init != null { analyze_expression(node.init) }
+    return TOKEN_VAR
+}
+
+func sem_apply_expected_type(ASTNode? expr, int expected): bool {
+    if expr == null {
+        return false
+    }
+    if expr.kind == AST_CALL && expr.left != null && expr.left.kind == AST_IDENTIFIER {
+        if expr.left.token.text == "input" {
+            expr.expr_type = expected
+            return true
+        }
+    }
+    if expr.kind == AST_IDENTIFIER && expr.token.text == "input" {
+        expr.expr_type = expected
+        return true
+    }
+    return false
+}

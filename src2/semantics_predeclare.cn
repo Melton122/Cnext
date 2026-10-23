@@ -1,0 +1,37 @@
+﻿func type_name_from_token(Token token): str { return "" }
+func define_symbol(Token token, int ttype, bool is_const, str type_name, ASTNode? decl_node) { }
+func define_type_symbol(ASTNode node, int ttype) { }
+
+// Self-hosting bootstrap: semantics predeclaration.
+// Port of src/semantics_predeclare.c
+
+func predeclare_global(ASTNode? node) {
+    if node == null {
+        return
+    }
+    
+    if node.kind == AST_FUNC_DECL {
+        // Define function symbol
+        define_symbol(node.token, TOKEN_FUNC, false, type_name_from_token(node.return_type), node)
+    } else if node.kind == AST_CLASS_DECL {
+        define_type_symbol(node, TOKEN_CLASS)
+    } else if node.kind == AST_STRUCT_DECL {
+        define_type_symbol(node, TOKEN_STRUCT)
+    } else if node.kind == AST_ENUM_DECL {
+        define_type_symbol(node, TOKEN_ENUM)
+    } else if node.kind == AST_TRAIT_DECL {
+        define_type_symbol(node, TOKEN_TRAIT)
+    } else if node.kind == AST_VAR_DECL {
+        // Global variable
+        var tname = type_name_from_token(node.var_type)
+        define_symbol(node.token, node.var_type.kind, node.is_const, tname, node)
+    }
+    
+    // Recurse into children for nested declarations
+    int i = 0
+    int n = len(node.children)
+    while i < n {
+        predeclare_global(node.children[i])
+        i = i + 1
+    }
+}
