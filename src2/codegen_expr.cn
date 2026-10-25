@@ -10,10 +10,9 @@ func generate_expression(ASTNode? node): bool {
     
     if node.kind == AST_LITERAL {
         if node.token.kind == TOKEN_STRING {
-            print(\"cnext_string_new(\"\")
-            // Extract string content without quotes if possible
+            print(\"cnext_string_new(\")
             print(node.token.text)
-            print(\"\")\")
+            print(\")\")
             return true
         } else if node.token.kind == TOKEN_NUMBER {
             print(node.token.text)
