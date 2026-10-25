@@ -1,12 +1,19 @@
-﻿// Self-hosting bootstrap: main driver
+// Self-hosting bootstrap: main driver
 // Port of src/main.c
 
 extern func print(str s)
 extern func read_file(str path): str
+extern func lexer_init(str source)
+extern func lexer_next_token(): Token
+extern func parser_init()
+extern func parse_program(): ASTNode?
+extern func sem_analyze(ASTNode? program): bool
+extern func codegen_init(ASTNode? program)
+extern func generate_program(ASTNode? program)
 
 int main(int argc, char** argv) {
     if argc < 2 {
-        print(\"Usage: cnext <file.cn>\n\")
+        print(\"Usage: cnext <file.cn> [options]\n\")
         return 1
     }
     
@@ -16,9 +23,21 @@ int main(int argc, char** argv) {
         return 1
     }
     
-    print(\"Compiling: \")
-    print(argv[1])
-    print(\"\n\")
+    lexer_init(source)
+    parser_init()
+    ASTNode? ast = parse_program()
+    if ast == null {
+        print(\"Parse failed\n\")
+        return 1
+    }
+    
+    if !sem_analyze(ast) {
+        print(\"Semantic analysis failed\n\")
+        return 1
+    }
+    
+    codegen_init(ast)
+    generate_program(ast)
     
     return 0
 }
