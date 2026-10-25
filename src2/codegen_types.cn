@@ -1,4 +1,4 @@
-﻿// Self-hosting bootstrap: codegen type helpers.
+// Self-hosting bootstrap: codegen type helpers.
 // Port of src/codegen_types.c
 
 class TypeSubst {

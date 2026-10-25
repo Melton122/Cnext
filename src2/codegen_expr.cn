@@ -1,4 +1,4 @@
-﻿// Self-hosting bootstrap: codegen expression generation.
+// Self-hosting bootstrap: codegen expression generation.
 // Port of src/codegen_expr.c (simplified)
 
 extern func print(str s)

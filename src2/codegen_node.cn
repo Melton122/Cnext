@@ -1,4 +1,4 @@
-﻿// Self-hosting bootstrap: codegen node dispatch.
+// Self-hosting bootstrap: codegen node dispatch.
 // Port of src/codegen_node.c (simplified)
 
 extern func print(str s)
