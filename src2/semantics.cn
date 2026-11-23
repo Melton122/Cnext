@@ -5,10 +5,13 @@ extern func sem_push_scope()
 extern func sem_pop_scope()
 
 func analyze_program(ASTNode? program): bool {
+    sem_prepare_capture_cells(program, false)
     if program == null {
         return false
     }
     has_semantic_error = false
+    defer_depth = 0
+    defer_lambda_depth = 0
     sem_current_scope = null
     sem_push_scope()
     // Initialize global scope with builtins would go here

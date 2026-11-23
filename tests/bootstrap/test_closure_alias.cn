@@ -1,0 +1,30 @@
+main {
+    int captured = 10
+    var add = (int value) => captured + value
+    var alias = add
+    var second_alias = alias
+    captured = 20
+    printin(second_alias(1))
+
+    int counter = 0
+    var change = (int value) => {
+        counter = counter + value
+        return counter
+    }
+    var change_alias = change
+    printin(change_alias(2))
+    printin(counter)
+
+    {
+        int captured = 30
+        var inner = (int first, int second) => captured + first + second
+        var alias = inner
+        printin(alias(1, 2))
+    }
+    printin(alias(1))
+
+    str greeting = "hello"
+    var greet = (str name) => greeting + name
+    var greet_alias = greet
+    printin(greet_alias("!"))
+}

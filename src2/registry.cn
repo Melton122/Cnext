@@ -1,1 +1,811 @@
-﻿// Self-hosting bootstrap: registry
+// Self-hosting bootstrap: registry
+// Port of src/registry.c
+//
+// Deviations from the C version, all forced by the language surface:
+//
+//  * The C version shells out to curl with an argv array (no shell involved).
+//    Cnext has no argv-based process API, so the port builds a double-quoted
+//    shell command and runs it through sys_shell/os_exec_status. Every value
+//    interpolated into a command (URL, token, paths) is first checked by
+//    reg_shell_safe(), which rejects the characters that can escape a
+//    double-quoted argument in either cmd.exe or POSIX sh: " ` $ % ! and
+//    newlines. If validation fails the operation aborts instead of running.
+//  * The C version writes diagnostics to stderr; Cnext has no stderr builtin,
+//    so messages go to stdout via print().
+//  * C's fixed buffers (char[256] etc.) become dynamic strings; reg_clamp
+//    reproduces the strncpy truncation where it is observable.
+//  * String results use "" where C returns NULL (registry_get_token).
+
+import os
+
+const int REG_NAME_MAX = 255
+const int REG_VERSION_MAX = 63
+const int REG_DESC_MAX = 511
+const int REG_URL_MAX = 511
+
+class RegistryPackage {
+    str name
+    str version
+    str description
+    str author
+    str url
+    str hash
+
+    func new() {
+        self.name = ""
+        self.version = ""
+        self.description = ""
+        self.author = ""
+        self.url = ""
+        self.hash = ""
+    }
+}
+
+class RegistryResult {
+    RegistryPackage[] versions
+    int count
+
+    func new() {
+        self.versions = {}
+        self.count = 0
+    }
+}
+
+// Result of an HTTP round trip: C writes the body through out-parameters,
+// Cnext has no out-parameters, so the three values travel in a class.
+class RegistryHttp {
+    str body
+    int status
+    bool ok
+
+    func new() {
+        self.body = ""
+        self.status = 0
+        self.ok = false
+    }
+}
+
+str g_registry_cache_dir = ""
+str g_registry_token_path = ""
+str g_registry_token = ""
+
+// ---------------------------------------------------------------------------
+// Small helpers
+// ---------------------------------------------------------------------------
+
+// Reproduces strncpy(dst, src, size - 1): keep at most max_len characters.
+func reg_clamp(str s, int max_len): str {
+    if len(s) > max_len {
+        return str_substring(s, 0, max_len)
+    }
+    return s
+}
+
+func reg_strip_cr(str s): str {
+    int n = len(s)
+    if n > 0 && str_char_at(s, n - 1) == '\r' {
+        return str_substring(s, 0, n - 1)
+    }
+    return s
+}
+
+func reg_strip_newline(str s): str {
+    int n = len(s)
+    while n > 0 {
+        int c = str_char_at(s, n - 1)
+        if c == '\n' || c == '\r' {
+            n = n - 1
+        } else {
+            break
+        }
+    }
+    if n == len(s) {
+        return s
+    }
+    return str_substring(s, 0, n)
+}
+
+// The n-th field of a "|"-separated line, with strtok's rules: consecutive
+// delimiters collapse and empty fields are skipped, so a missing field is ""
+// exactly like C's `if (tok)` failing to set the target buffer.
+func reg_field(str line, int want): str {
+    int n = len(line)
+    int i = 0
+    int seen = -1
+    while i <= n {
+        int start = i
+        while i < n && str_char_at(line, i) != '|' {
+            i = i + 1
+        }
+        if i > start {
+            seen = seen + 1
+            if seen == want {
+                return str_substring(line, start, i)
+            }
+        }
+        i = i + 1
+    }
+    return ""
+}
+
+// Value on the right of '=' for cnext.toml lines, skipping the spaces and
+// quotes the C publish path skips. Returns null when the line has no '='.
+func reg_toml_value(str line): str {
+    int eq = str_find(line, "=")
+    if eq < 0 {
+        return null
+    }
+    int n = len(line)
+    int i = eq + 1
+    while i < n && (str_char_at(line, i) == ' ' || str_char_at(line, i) == '"') {
+        i = i + 1
+    }
+    str value = str_substring(line, i, n)
+    int vn = len(value)
+    // C strips a trailing quote only when the value is at least 2 characters.
+    if vn >= 2 && str_char_at(value, vn - 1) == '"' {
+        value = str_substring(value, 0, vn - 1)
+    }
+    return value
+}
+
+func reg_is_https_url(str url): bool {
+    if url == null {
+        return false
+    }
+    return str_starts_with(url, "https://")
+}
+
+// CNEXT_REGISTRY_URL enables the remote registry; it must be HTTPS.
+func reg_get_url(): str {
+    str url = getenv("CNEXT_REGISTRY_URL")
+    if url == null || len(url) == 0 {
+        return ""
+    }
+    if !reg_is_https_url(url) {
+        print("Warning: Registry URL must use HTTPS. Refusing insecure connection to: " + url + "\n")
+        return ""
+    }
+    return url
+}
+
+func reg_cache_dir(): str {
+    if len(g_registry_cache_dir) > 0 {
+        return g_registry_cache_dir
+    }
+    str home = ""
+    if platform() == "windows" {
+        home = getenv("USERPROFILE")
+    } else {
+        home = getenv("HOME")
+    }
+    if home == null || len(home) == 0 {
+        home = "."
+    }
+    if platform() == "windows" {
+        g_registry_cache_dir = home + "\\.cnext\\registry"
+    } else {
+        g_registry_cache_dir = home + "/.cnext/registry"
+    }
+    return g_registry_cache_dir
+}
+
+func reg_token_path(): str {
+    if len(g_registry_token_path) > 0 {
+        return g_registry_token_path
+    }
+    str home = ""
+    if platform() == "windows" {
+        home = getenv("USERPROFILE")
+    } else {
+        home = getenv("HOME")
+    }
+    if home == null || len(home) == 0 {
+        home = "."
+    }
+    if platform() == "windows" {
+        g_registry_token_path = home + "\\.cnext\\token"
+    } else {
+        g_registry_token_path = home + "/.cnext/token"
+    }
+    return g_registry_token_path
+}
+
+func reg_response_tmp(): str {
+    if platform() == "windows" {
+        return reg_cache_dir() + "\\http_response.tmp"
+    }
+    return reg_cache_dir() + "/http_response.tmp"
+}
+
+func reg_body_tmp(): str {
+    if platform() == "windows" {
+        return reg_cache_dir() + "\\http_body.tmp"
+    }
+    return reg_cache_dir() + "/http_body.tmp"
+}
+
+// Characters that can escape a double-quoted argument or trigger expansion in
+// cmd.exe / POSIX sh. Values failing this check are never put in a command.
+func reg_shell_safe(str s): bool {
+    if s == null {
+        return false
+    }
+    int i = 0
+    int n = len(s)
+    while i < n {
+        int c = str_char_at(s, i)
+        if c == '"' || c == '`' || c == '$' || c == '%' || c == '!' ||
+           c == '\n' || c == '\r' {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+// ---------------------------------------------------------------------------
+// HTTP via curl (C used an argv array; see the header comment)
+// ---------------------------------------------------------------------------
+
+func reg_http_get(str url): RegistryHttp {
+    var resp = new RegistryHttp()
+    if url == null || len(url) == 0 {
+        return resp
+    }
+    if str_starts_with(url, "http://") {
+        print("Warning: Refusing insecure HTTP download. Use HTTPS instead.\n")
+        return resp
+    }
+
+    str tmpfile = reg_response_tmp()
+    if !reg_shell_safe(url) || !reg_shell_safe(tmpfile) {
+        print("Warning: Refusing registry request with unsafe characters.\n")
+        return resp
+    }
+
+    os_mkdir(reg_cache_dir())
+    // Same argument order as C: curl -s -w %{http_code} -o <file> -- <url>
+    str cmd = "curl -s -w %{http_code} -o \"" + tmpfile + "\" -- \"" + url + "\""
+    str output = sys_shell(cmd)
+    resp.status = str_to_int(str_trim(output))
+
+    if !file_exists(tmpfile) {
+        return resp
+    }
+    str body = read_file(tmpfile)
+    delete_file(tmpfile)
+    if body == null {
+        return resp
+    }
+    resp.body = body
+    resp.ok = true
+    return resp
+}
+
+func reg_http_post(str url, str body, str token): RegistryHttp {
+    var resp = new RegistryHttp()
+    if url == null || len(url) == 0 {
+        return resp
+    }
+    if str_starts_with(url, "http://") {
+        print("Warning: Refusing insecure HTTP request. Use HTTPS instead.\n")
+        return resp
+    }
+
+    str tmpfile = reg_response_tmp()
+    str body_tmpfile = reg_body_tmp()
+    bool has_token = token != null && len(token) > 0
+    if !reg_shell_safe(url) || !reg_shell_safe(tmpfile) ||
+       !reg_shell_safe(body_tmpfile) || (has_token && !reg_shell_safe(token)) {
+        print("Warning: Refusing registry request with unsafe characters.\n")
+        return resp
+    }
+
+    os_mkdir(reg_cache_dir())
+
+    // Write the body to a temp file (C avoids piping it through the shell too).
+    if body != null && len(body) > 0 {
+        write_file(body_tmpfile, body)
+    }
+
+    str cmd = "curl -s -w %{http_code} -o \"" + tmpfile + "\" -X POST" +
+              " -H \"Content-Type: application/json\""
+    if has_token {
+        cmd = cmd + " -H \"Authorization: Bearer " + token + "\""
+    }
+    if body != null && len(body) > 0 {
+        cmd = cmd + " -d@" + "\"" + body_tmpfile + "\""
+    }
+    cmd = cmd + " -- \"" + url + "\""
+
+    str output = sys_shell(cmd)
+    resp.status = str_to_int(str_trim(output))
+    resp.ok = true
+
+    delete_file(body_tmpfile)
+    delete_file(tmpfile)
+    return resp
+}
+
+// Runs a command whose every component was already validated with
+// reg_shell_safe, and returns its exit status (C: _spawnvp/execvp).
+func reg_exec_status(str cmd): int {
+    return os_exec_status(cmd)
+}
+
+// ---------------------------------------------------------------------------
+// Result management
+// ---------------------------------------------------------------------------
+
+func registry_free(RegistryResult result) {
+    result.versions = {}
+    result.count = 0
+}
+
+func registry_search(str query, RegistryResult result): bool {
+    result.versions = {}
+    result.count = 0
+
+    str registry_url = reg_get_url()
+    if len(registry_url) == 0 {
+        print("No registry configured. Set CNEXT_REGISTRY_URL to use remote registry.\n")
+        print("Searching local cache only...\n")
+    }
+
+    if len(registry_url) > 0 {
+        str url = registry_url + "/api/search?q=" + query
+        var resp = reg_http_get(url)
+        if resp.ok && resp.status == 200 {
+            var lines = str_split(resp.body, "\n")
+            int i = 0
+            while i < lines.length {
+                str line = reg_strip_cr(lines[i])
+                i = i + 1
+                if len(line) == 0 {
+                    continue
+                }
+                var pkg = new RegistryPackage()
+                pkg.name = reg_clamp(reg_field(line, 0), REG_NAME_MAX)
+                pkg.version = reg_clamp(reg_field(line, 1), REG_VERSION_MAX)
+                pkg.description = reg_clamp(reg_field(line, 2), REG_DESC_MAX)
+                push(result.versions, pkg)
+                result.count = result.count + 1
+            }
+            return result.count > 0
+        }
+    }
+
+    // Local cache fallback: one package name per line in index.txt.
+    str path = reg_cache_dir() + "/index.txt"
+    if !file_exists(path) {
+        print("No packages found.\n")
+        return false
+    }
+    str content = read_file(path)
+    var lines = str_split(content, "\n")
+    int i = 0
+    while i < lines.length {
+        str line = reg_strip_cr(lines[i])
+        i = i + 1
+        if str_contains(line, query) {
+            var pkg = new RegistryPackage()
+            pkg.name = reg_clamp(line, REG_NAME_MAX)
+            push(result.versions, pkg)
+            result.count = result.count + 1
+        }
+    }
+    return result.count > 0
+}
+
+func registry_info(str package_name, RegistryResult result): bool {
+    result.versions = {}
+    result.count = 0
+
+    str registry_url = reg_get_url()
+    if len(registry_url) > 0 {
+        str url = registry_url + "/api/packages/" + package_name
+        var resp = reg_http_get(url)
+        if resp.ok && resp.status == 200 {
+            var lines = str_split(resp.body, "\n")
+            int i = 0
+            while i < lines.length {
+                str line = reg_strip_cr(lines[i])
+                i = i + 1
+                if len(line) == 0 {
+                    continue
+                }
+                var pkg = new RegistryPackage()
+                pkg.version = reg_clamp(reg_field(line, 0), REG_VERSION_MAX)
+                pkg.description = reg_clamp(reg_field(line, 1), REG_DESC_MAX)
+                pkg.url = reg_clamp(reg_field(line, 2), REG_URL_MAX)
+                pkg.name = reg_clamp(package_name, REG_NAME_MAX)
+                push(result.versions, pkg)
+                result.count = result.count + 1
+            }
+            return result.count > 0
+        }
+    }
+
+    // Local cache: <cache>/<package>/versions.txt, "version|description".
+    str path = reg_cache_dir() + "/" + package_name + "/versions.txt"
+    if !file_exists(path) {
+        print("Package \"" + package_name + "\" not found.\n")
+        return false
+    }
+    str content = read_file(path)
+    var lines = str_split(content, "\n")
+    int i = 0
+    while i < lines.length {
+        str line = reg_strip_cr(lines[i])
+        i = i + 1
+        if len(line) == 0 {
+            continue
+        }
+        var pkg = new RegistryPackage()
+        pkg.version = reg_clamp(reg_field(line, 0), REG_VERSION_MAX)
+        pkg.description = reg_clamp(reg_field(line, 1), REG_DESC_MAX)
+        pkg.name = reg_clamp(package_name, REG_NAME_MAX)
+        push(result.versions, pkg)
+        result.count = result.count + 1
+    }
+    return result.count > 0
+}
+
+// Resolve a version constraint to the highest matching cached version.
+func registry_resolve(str package_name, VersionSpec spec, RegistryPackage out): bool {
+    var result = new RegistryResult()
+    if !registry_info(package_name, result) {
+        return false
+    }
+
+    bool found = false
+    var best = new SemVer()
+    int i = 0
+    while i < result.count {
+        var ver = new SemVer()
+        if semver_parse(ver, result.versions[i].version) {
+            if semver_satisfies(ver, spec) {
+                if !found || semver_compare(ver, best) > 0 {
+                    best = ver
+                    out.name = result.versions[i].name
+                    out.version = result.versions[i].version
+                    out.description = result.versions[i].description
+                    out.author = result.versions[i].author
+                    out.url = result.versions[i].url
+                    out.hash = result.versions[i].hash
+                    found = true
+                }
+            }
+        }
+        i = i + 1
+    }
+
+    registry_free(result)
+    return found
+}
+
+func registry_download(str url, str dest_path): bool {
+    print("Downloading " + url + "...\n")
+    var resp = reg_http_get(url)
+    if !resp.ok || resp.status != 200 {
+        print("Download failed (HTTP " + to_str(resp.status) + ").\n")
+        return false
+    }
+    write_file(dest_path, resp.body)
+    // C fails here when fopen(destination) fails; write_file reports its own
+    // error to stderr, and the missing file is how a failed write shows up.
+    if !file_exists(dest_path) {
+        print("Could not write to \"" + dest_path + "\".\n")
+        return false
+    }
+    return true
+}
+
+// ---------------------------------------------------------------------------
+// Publish
+// ---------------------------------------------------------------------------
+
+func registry_publish(str package_dir, str token): bool {
+    str toml_path = package_dir + "/cnext.toml"
+    if !file_exists(toml_path) {
+        print("Could not find cnext.toml in \"" + package_dir + "\"\n")
+        return false
+    }
+
+    str content = read_file(toml_path)
+    str name = ""
+    str version = ""
+    var lines = str_split(content, "\n")
+    int i = 0
+    while i < lines.length {
+        str line = reg_strip_cr(lines[i])
+        i = i + 1
+        if str_contains(line, "name") {
+            str v = reg_toml_value(line)
+            if v != null {
+                name = reg_clamp(v, REG_NAME_MAX)
+            }
+        } else if str_contains(line, "version") {
+            str v = reg_toml_value(line)
+            if v != null {
+                version = reg_clamp(v, REG_VERSION_MAX)
+            }
+        }
+    }
+
+    if len(name) == 0 || len(version) == 0 {
+        print("cnext.toml must have name and version fields.\n")
+        return false
+    }
+
+    str tarball = package_dir + "/" + name + "-" + version + ".tar.gz"
+    // The C version spawns tar with an argv array; validate both path
+    // components before they go anywhere near the shell.
+    if !reg_shell_safe(package_dir) || !reg_shell_safe(tarball) {
+        print("Unsafe characters in package path; refusing to run tar.\n")
+        return false
+    }
+    str tar_cmd = "tar -czf \"" + tarball + "\" -C \"" + package_dir + "\" ."
+    int status = reg_exec_status(tar_cmd)
+    if status != 0 {
+        print("Failed to create package tarball.\n")
+        return false
+    }
+
+    str registry_url = reg_get_url()
+    if len(registry_url) == 0 {
+        print("Cannot publish: no registry configured.\n")
+        print("Set CNEXT_REGISTRY_URL environment variable to use remote registry.\n")
+        delete_file(tarball)
+        return false
+    }
+
+    print("Publishing " + name + "@" + version + " to " + registry_url + "...\n")
+    str post_url = registry_url + "/api/publish"
+
+    str tdata = null
+    if file_exists(tarball) {
+        tdata = read_file(tarball)
+    }
+    if tdata == null {
+        print("Could not read tarball.\n")
+        delete_file(tarball)
+        return false
+    }
+
+    var resp = reg_http_post(post_url, tdata, token)
+    delete_file(tarball)
+
+    if !resp.ok {
+        print("Upload failed.\n")
+        return false
+    }
+    if resp.status == 200 || resp.status == 201 {
+        print("Published " + name + "@" + version + " successfully.\n")
+        return true
+    }
+    print("Upload failed (HTTP " + to_str(resp.status) + ").\n")
+    return false
+}
+
+// ---------------------------------------------------------------------------
+// Auth token
+// ---------------------------------------------------------------------------
+
+func registry_get_token(): str {
+    if len(g_registry_token) > 0 {
+        return g_registry_token
+    }
+    str path = reg_token_path()
+    if !file_exists(path) {
+        return ""
+    }
+    str content = read_file(path)
+    if content == null {
+        return ""
+    }
+    // C reads a single fgets line.
+    int nl = str_find(content, "\n")
+    if nl >= 0 {
+        content = str_substring(content, 0, nl)
+    }
+    content = reg_strip_newline(content)
+    g_registry_token = content
+    return g_registry_token
+}
+
+// The directory containing path, found at the last platform separator.
+func reg_last_sep(str path): str {
+    str sep = "/"
+    if platform() == "windows" {
+        sep = "\\"
+    }
+    int pos = str_last_index_of(path, sep)
+    if pos < 0 {
+        return ""
+    }
+    return str_substring(path, 0, pos)
+}
+
+func reg_save_token(str token) {
+    str path = reg_token_path()
+    // Ensure the parent directory exists (C: mkdir of the containing dir).
+    str dir = reg_last_sep(path)
+    if len(dir) > 0 {
+        os_mkdir(dir)
+    }
+    write_file(path, token + "\n")
+    if file_exists(path) {
+        print("Token saved.\n")
+    } else {
+        print("Could not save token to " + path + "\n")
+    }
+}
+
+func reg_remove_token() {
+    str path = reg_token_path()
+    if file_exists(path) {
+        delete_file(path)
+        print("Logged out. Token removed.\n")
+    } else {
+        print("No token found.\n")
+    }
+}
+
+func registry_login(str registry_url): bool {
+    print("Login to " + registry_url + "\n")
+    print("Enter your API token: ")
+    str token = input("")
+    if token == null {
+        // C prints "Login cancelled." when fgets hits EOF. Cnext's input()
+        // reports EOF as an empty line rather than null, so EOF lands in the
+        // "No token provided." branch below; null is kept as a guard.
+        print("Login cancelled.\n")
+        return false
+    }
+    token = reg_strip_newline(token)
+    if len(token) == 0 {
+        print("No token provided.\n")
+        return false
+    }
+
+    // Verify token by making a test request.
+    if len(registry_url) > 0 {
+        str url = registry_url + "/api/me"
+        var resp = reg_http_get(url)
+        if resp.status == 401 || resp.status == 403 {
+            print("Invalid token.\n")
+            return false
+        }
+    }
+
+    reg_save_token(token)
+    return true
+}
+
+func registry_logout(): bool {
+    reg_remove_token()
+    return true
+}
+
+// ---------------------------------------------------------------------------
+// Project dependency file (cnext.toml)
+// ---------------------------------------------------------------------------
+
+func registry_update(str project_dir): bool {
+    str toml_path = project_dir + "/cnext.toml"
+    if !file_exists(toml_path) {
+        print("No cnext.toml found in " + project_dir + "\n")
+        return false
+    }
+
+    print("Updating dependencies...\n")
+
+    str content = read_file(toml_path)
+    bool in_deps = false
+    int updated = 0
+    var lines = str_split(content, "\n")
+    int i = 0
+    while i < lines.length {
+        str line = reg_strip_cr(lines[i])
+        i = i + 1
+        if len(line) > 0 && str_char_at(line, 0) == '[' {
+            in_deps = str_contains(line, "[dependencies]")
+            continue
+        }
+        if in_deps && str_find(line, "=") >= 0 {
+            // sscanf(line, " %[^= ] = \"%[^\"]\"", name, value)
+            int eq = str_find(line, "=")
+            str name = str_trim(str_substring(line, 0, eq))
+            str rest = str_trim(str_substring(line, eq + 1, len(line)))
+            str value = rest
+            if len(value) > 0 && str_char_at(value, 0) == '"' {
+                value = str_substring(value, 1, len(value))
+            }
+            if len(value) > 0 && str_char_at(value, len(value) - 1) == '"' {
+                value = str_substring(value, 0, len(value) - 1)
+            }
+            if str_starts_with(value, "http") {
+                // Direct URL - re-download. C would re-download here too.
+                print("  Updating " + name + "...\n")
+                updated = updated + 1
+            }
+        }
+    }
+
+    print("Updated " + to_str(updated) + " package(s).\n")
+    return true
+}
+
+// Path traversal guard: reject empty names, ".." and path separators.
+func reg_valid_package_name(str package_name): bool {
+    if package_name == null || len(package_name) == 0 {
+        return false
+    }
+    int i = 0
+    int n = len(package_name)
+    while i < n {
+        int c = str_char_at(package_name, i)
+        if c == '/' || c == '\\' {
+            return false
+        }
+        if c == '.' && i + 1 < n && str_char_at(package_name, i + 1) == '.' {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+func registry_remove(str package_name, str project_dir): bool {
+    if package_name == null || len(package_name) == 0 {
+        return false
+    }
+    if !reg_valid_package_name(package_name) {
+        print("Invalid package name: contains path separators.\n")
+        return false
+    }
+
+    str toml_path = project_dir + "/cnext.toml"
+    if !file_exists(toml_path) {
+        print("No cnext.toml found.\n")
+        return false
+    }
+
+    str content = read_file(toml_path)
+    if content == null {
+        return false
+    }
+
+    // Find the dependency line containing the package name.
+    int dep = str_find(content, package_name)
+    if dep < 0 {
+        print("Package '" + package_name + "' not found in cnext.toml.\n")
+        return false
+    }
+
+    // Walk back to the start of the line, and forward past its newline.
+    int line_start = dep
+    while line_start > 0 && str_char_at(content, line_start - 1) != '\n' {
+        line_start = line_start - 1
+    }
+    int line_end = dep
+    int clen = len(content)
+    while line_end < clen && str_char_at(content, line_end) != '\n' {
+        line_end = line_end + 1
+    }
+    if line_end < clen && str_char_at(content, line_end) == '\n' {
+        line_end = line_end + 1
+    }
+
+    str updated = str_substring(content, 0, line_start) +
+                  str_substring(content, line_end, clen)
+    write_file(toml_path, updated)
+
+    // Remove cached package (C: remove() on the package dir).
+    delete_file(project_dir + "/packages/" + package_name)
+
+    print("Removed package '" + package_name + "'.\n")
+    return true
+}

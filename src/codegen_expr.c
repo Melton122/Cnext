@@ -1,18 +1,21 @@
 #include "codegen_internal.h"
+#include "diagnostics.h"
 
 static int binop_precedence(CnextTokenType op) {
     switch (op) {
         case TOKEN_STAR:
         case TOKEN_SLASH:
-        case TOKEN_PERCENT:  return 2;
+        case TOKEN_PERCENT:  return 5;
         case TOKEN_PLUS:
-        case TOKEN_MINUS:    return 1;
+        case TOKEN_MINUS:    return 4;
         case TOKEN_LESS:
         case TOKEN_LESS_EQ:
         case TOKEN_GREATER:
-        case TOKEN_GREATER_EQ: return 0;
+        case TOKEN_GREATER_EQ: return 3;
         case TOKEN_EQ_EQ:
-        case TOKEN_BANG_EQ:  return 0;
+        case TOKEN_BANG_EQ:  return 2;
+        case TOKEN_AND_AND:  return 1;
+        case TOKEN_OR_OR:    return 0;
         default:             return -1;
     }
 }
@@ -24,6 +27,48 @@ static bool needs_parens(CnextTokenType parent_op, CnextTokenType child_op, bool
     if (cp < pp) return true;
     if (cp == pp && is_right) return true;
     return false;
+}
+
+static bool when_has_else(ASTNode* node) {
+    for (int i = 0; i < node->child_count; i++) {
+        if (node->children[i] && node->children[i]->is_const) return true;
+    }
+    return false;
+}
+
+static void emit_when_arm_chain(ASTNode* node, int index) {
+    if (index >= node->child_count) {
+        fprintf(out, "0");
+        return;
+    }
+    ASTNode* arm = node->children[index];
+    if (!arm) {
+        emit_when_arm_chain(node, index + 1);
+        return;
+    }
+    if (arm->is_const || (!arm->condition && arm->left)) {
+        fprintf(out, "(");
+        if (arm->left) generate_expression(arm->left);
+        else fprintf(out, "0");
+        fprintf(out, ")");
+        return;
+    }
+    if (!arm->condition || !arm->left) {
+        emit_when_arm_chain(node, index + 1);
+        return;
+    }
+    fprintf(out, "(");
+    generate_expression(arm->condition);
+    fprintf(out, ") ? (");
+    generate_expression(arm->left);
+    fprintf(out, ") : ");
+    if (index + 1 == node->child_count && !when_has_else(node)) {
+        fprintf(out, "(");
+        generate_expression(arm->left);
+        fprintf(out, ")");
+        return;
+    }
+    emit_when_arm_chain(node, index + 1);
 }
 
 /* --- Built-in Function Dispatch Table --- */
@@ -67,6 +112,9 @@ static const struct {
     {"to_int", "cnext_to_int("},
     {"to_float", "cnext_to_float("},
     {"to_str", "cnext_to_string("},
+    {"to_cstr", "cnext_to_cstr("},
+    {"from_cstr", "cnext_from_cstr("},
+    {"cstr_free", "cnext_cstr_free("},
     {"to_bool", "cnext_to_bool("},
     {"to_char", "cnext_to_char("},
     {"parse_int", "cnext_parse_int("},
@@ -186,7 +234,36 @@ static void gen_with_parens(ASTNode* child, CnextTokenType parent_op, bool is_ri
     }
 }
 
+static void gen_lambda_body(ASTNode* node) {
+    if (node->left->type == AST_BLOCK) { generate_block(node->left); return; }
+    fprintf(out, "{\n");
+    indent_level++;
+    push_scope();
+    for (int i = 0; i < node->child_count; i++) {
+        if (node->children[i]->capture_cell) { write_indent(); emit_capture_cell(node->children[i], true); }
+    }
+    write_indent();
+    fprintf(out, "return ");
+    if (node->left->expr_type == TOKEN_FUNC) {
+        fprintf(out, "cnext_closure_escape(");
+        generate_owned_closure_expression(node->left);
+        fprintf(out, ")");
+    } else generate_expression(node->left);
+    fprintf(out, ";\n");
+    pop_scope();
+    indent_level--;
+    write_indent();
+    fprintf(out, "}\n");
+}
+
 static void gen_lambda_expr(ASTNode* node) {
+    // Buffer each helper independently. Nested helpers are completed and
+    // queued first, so their definitions never interrupt the enclosing body.
+    char helper_path[1024];
+    FILE* helper = codegen_open_lambda_temp(helper_path);
+    if (!helper) { diag_emit(DIAG_ERROR, ERR_CODEGEN_IO, node->token.line, node->token.column, "Could not buffer lambda helper.", NULL, NULL); exit(70); }
+    int saved_indent = indent_level;
+    indent_level = 0;
     int current_lambda = lambda_counter++;
     CapturedVar* captures = NULL;
     detect_captures_walk(node->left, &captures, node, program_node);
@@ -203,7 +280,7 @@ static void gen_lambda_expr(ASTNode* node) {
         closure_list = ci;
 
         FILE* saved_out = out;
-        out = closure_defs_out;
+        out = helper;
         fprintf(out, "struct _cl_env_%d {\n", cl_id);
         for (CapturedVar* cv = captures; cv; cv = cv->next) {
             fprintf(out, "    ");
@@ -214,6 +291,21 @@ static void gen_lambda_expr(ASTNode* node) {
             fprintf(out, " %s;\n", cv->name);
         }
         fprintf(out, "};\n");
+        bool owns_closures = false;
+        bool local_references = false;
+        for (CapturedVar* cv = captures; cv; cv = cv->next) {
+            if ((cv->type == TOKEN_FUNC && !cv->by_reference) ||
+                (cv->by_reference && cv->declaration && cv->declaration->capture_cell)) owns_closures = true;
+            if (cv->by_reference && (!cv->declaration || !cv->declaration->capture_cell)) local_references = true;
+        }
+        if (owns_closures) {
+            fprintf(out, "static void _cl_drop_%d(void* raw) { struct _cl_env_%d* env = raw;", cl_id, cl_id);
+            for (CapturedVar* cv = captures; cv; cv = cv->next) {
+                if (cv->type == TOKEN_FUNC && !cv->by_reference) fprintf(out, " cnext_closure_decref(&env->%s);", cv->name);
+                if (cv->by_reference && cv->declaration && cv->declaration->capture_cell) fprintf(out, " cnext_cell_release(env->%s);", cv->name);
+            }
+            fprintf(out, " }\n");
+        }
 
         generate_lambda_return_type(node->left);
         fprintf(out, " _cl_fn_%d(void* _env_raw", cl_id);
@@ -224,36 +316,41 @@ static void gen_lambda_expr(ASTNode* node) {
         }
         fprintf(out, ") {\n");
         fprintf(out, "    struct _cl_env_%d* _env = (struct _cl_env_%d*)_env_raw;\n", cl_id, cl_id);
-        for (CapturedVar* cv = captures; cv; cv = cv->next) {
-            if (cv->by_reference) {
-                fprintf(out, "    #define %s (*(_env->%s))\n", cv->name, cv->name);
-            } else {
-                fprintf(out, "    #define %s (_env->%s)\n", cv->name, cv->name);
-            }
-        }
-        if (node->left->type == AST_BLOCK) {
-            generate_block(node->left);
-        } else {
-            fprintf(out, "    return ");
-            generate_expression(node->left);
-            fprintf(out, ";\n");
-        }
-        for (CapturedVar* cv = captures; cv; cv = cv->next) {
-            fprintf(out, "    #undef %s\n", cv->name);
-        }
+        CapturedVar* saved_captures = active_captures;
+        ASTNode* saved_params = current_func_params;
+        active_captures = captures;
+        current_func_params = node;
+        gen_lambda_body(node);
+        active_captures = saved_captures;
+        current_func_params = saved_params;
         fprintf(out, "}\n\n");
         out = saved_out;
+        indent_level = saved_indent;
 
-        fprintf(out, "({ struct _cl_env_%d* _ce = (struct _cl_env_%d*)malloc(sizeof(struct _cl_env_%d)); if (!_ce) { fprintf(stderr, \"Cnext runtime: out of memory.\\n\"); exit(70); }", cl_id, cl_id, cl_id);
+        fprintf(out, "({ CnextClosure _closure = cnext_closure_create((void*)_cl_fn_%d, sizeof(struct _cl_env_%d), ", cl_id, cl_id);
+        if (owns_closures) fprintf(out, "_cl_drop_%d", cl_id);
+        else fprintf(out, "NULL");
+        fprintf(out, ", %s); struct _cl_env_%d* _ce = (struct _cl_env_%d*)_closure.env;", local_references ? "true" : "false", cl_id, cl_id);
         for (CapturedVar* cv = captures; cv; cv = cv->next) {
-            fprintf(out, "_ce->%s = %s%s;", cv->name,
-                    cv->by_reference ? "&" : "", cv->name);
+            fprintf(out, "_ce->%s = ", cv->name);
+            bool cell = cv->by_reference && cv->declaration && cv->declaration->capture_cell;
+            bool function = cv->type == TOKEN_FUNC && !cv->by_reference;
+            if (cell) fprintf(out, "cnext_cell_retain(");
+            if (function) fprintf(out, "cnext_closure_capture(&_closure, ");
+            if (cv->by_reference) fprintf(out, "&");
+            emit_bound_name(cv->declaration, cv->name, (int)strlen(cv->name));
+            if (cell || function) fprintf(out, ")");
+            fprintf(out, ";");
         }
-        fprintf(out, "(CnextClosure){ (void*)_cl_fn_%d, _ce, 1 }; })", cl_id);
+        fprintf(out, "_closure; })");
     } else {
         int lambda_id = current_lambda++;
         FILE* saved_out = out;
-        out = closure_defs_out;
+        out = helper;
+        CapturedVar* saved_captures = active_captures;
+        ASTNode* saved_params = current_func_params;
+        active_captures = NULL;
+        current_func_params = node;
         generate_lambda_return_type(node->left);
         fprintf(out, " _lambda_%d(void* _env_raw", lambda_id);
         for (int i = 0; i < node->child_count; i++) {
@@ -262,18 +359,26 @@ static void gen_lambda_expr(ASTNode* node) {
             fprintf(out, " %.*s", node->children[i]->token.length, node->children[i]->token.start);
         }
         fprintf(out, ") ");
-        if (node->left->type == AST_BLOCK) {
-            generate_block(node->left);
-        } else {
-            fprintf(out, "{ return ");
-            generate_expression(node->left);
-            fprintf(out, "; }");
-        }
+        gen_lambda_body(node);
         fprintf(out, "\n");
+        active_captures = saved_captures;
+        current_func_params = saved_params;
         out = saved_out;
+        indent_level = saved_indent;
         fprintf(out, "(void*)_lambda_%d", lambda_id);
         free_captures(captures);
     }
+    rewind(helper);
+    char buffer[4096];
+    size_t count;
+    while ((count = fread(buffer, 1, sizeof(buffer), helper)) != 0) {
+        if (fwrite(buffer, 1, count, closure_defs_out) != count) {
+            diag_emit(DIAG_ERROR, ERR_CODEGEN_IO, node->token.line, node->token.column, "Could not write lambda helper.", NULL, NULL); exit(70);
+        }
+    }
+    if (ferror(helper)) { diag_emit(DIAG_ERROR, ERR_CODEGEN_IO, node->token.line, node->token.column, "Could not read lambda helper.", NULL, NULL); exit(70); }
+    fclose(helper);
+    if (helper_path[0]) remove(helper_path);
 }
 
 /* --- Reads ---
@@ -300,6 +405,7 @@ static const char* input_reader_for_type(CnextTokenType type) {
    destination context: `input_int()` reads an integer wherever it stands. */
 static const char* explicit_input_reader(Token token) {
     static const struct { const char* name; int len; const char* reader; } readers[] = {
+        {"input_str", 9, "cnext_input"},
         {"input_int", 9, "cnext_input_int"},
         {"input_uint", 10, "cnext_input_uint"},
         {"input_long", 10, "cnext_input_long"},
@@ -526,9 +632,9 @@ static void generate_call_expr(ASTNode* node) {
                 generate_expression(node->children[0]);
                 fprintf(out, " = CNEXT_ARRAY_PUSH(");
                 generate_expression(node->children[0]);
-                fprintf(out, ", ");
+                fprintf(out, ", (");
                 generate_expression(node->children[1]);
-                fprintf(out, ")");
+                fprintf(out, "))");
             }
         } else if (is_printin) {
             if (node->child_count > 1) {
@@ -686,8 +792,10 @@ static void generate_call_expr(ASTNode* node) {
                 strncpy(fname, node->left->token.start, flen);
                 fname[flen] = '\0';
                 ClosureVar* clvar = find_closure_var(fname);
-                if (clvar) {
-                    ASTNode* lambda = clvar->lambda_node;
+                ASTNode* resolved_lambda = node->left->binding && node->left->binding->type == AST_VAR_DECL ?
+                    ast_closure_lambda(node->left) : NULL;
+                if (clvar || resolved_lambda) {
+                    ASTNode* lambda = resolved_lambda ? resolved_lambda : clvar->lambda_node;
                     fprintf(out, "((");
                     if (lambda->left->type != AST_BLOCK) {
                         const char* ct = type_token_to_c(lambda->left->expr_type);
@@ -709,7 +817,10 @@ static void generate_call_expr(ASTNode* node) {
                         generate_type(lambda->children[pi]->var_type, false);
                     }
                     fprintf(out, "))");
-                    fprintf(out, "%s.fn)(%s.env", fname, fname);
+                    generate_expression(node->left);
+                    fprintf(out, ".fn)(");
+                    generate_expression(node->left);
+                    fprintf(out, ".env");
                     for (int ai = 0; ai < node->child_count; ai++) {
                         fprintf(out, ", ");
                         generate_expression(node->children[ai]);
@@ -717,8 +828,14 @@ static void generate_call_expr(ASTNode* node) {
                     fprintf(out, ")");
                     return;
                 }
-                if (is_func_param(fname, flen) || is_func_typed_var(fname, flen)) {
-                    fprintf(out, "((int(*)(void*, int))((CnextClosure)%s).fn)(((CnextClosure)%s).env", fname, fname);
+                bool bound_closure = node->left->binding && node->left->binding->type == AST_VAR_DECL &&
+                    (node->left->expr_type == TOKEN_FUNC || node->left->binding->var_type.type == TOKEN_FUNC);
+                if (is_func_param(fname, flen) || is_func_typed_var(fname, flen) || bound_closure) {
+                    fprintf(out, "((int(*)(void*, int))((CnextClosure)");
+                    generate_expression(node->left);
+                    fprintf(out, ").fn)(((CnextClosure)");
+                    generate_expression(node->left);
+                    fprintf(out, ").env");
                     for (int ai = 0; ai < node->child_count; ai++) {
                         fprintf(out, ", ");
                         generate_expression(node->children[ai]);
@@ -820,6 +937,7 @@ static void generate_call_expr(ASTNode* node) {
 
 void generate_expression(ASTNode* node) {
     if (!node) return;
+    if (node->type == AST_CALL && emit_managed_closure_arguments(node)) return;
     switch (node->type) {
         case AST_LITERAL:
             if (node->token.type == TOKEN_STRING_LITERAL) {
@@ -904,7 +1022,7 @@ void generate_expression(ASTNode* node) {
             fprintf(out, "); while (_af->_next(_af)); _af->current; })");
             break;
         case AST_IDENTIFIER:
-            fprintf(out, "%.*s", node->token.length, node->token.start);
+            emit_bound_name(node->binding, node->token.start, node->token.length);
             break;
         case AST_MEMBER_ACCESS:
             generate_expression(node->left);
@@ -970,6 +1088,33 @@ void generate_expression(ASTNode* node) {
             fprintf(out, "%.*s", node->token.length, node->token.start);
             generate_expression(node->right);
             break;
+        case AST_BIT_EXTRACT: {
+            unsigned long long mask = 0;
+            int shift = 0;
+            for (int i = 1; i < node->token.length - 1; i++) {
+                char bit = node->token.start[i];
+                if (bit == '_') continue;
+                mask = (mask << 1) | (bit == '#');
+                shift = bit == '#' ? 0 : shift + 1;
+            }
+            fprintf(out, "(((");
+            generate_expression(node->left);
+            fprintf(out, ") & %lluULL) >> %d)", mask, shift);
+            break;
+        }
+        case AST_BIT_MATCH: {
+            unsigned long long mask = 0, expected = 0;
+            for (int i = 1; i < node->token.length - 1; i++) {
+                char bit = node->token.start[i];
+                if (bit == '_') continue;
+                mask = (mask << 1) | (bit != '?');
+                expected = (expected << 1) | (bit == '1');
+            }
+            fprintf(out, "((bool)(((");
+            generate_expression(node->left);
+            fprintf(out, ") & %lluULL) == %lluULL))", mask, expected);
+            break;
+        }
         case AST_BINARY:
             if ((node->token.type == TOKEN_EQ_EQ || node->token.type == TOKEN_BANG_EQ) &&
                 ((node->left && node->left->expr_type == TOKEN_STR_TYPE) ||
@@ -1056,6 +1201,14 @@ void generate_expression(ASTNode* node) {
             }
             break;
         case AST_ASSIGN:
+            if (node->left && node->left->expr_type == TOKEN_FUNC && node->token.type == TOKEN_EQUAL) {
+                fprintf(out, "cnext_closure_assign(&(");
+                generate_expression(node->left);
+                fprintf(out, "), ");
+                generate_owned_closure_expression(node->right);
+                fprintf(out, ")");
+                break;
+            }
             if (emit_object_array_element_assignment(node)) break;
             generate_expression(node->left);
             fprintf(out, " %.*s ", node->token.length, node->token.start);
@@ -1247,31 +1400,16 @@ void generate_expression(ASTNode* node) {
             fprintf(out, "); _r; })");
             break;
         case AST_WHEN: {
-            fprintf(out, "({ ");
-            for (int i = 0; i < node->child_count; i++) {
-                ASTNode* arm = node->children[i];
-                if (arm->is_const) {
-                    if (i > 0) fprintf(out, "else ");
-                } else if (arm->condition) {
-                    if (i > 0) fprintf(out, "else ");
-                    fprintf(out, "if (");
-                    generate_expression(arm->condition);
-                    fprintf(out, ") ");
-                }
-                if (arm->left) {
-                    fprintf(out, "(");
-                    generate_expression(arm->left);
-                    fprintf(out, ")");
-                }
-                if (!arm->is_const && !arm->condition) {
-                    fprintf(out, " ");
-                }
-            }
-            fprintf(out, "; })");
+            fprintf(out, "(");
+            emit_when_arm_chain(node, 0);
+            fprintf(out, ")");
             break;
         }
         default:
-            fprintf(stderr, "warning: unhandled expression AST node type %d at line %d\n", node->type, node->token.line);
+            char message[128];
+            snprintf(message, sizeof(message), "Unhandled expression AST node type %d.", node->type);
+            diag_emit(DIAG_WARNING, ERR_CODEGEN_UNHANDLED, node->token.line,
+                      node->token.column > 0 ? node->token.column : 1, message, NULL, NULL);
             break;
     }
 }

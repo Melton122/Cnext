@@ -61,10 +61,80 @@ static ASTNode* make_float_literal(double value, Token token) {
 }
 
 static void replace_node_token(ASTNode* node, Token token, char* owned_text) {
+    if (token.start == node->owned_token_text) {
+        if (owned_text && owned_text != node->owned_token_text) free(owned_text);
+        node->token = token;
+        return;
+    }
     free(node->owned_token_text);
     node->owned_token_text = owned_text;
     node->token = token;
 }
+
+static void free_ast_owned_fields(ASTNode* node) {
+    if (!node) return;
+    for (int i = 0; i < node->child_count; i++) {
+        free_ast(node->children[i]);
+    }
+    free(node->children);
+    node->children = NULL;
+    node->child_count = 0;
+    node->child_capacity = 0;
+    for (int i = 0; i < node->type_param_count; i++) {
+        free_ast(node->type_params[i]);
+    }
+    free(node->type_params);
+    node->type_params = NULL;
+    node->type_param_count = 0;
+    node->type_param_capacity = 0;
+    for (int i = 0; i < node->type_arg_count; i++) {
+        free_ast(node->type_args[i]);
+    }
+    free(node->type_args);
+    node->type_args = NULL;
+    node->type_arg_count = 0;
+    node->type_arg_capacity = 0;
+    free_ast(node->left);
+    node->left = NULL;
+    free_ast(node->right);
+    node->right = NULL;
+    free_ast(node->condition);
+    node->condition = NULL;
+    free_ast(node->init);
+    node->init = NULL;
+    free_ast(node->increment);
+    node->increment = NULL;
+    free_ast(node->default_value);
+    node->default_value = NULL;
+    free(node->type_name);
+    node->type_name = NULL;
+    free(node->parent_name);
+    node->parent_name = NULL;
+    free(node->implements_names);
+    node->implements_names = NULL;
+    free(node->attribute_name);
+    node->attribute_name = NULL;
+    free(node->owned_token_text);
+    node->owned_token_text = NULL;
+}
+
+static void move_ast_node(ASTNode* target, ASTNode* source) {
+    if (!target || !source || target == source) return;
+    free_ast_owned_fields(target);
+    *target = *source;
+    memset(source, 0, sizeof(*source));
+    free(source);
+}
+
+static ASTNode* make_owned_identifier(Token token) {
+    char* text = checked_strndup(token.start, (size_t)token.length);
+    Token t = token;
+    t.start = text;
+    ASTNode* node = create_node(AST_IDENTIFIER, t);
+    node->owned_token_text = text;
+    return node;
+}
+
 
 // Check if a node is a compile-time constant integer literal
 static bool is_int_literal(ASTNode* node) {
@@ -299,8 +369,11 @@ static void propagate_constants(ASTNode* node, ASTNode* scope) {
         name[nlen] = '\0';
         ASTNode* const_val = const_table_find(name);
         if (const_val) {
+            char* text = checked_strndup(const_val->token.start, (size_t)const_val->token.length);
+            Token replacement = const_val->token;
+            replacement.start = text;
             node->type = const_val->type;
-            replace_node_token(node, const_val->token, NULL);
+            replace_node_token(node, replacement, text);
             opt_count++;
         }
     }
@@ -479,7 +552,6 @@ static ASTNode* eliminate_identities(ASTNode* node) {
             opt_count++;
             ASTNode* result = left;
             node->left = NULL;
-            free_ast(right);
             return result;
         }
     }
@@ -489,7 +561,6 @@ static ASTNode* eliminate_identities(ASTNode* node) {
             opt_count++;
             ASTNode* result = right;
             node->right = NULL;
-            free_ast(left);
             return result;
         }
     }
@@ -499,7 +570,6 @@ static ASTNode* eliminate_identities(ASTNode* node) {
             opt_count++;
             ASTNode* result = left;
             node->left = NULL;
-            free_ast(right);
             return result;
         }
     }
@@ -509,7 +579,6 @@ static ASTNode* eliminate_identities(ASTNode* node) {
             opt_count++;
             ASTNode* result = left;
             node->left = NULL;
-            free_ast(right);
             return result;
         }
     }
@@ -519,7 +588,6 @@ static ASTNode* eliminate_identities(ASTNode* node) {
             opt_count++;
             ASTNode* result = right;
             node->right = NULL;
-            free_ast(left);
             return result;
         }
     }
@@ -564,7 +632,7 @@ static ASTNode* peephole_optimize(ASTNode* node) {
             // Free the original right node (the literal '2') to prevent memory leak
             free_ast(node->right);
             node->right = NULL;
-            add->right = create_node(AST_IDENTIFIER, left->token);
+            add->right = make_owned_identifier(left->token);
             return add;
         }
     }
@@ -798,14 +866,11 @@ static void optimize_node(ASTNode* node) {
     if (node->type == AST_BINARY) {
         ASTNode* folded = fold_binary(node);
         if (folded) {
-            node->type = folded->type;
-            replace_node_token(node, folded->token, folded->owned_token_text);
-            folded->owned_token_text = NULL;
             free_ast(node->left);
-            free_ast(node->right);
             node->left = NULL;
+            free_ast(node->right);
             node->right = NULL;
-            free(folded);
+            move_ast_node(node, folded);
         }
     }
 
@@ -813,14 +878,7 @@ static void optimize_node(ASTNode* node) {
     if (node->type == AST_BINARY) {
         ASTNode* reduced = peephole_optimize(node);
         if (reduced) {
-            node->type = reduced->type;
-            replace_node_token(node, reduced->token, reduced->owned_token_text);
-            reduced->owned_token_text = NULL;
-            node->left = reduced->left;
-            node->right = reduced->right;
-            reduced->left = NULL;
-            reduced->right = NULL;
-            free(reduced);
+            move_ast_node(node, reduced);
         }
     }
 
@@ -830,27 +888,11 @@ static void optimize_node(ASTNode* node) {
         ASTNode* old_right = node->right;
         ASTNode* simplified = eliminate_identities(node);
         if (simplified) {
-            node->type = simplified->type;
-            replace_node_token(node, simplified->token, simplified->owned_token_text);
-            simplified->owned_token_text = NULL;
-            
-            node->left = simplified->left;
-            node->right = simplified->right;
-            node->children = simplified->children;
-            node->child_count = simplified->child_count;
-            node->child_capacity = simplified->child_capacity;
-            
-            simplified->left = NULL;
-            simplified->right = NULL;
-            simplified->children = NULL;
-            simplified->child_count = 0;
-            simplified->child_capacity = 0;
-            
             bool simplified_is_old_left = (simplified == old_left);
             bool simplified_is_old_right = (simplified == old_right);
-            
-            free(simplified);
-            
+            node->left = NULL;
+            node->right = NULL;
+            move_ast_node(node, simplified);
             if (!simplified_is_old_left) {
                 free_ast(old_left);
             }
@@ -864,12 +906,9 @@ static void optimize_node(ASTNode* node) {
     if (node->type == AST_UNARY) {
         ASTNode* folded = fold_unary(node);
         if (folded) {
-            node->type = folded->type;
-            replace_node_token(node, folded->token, folded->owned_token_text);
-            folded->owned_token_text = NULL;
             free_ast(node->right);
             node->right = NULL;
-            free(folded);
+            move_ast_node(node, folded);
         }
     }
 
@@ -877,18 +916,7 @@ static void optimize_node(ASTNode* node) {
     if (node->type == AST_IF) {
         ASTNode* folded = fold_if(node);
         if (folded) {
-            node->type = folded->type;
-            replace_node_token(node, folded->token, folded->owned_token_text);
-            folded->owned_token_text = NULL;
-            node->left = folded->left;
-            node->right = folded->right;
-            node->condition = folded->condition;
-            node->init = folded->init;
-            node->increment = folded->increment;
-            node->children = folded->children;
-            node->child_count = folded->child_count;
-            node->child_capacity = folded->child_capacity;
-            free(folded);
+            move_ast_node(node, folded);
         } else if (is_int_literal(node->condition)) {
             long val = parse_int_value(node->condition->token);
             if (val == 0) {
@@ -909,14 +937,16 @@ static void optimize_node(ASTNode* node) {
         ASTNode* folded = fold_while_false(node);
         if (folded) {
             free_ast(node->left);
+            node->left = NULL;
+            free_ast(node->right);
+            node->right = NULL;
             free_ast(node->condition);
-            node->type = folded->type;
-            replace_node_token(node, folded->token, folded->owned_token_text);
-            folded->owned_token_text = NULL;
-            node->left = folded->left;
-            node->right = folded->right;
             node->condition = NULL;
-            free(folded);
+            free_ast(node->init);
+            node->init = NULL;
+            free_ast(node->increment);
+            node->increment = NULL;
+            move_ast_node(node, folded);
         }
     }
 
@@ -946,8 +976,9 @@ static void optimize_loops(ASTNode* node) {
                     t.type = TOKEN_PLUS;
                     ASTNode* add = create_node(AST_BINARY, t);
                     add->left = cond->left;
-                    add->right = create_node(AST_IDENTIFIER, cond->left->token);
+                    add->right = make_owned_identifier(cond->left->token);
                     cond->left = NULL;
+                    free_ast(cond->right);
                     cond->right = NULL;
                     free_ast(cond);
                     node->condition = add;

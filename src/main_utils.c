@@ -211,11 +211,29 @@ bool build_include_path(const char* argv0, char* include_path, size_t include_pa
     return true;
 }
 
+#ifdef _WIN32
+static size_t append_quoted_arg(char* dst, size_t cap, size_t pos, const char* arg);
+#endif
+
 int run_process(const char* program, const char* const args[]) {
 #ifdef _WIN32
-    intptr_t result = _spawnvp(_P_WAIT, program, (const char* const*)args);
+    // _spawnvp joins argv with spaces without quoting it. Preserve each token
+    // using the same Windows quoting rules as the captured-process helpers.
+    size_t count = 0;
+    while (args[count]) count++;
+    char** quoted = calloc(count + 1, sizeof(*quoted));
+    for (size_t i = 0; i < count; i++) {
+        size_t capacity = 2 * strlen(args[i]) + 3;
+        quoted[i] = malloc(capacity);
+        size_t end = append_quoted_arg(quoted[i], capacity, 0, args[i]);
+        quoted[i][end] = '\0';
+    }
+    intptr_t result = _spawnvp(_P_WAIT, program, (const char* const*)quoted);
+    int saved_errno = errno;
+    for (size_t i = 0; i < count; i++) free(quoted[i]);
+    free(quoted);
     if (result == -1) {
-        fprintf(stderr, "Could not start %s: %s\n", program, strerror(errno));
+        fprintf(stderr, "Could not start %s: %s\n", program, strerror(saved_errno));
         return 127;
     }
     return (int)result;

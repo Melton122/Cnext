@@ -11,12 +11,17 @@ build/
 
 # Temp files
 *.tmp
+*.s
 temp_out.c
 _cnext_*.tmp
 formatted_output.cn
 
 # Test artifacts
 test_temp_*
+__cnext_run_tmp.c
+_p*.c
+_probe*
+out_parity/
 test_output.txt
 test_results.txt
 test_results_full.txt
@@ -27,6 +32,7 @@ debug_interp.c
 tests/_test_out
 tests/_test_out.exe
 tests/_test_list.txt
+tests/_test_methods_temp.c
 
 # IDE
 .vscode/
@@ -40,7 +46,8 @@ tests/_test_list.txt
 Thumbs.db
 
 # Packages
-packages/
+/packages/*
+!/packages/test_pkg.cn
 
 # Release artifacts
 *.zip

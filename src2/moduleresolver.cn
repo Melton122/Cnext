@@ -1,1 +1,139 @@
-﻿// Self-hosting bootstrap: moduleresolver
+// Self-hosting bootstrap: moduleresolver
+// Port of src/moduleresolver.c
+//
+// The C version writes into fixed char buffers (namespace/name/submodule and a
+// caller-supplied resolve buffer); the port uses dynamic strings. Buffers that
+// C truncated via snprintf/strncpy are clamped explicitly to keep the same
+// values.
+
+const int MAX_MODULE_PATH = 512
+const int MODULE_FIELD_MAX = 127   // sizeof(field) - 1 in include/moduleresolver.h
+const int MODULE_NAME_BUF_MAX = 255 // sizeof(name_buf) - 1 in src/moduleresolver.c
+const int MODULE_VERSION_MAX = 127  // sizeof(version_part) - 1 in src/moduleresolver.c
+
+class ModulePath {
+    str namespace // "std", "org", ""
+    str name      // "http", "pkg", "my_module"
+    str submodule // "server", "", ""
+    VersionSpec version
+    bool has_version
+
+    func new() {
+        self.namespace = ""
+        self.name = ""
+        self.submodule = ""
+        self.version = new VersionSpec()
+        self.has_version = false
+    }
+}
+
+func module_clamp(str s, int max_len): str {
+    if len(s) > max_len {
+        return str_substring(s, 0, max_len)
+    }
+    return s
+}
+
+// Parse an import string like "http", "std/http", "std/http/server" or
+// "std/http@^1.2.3" into its parts.
+func module_path_parse(ModulePath out, str import_str): bool {
+    out.namespace = ""
+    out.name = ""
+    out.submodule = ""
+    out.version = new VersionSpec()
+    out.has_version = false
+    if import_str == null || len(import_str) == 0 {
+        return false
+    }
+
+    str p = import_str
+    int pn = len(p)
+
+    // Check for version constraint: std/http@^1.2.3
+    str version_part = ""
+    int at = str_find(p, "@")
+    if at > 0 {
+        version_part = module_clamp(str_substring(p, at + 1, pn), MODULE_VERSION_MAX)
+    }
+
+    // Count slashes to determine structure. A trailing slash or one directly
+    // followed by '@' does not count (mirrors the C loop).
+    int slash_count = 0
+    int si = 0
+    while si < pn {
+        if str_char_at(p, si) == '/' && si + 1 < pn && str_char_at(p, si + 1) != '@' {
+            slash_count = slash_count + 1
+        }
+        si = si + 1
+    }
+
+    // The name is everything before the version suffix.
+    int end = pn
+    if at >= 0 {
+        end = at
+    }
+    str name_buf = module_clamp(str_substring(p, 0, end), MODULE_NAME_BUF_MAX)
+
+    if slash_count == 0 {
+        // Simple: "http" or "my_module"
+        out.name = module_clamp(name_buf, MODULE_FIELD_MAX)
+        out.namespace = "std"
+    } else if slash_count == 1 {
+        // Namespaced: "std/http" or "org/pkg"
+        int slash = str_find(name_buf, "/")
+        if slash >= 0 {
+            out.namespace = module_clamp(str_substring(name_buf, 0, slash), MODULE_FIELD_MAX)
+            out.name = module_clamp(str_substring(name_buf, slash + 1, len(name_buf)), MODULE_FIELD_MAX)
+        }
+    } else if slash_count == 2 {
+        // Submodule: "std/http/server"
+        int first_slash = str_find(name_buf, "/")
+        if first_slash >= 0 {
+            out.namespace = module_clamp(str_substring(name_buf, 0, first_slash), MODULE_FIELD_MAX)
+            str rest = str_substring(name_buf, first_slash + 1, len(name_buf))
+            int second_slash = str_find(rest, "/")
+            if second_slash >= 0 {
+                out.name = module_clamp(str_substring(rest, 0, second_slash), MODULE_FIELD_MAX)
+                out.submodule = module_clamp(str_substring(rest, second_slash + 1, len(rest)), MODULE_FIELD_MAX)
+            }
+        }
+    }
+
+    // Parse version if present
+    if len(version_part) > 0 {
+        if semver_parse_spec(out.version, version_part) {
+            out.has_version = true
+        }
+    }
+
+    return true
+}
+
+// Resolve a parsed path to a file path relative to the project. Returns an
+// empty string where the C version returns false.
+func module_path_resolve(ModulePath path, str project_dir): str {
+    if len(path.namespace) == 0 && len(path.name) == 0 {
+        return ""
+    }
+
+    // Check for standard library modules
+    if path.namespace == "std" {
+        return "lib/std/" + path.name + ".cn"
+    }
+
+    // Namespaced modules: org/pkg -> packages/org-pkg/
+    if len(path.namespace) > 0 && path.namespace != "std" {
+        str tail = path.submodule
+        if len(tail) == 0 {
+            tail = path.name
+        }
+        return project_dir + "/packages/" + path.namespace + "-" + path.name + "/" + tail
+    }
+
+    // Local modules
+    return project_dir + "/" + path.name
+}
+
+func module_is_std(ModulePath path): bool {
+    return path.namespace == "std"
+}

@@ -1,1 +1,146 @@
-﻿// stub
+// Self-hosting bootstrap: generic class specialization.
+
+func class_mangled_name(ASTNode? new_node): str {
+    if new_node == null { return "" }
+    str name = new_node.token.text
+    int i = 0
+    while i < len(new_node.type_args) {
+        name = name + "_" + new_node.type_args[i].token.text
+        i = i + 1
+    }
+    return name
+}
+
+func has_class_spec(str name): bool {
+    var work = g_class_spec_queue
+    while work != null {
+        if work.mangled_name == name { return true }
+        work = work.next
+    }
+    return false
+}
+
+func enqueue_class_spec_work(ASTNode? class_decl, ASTNode? new_node) {
+    if class_decl == null || new_node == null { return }
+    str mangled = class_mangled_name(new_node)
+    if has_class_spec(mangled) { return }
+    var work = new ClassSpecWork()
+    work.class_decl = class_decl
+    work.mangled_name = mangled
+    work.resolved_count = len(new_node.type_args)
+    int i = 0
+    while i < work.resolved_count {
+        push(work.resolved_args, new TokenBox(new_node.type_args[i].token))
+        push(work.resolved_is_array, new_node.type_args[i].is_array)
+        i = i + 1
+    }
+    if g_class_spec_last != null {
+        g_class_spec_last.next = work
+    } else {
+        g_class_spec_queue = work
+    }
+    g_class_spec_last = work
+}
+
+func scan_node_for_new_exprs(ASTNode? node) {
+    if node == null { return }
+    if node.kind == AST_NEW_EXPR && len(node.type_args) > 0 {
+        var class_decl = find_class_decl(g_codegen_program, node.token.text)
+        if class_decl != null && len(class_decl.type_params) > 0 {
+            enqueue_class_spec_work(class_decl, node)
+        }
+    }
+    scan_node_for_new_exprs(node.left)
+    scan_node_for_new_exprs(node.right)
+    scan_node_for_new_exprs(node.condition)
+    scan_node_for_new_exprs(node.init)
+    scan_node_for_new_exprs(node.increment)
+    int i = 0
+    while i < len(node.children) {
+        scan_node_for_new_exprs(node.children[i])
+        i = i + 1
+    }
+}
+
+func generate_generic_class_specialization(ASTNode? class_decl, ClassSpecWork? work) {
+    if class_decl == null || work == null { return }
+    int i = 0
+    while i < len(class_decl.type_params) && i < work.resolved_count {
+        push_type_subst(class_decl.type_params[i].token.text,
+                        work.resolved_args[i].value, work.resolved_is_array[i])
+        i = i + 1
+    }
+
+    codegen_emit("typedef struct ")
+    codegen_emit(work.mangled_name)
+    codegen_emit(" {\n")
+    g_indent_level = g_indent_level + 1
+    i = 0
+    while i < len(class_decl.children) {
+        var field = class_decl.children[i]
+        if field != null && field.kind == AST_VAR_DECL {
+            write_indent()
+            generate_node_type(field, false)
+            codegen_emit(" ")
+            codegen_emit(field.token.text)
+            codegen_emit(";\n")
+        }
+        i = i + 1
+    }
+    g_indent_level = g_indent_level - 1
+    codegen_emit("} ")
+    codegen_emit(work.mangled_name)
+    codegen_emit(";\n\n")
+
+    bool has_constructor = false
+    i = 0
+    while i < len(class_decl.children) {
+        var member = class_decl.children[i]
+        if member != null && member.kind == AST_CONSTRUCTOR {
+            has_constructor = true
+            generate_constructor(work.mangled_name, member)
+        }
+        i = i + 1
+    }
+    if !has_constructor {
+        codegen_emit("void ")
+        codegen_emit(work.mangled_name)
+        codegen_emit("_new(")
+        codegen_emit(work.mangled_name)
+        codegen_emit("* self) ")
+        codegen_emit("{ ")
+        codegen_emit("(void)self;")
+        codegen_emit(" }\n\n")
+    }
+
+    i = 0
+    while i < len(class_decl.children) {
+        var member = class_decl.children[i]
+        if member != null && member.kind == AST_FUNC_DECL && !member.is_abstract {
+            if len(member.children) > 0 && member.children[0] != null {
+                var saved_self = member.children[0].var_type
+                member.children[0].var_type = make_token(TOKEN_IDENTIFIER, work.mangled_name, 0, 0)
+                generate_function(member, work.mangled_name)
+                member.children[0].var_type = saved_self
+            } else {
+                generate_function(member, work.mangled_name)
+            }
+        }
+        i = i + 1
+    }
+
+    i = 0
+    while i < len(class_decl.type_params) && i < work.resolved_count {
+        pop_type_subst()
+        i = i + 1
+    }
+}
+
+func process_class_spec_queue() {
+    while g_class_spec_queue != null {
+        var work = g_class_spec_queue
+        g_class_spec_queue = work.next
+        if g_class_spec_queue == null { g_class_spec_last = null }
+        generate_generic_class_specialization(work.class_decl, work)
+    }
+}

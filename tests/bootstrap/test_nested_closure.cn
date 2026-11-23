@@ -1,0 +1,78 @@
+extern "C" func bootstrap_tracked_allocations(): int
+
+func shadowed_snapshot(): func {
+    int value = 10
+    return (int step) => {
+        int result = value + step
+        {
+            int value = 100
+            value = value + 1
+        }
+        return result
+    }
+}
+
+func make_builder(int total): func {
+    return (int start) => {
+        total = total + start
+        return (int step) => {
+            total = total + step
+            return total
+        }
+    }
+}
+
+func callback_builder(func callback): func {
+    return (int unused) => callback
+}
+
+func leaf(int base): func { return (int step) => base + step }
+
+func arrow_builder(): func {
+    return (int initial) => (int step) => {
+        initial = initial + step
+        return initial
+    }
+}
+
+func make_local_builder(): func {
+    return (int initial) => {
+        int count = initial
+        var next = (int step) => {
+            count = count + step
+            return count
+        }
+        return next
+    }
+}
+
+main {
+    int before = bootstrap_tracked_allocations()
+    {
+        var builder = make_builder(10)
+        var first = builder(1)
+        var second = builder(2)
+        printin(first(3))
+        printin(second(4))
+        printin(first(0))
+        var local_builder = make_local_builder()
+        var local = local_builder(100)
+        printin(local(1))
+        printin(local(2))
+        var arrow = arrow_builder()
+        var arrow_counter = arrow(5)
+        printin(arrow_counter(1))
+        printin(arrow_counter(2))
+        var survivor = leaf(0)
+        {
+            var producer = callback_builder(leaf(40))
+            var returned = producer(0)
+            printin(returned(1))
+            survivor = returned
+        }
+        printin(survivor(2))
+        var snapshot = shadowed_snapshot()
+        printin(snapshot(3))
+    }
+    printin(bootstrap_tracked_allocations() == before)
+}

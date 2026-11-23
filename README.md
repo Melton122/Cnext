@@ -40,6 +40,8 @@ Cnext is a high-level, statically-typed language with a familiar syntax that tra
 
 ## Features
 
+- **Packed bits** — Test a status byte with `status ~= "10??_???1"` and read its channel number with `status ~> "??##_#???"`. [Sensor status example](examples/sensor_status.cn)
+
 - **Modern Syntax** — Clean, readable code with type inference (`var`), string interpolation, and optional semicolons
 - **Rich Type System** — `int`, `long`, `float`, `double`, `str`, `bool`, `char`, `byte`, `uint`, `ulong`, `ushort`, `ubyte`
 - **Type Aliases** — `type MyInt = int` for clearer code
@@ -149,7 +151,13 @@ cnext build file.cn --release    # Optimized build
 cnext build file.cn --debug      # Debug build with symbols
 cnext build file.cn --verbose    # Show generated C code
 cnext build file.cn --clean      # Remove build artifacts
+cnext build file.cn --c-source helper.c # Compile and link a C source
+cnext build file.cn --library-dir native/lib --link-lib helper # Link a C library
 ```
+
+Native build options also work with `cnext run` and can be repeated. Use
+`--include-dir` for C headers and `--object` for existing objects or archives.
+See [C interoperability](docs/syntax.md#extern--c-ffi) for examples and ABI rules.
 
 ## Language Overview
 
@@ -542,6 +550,7 @@ See the `examples/` directory for complete programs:
 
 - [Language Overview](docs/syntax.md)
 - [Type System](docs/types.md)
+- [Memory, ownership, and cleanup](docs/memory.md)
 - [Standard Library](docs/stdlib.md)
 - [Architecture](docs/architecture.md)
 - [Installation](docs/installation.md)

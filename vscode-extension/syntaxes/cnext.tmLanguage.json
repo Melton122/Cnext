@@ -219,7 +219,7 @@
       "patterns": [
         {
           "name": "keyword.operator.arrow.cnext",
-          "match": "->|=>"
+          "match": "->|=>|~>"
         },
         {
           "name": "keyword.operator.assignment.compound.cnext",
@@ -227,7 +227,7 @@
         },
         {
           "name": "keyword.operator.comparison.cnext",
-          "match": "==|!=|<=|>=|<|>"
+          "match": "==|!=|~=|<=|>=|<|>"
         },
         {
           "name": "keyword.operator.logical.cnext",

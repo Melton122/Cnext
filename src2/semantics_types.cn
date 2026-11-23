@@ -1,4 +1,4 @@
-﻿// Self-hosting bootstrap: semantics types and helpers.
+// Self-hosting bootstrap: semantics types and helpers.
 // Port of src/semantics_types.c + type helpers from semantics_internal.h.
 // Depends on: parser_types.cn, parser_core.cn
 
@@ -58,6 +58,42 @@ func type_name_from_token(Token token): str {
 // ---------------------------------------------------------------------------
 // Assignment compatibility
 // ---------------------------------------------------------------------------
+func sem_numeric_assignment_allowed(int expected, int actual): bool {
+    if actual == TOKEN_CHAR_TYPE {
+        return expected == TOKEN_CHAR_TYPE || expected == TOKEN_INT_TYPE || expected == TOKEN_LONG_TYPE
+    }
+    if actual == TOKEN_INT_TYPE {
+        return expected == TOKEN_INT_TYPE || expected == TOKEN_LONG_TYPE || expected == TOKEN_DOUBLE_TYPE
+    }
+    if actual == TOKEN_LONG_TYPE {
+        return expected == TOKEN_LONG_TYPE
+    }
+    if actual == TOKEN_BYTE_TYPE {
+        return expected == TOKEN_BYTE_TYPE || expected == TOKEN_USHORT_TYPE ||
+               expected == TOKEN_UINT_TYPE || expected == TOKEN_ULONG_TYPE
+    }
+    if actual == TOKEN_UBYTE_TYPE {
+        return expected == TOKEN_UBYTE_TYPE || expected == TOKEN_USHORT_TYPE ||
+               expected == TOKEN_UINT_TYPE || expected == TOKEN_ULONG_TYPE
+    }
+    if actual == TOKEN_USHORT_TYPE {
+        return expected == TOKEN_USHORT_TYPE || expected == TOKEN_UINT_TYPE || expected == TOKEN_ULONG_TYPE
+    }
+    if actual == TOKEN_UINT_TYPE {
+        return expected == TOKEN_UINT_TYPE || expected == TOKEN_ULONG_TYPE || expected == TOKEN_DOUBLE_TYPE
+    }
+    if actual == TOKEN_ULONG_TYPE {
+        return expected == TOKEN_ULONG_TYPE
+    }
+    if actual == TOKEN_FLOAT_TYPE {
+        return expected == TOKEN_FLOAT_TYPE || expected == TOKEN_DOUBLE_TYPE
+    }
+    if actual == TOKEN_DOUBLE_TYPE {
+        return expected == TOKEN_DOUBLE_TYPE
+    }
+    return false
+}
+
 func assignment_types_compatible(Token expected, int actual): bool {
     if expected.kind == TOKEN_EOF {
         return true
@@ -68,21 +104,61 @@ func assignment_types_compatible(Token expected, int actual): bool {
     if expected.kind == actual {
         return true
     }
-    if (expected.kind == TOKEN_INT_TYPE && actual == TOKEN_LONG_TYPE) { return true }
-    if (expected.kind == TOKEN_LONG_TYPE && actual == TOKEN_INT_TYPE) { return true }
-    if (expected.kind == TOKEN_FLOAT_TYPE && actual == TOKEN_DOUBLE_TYPE) { return true }
-    if (expected.kind == TOKEN_DOUBLE_TYPE && actual == TOKEN_FLOAT_TYPE) { return true }
-    if (expected.kind == TOKEN_DOUBLE_TYPE && actual == TOKEN_INT_TYPE) { return true }
-    if (expected.kind == TOKEN_DOUBLE_TYPE && actual == TOKEN_LONG_TYPE) { return true }
-    if (expected.kind == TOKEN_FLOAT_TYPE && actual == TOKEN_INT_TYPE) { return true }
-    if (expected.kind == TOKEN_FLOAT_TYPE && actual == TOKEN_LONG_TYPE) { return true }
+    if sem_is_numeric_type_kind(expected.kind) && sem_is_numeric_type_kind(actual) {
+        return sem_numeric_assignment_allowed(expected.kind, actual)
+    }
     if actual == TOKEN_NULL {
         return true
     }
     return false
 }
 
+func sem_is_numeric_type_kind(int kind): bool {
+    if kind == TOKEN_INT_TYPE { return true }
+    if kind == TOKEN_LONG_TYPE { return true }
+    if kind == TOKEN_FLOAT_TYPE { return true }
+    if kind == TOKEN_DOUBLE_TYPE { return true }
+    if kind == TOKEN_CHAR_TYPE { return true }
+    if kind == TOKEN_BYTE_TYPE { return true }
+    if kind == TOKEN_UINT_TYPE { return true }
+    if kind == TOKEN_ULONG_TYPE { return true }
+    if kind == TOKEN_USHORT_TYPE { return true }
+    if kind == TOKEN_UBYTE_TYPE { return true }
+    return false
+}
+
+func sem_is_text_type_kind(int kind): bool {
+    return kind == TOKEN_STR_TYPE
+}
+
+func sem_check_assignment_type(Token expected, ASTNode? value, int actual) {
+    if value == null { return }
+    if expected.kind == TOKEN_VAR || expected.kind == TOKEN_EOF { return }
+    if actual == TOKEN_EOF || actual == TOKEN_VAR || actual == TOKEN_NULL { return }
+    if value.kind == AST_NULL_LITERAL { return }
+    if expected.kind == TOKEN_IDENTIFIER && expected.text == "CStr" { return }
+    if expected.kind == TOKEN_IDENTIFIER || actual == TOKEN_IDENTIFIER { return }
+    if expected.kind == actual { return }
+    bool expected_text = sem_is_text_type_kind(expected.kind)
+    bool actual_text = sem_is_text_type_kind(actual)
+    if expected_text && actual_text { return }
+    if !expected_text && !actual_text {
+        if sem_is_numeric_type_kind(expected.kind) && sem_is_numeric_type_kind(actual) {
+            if assignment_types_compatible(expected, actual) { return }
+        } else if expected.kind != TOKEN_BOOL_TYPE && actual != TOKEN_BOOL_TYPE {
+            return
+        }
+    }
+    semantic_error_at("E101", value.token.line, value.token.col,
+        "Type mismatch in assignment.",
+        "Assign a value whose type matches the destination, or use an explicit cast.")
+    printin("  = expected: " + type_name_from_token(expected))
+    printin("  = found: " + type_name_from_token(make_kind_token(actual)))
+    has_semantic_error = true
+}
+
 func validate_type_token(Token token): bool {
+    if token.kind == TOKEN_IDENTIFIER && token.text == "CStr" { return true }
     if token.kind == TOKEN_EOF { return true }
     if is_builtin_value_type_kind(token.kind) { return true }
     if token.kind == TOKEN_ITER { return true }
@@ -104,9 +180,55 @@ func validate_type_token(Token token): bool {
 }
 
 func validate_var_initializer(ASTNode node) {
+    if node.var_type.kind == TOKEN_VAR && node.init == null {
+        return
+    }
+    if node.init == null { return }
+    if node.var_type.kind != TOKEN_VAR {
+        sem_apply_expected_type(node.init, node.var_type.kind)
+    }
+    int init_type = analyze_expression(node.init)
+    if node.init.kind == AST_NULL_LITERAL {
+        node.init.expr_type = node.var_type.kind
+        node.init.type_name = type_name_from_token(node.var_type)
+    }
+    sem_check_assignment_type(node.var_type, node.init, init_type)
 }
 
 func analyze_var_declaration(ASTNode node) {
+    validate_type_token(node.var_type)
+    validate_var_initializer(node)
+
+    // Infer the type of a `var` declaration from its initializer, exactly as
+    // stage 0 does, so codegen emits the concrete type rather than
+    // `__auto_type` and later passes can rely on it.
+    if node.var_type.kind == TOKEN_VAR && node.init != null {
+        node.type_is_inferred = true
+        int inferred = node.init.expr_type
+        if inferred != TOKEN_EOF && inferred != TOKEN_VAR {
+            node.var_type.kind = inferred
+            if inferred == TOKEN_IDENTIFIER {
+                if len(node.init.type_name) > 0 {
+                    node.var_type = make_token(TOKEN_IDENTIFIER, node.init.type_name, node.init.token.line, 0)
+                } else if len(node.init.token.text) > 0 {
+                    node.var_type = make_token(TOKEN_IDENTIFIER, node.init.token.text, node.init.token.line, 0)
+                }
+            }
+        }
+    }
+
+    if node.var_type.kind == TOKEN_IDENTIFIER {
+        var type_sym = resolve_symbol(node.var_type)
+        if type_sym != null && type_sym.sym_type == TOKEN_CLASS {
+            if type_sym.decl_node != null && type_sym.decl_node.kind == AST_TYPE_ALIAS {
+            } else if !node.is_array {
+                node.is_class = true
+            }
+        }
+    }
+
+    var tname = type_name_from_token(node.var_type)
+    define_symbol(node.token, node.var_type.kind, node.is_const, tname, node)
 }
 
 func analyze_field_declaration(ASTNode node) {

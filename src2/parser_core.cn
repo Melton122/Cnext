@@ -77,7 +77,7 @@ func consume(int kind, str message) {
         advance_token()
         return
     }
-    error_at_tok(g_parser.current, message)
+    error_at_tok_expected(g_parser.current, message, message)
 }
 
 // Consume current token if it is a semicolon (semicolons are optional in Cnext).
@@ -90,21 +90,101 @@ func optionally_consume_semicolon() {
 // Mirrors error_at / error / error_at_current in parser_core.c.
 // ---------------------------------------------------------------------------
 
-func error_at_tok(Token tok, str message) {
+func parser_error_code(str message): str {
+    if str_contains(message, "Expect expression") { return "E001" }
+    if str_contains(message, "Expect '") { return "E002" }
+    if str_contains(message, "Undeclared") { return "E003" }
+    if str_contains(message, "Type mismatch") { return "E004" }
+    if str_contains(message, "missing brace") { return "E006" }
+    if str_contains(message, "missing paren") { return "E007" }
+    if str_contains(message, "';'") { return "E008" }
+    if str_contains(message, "already") { return "E009" }
+    if str_contains(message, "Cannot assign") { return "E010" }
+    if str_contains(message, "Too many") { return "E011" }
+    if str_contains(message, "Too few") { return "E012" }
+    if str_contains(message, "return") { return "E013" }
+    return "E005"
+}
+
+func parser_error_help(str code): str {
+    if code == "E001" { return "Check operator usage or variable names." }
+    if code == "E002" { return "Add the missing token shown above." }
+    if code == "E003" { return "Declare the variable first: var name = value" }
+    if code == "E004" { return "Types don't match. Use 'as' for explicit casting." }
+    if code == "E006" { return "Check block structure for unmatched braces." }
+    if code == "E007" { return "Check for unmatched parentheses." }
+    if code == "E008" { return "Add a semicolon at the end of the statement." }
+    if code == "E009" { return "This name is already declared in this scope." }
+    if code == "E010" { return "Cannot assign to this expression." }
+    if code == "E011" { return "Check function signature for correct parameter count." }
+    if code == "E012" { return "Missing required arguments. Check function signature." }
+    if code == "E013" { return "Function returns void. Remove return value or add return type." }
+    return "Unexpected token. Check syntax near this location."
+}
+
+func print_source_excerpt(int line, int col) {
+    if len(g_parser_source) == 0 || line < 1 { return }
+    int source_len = len(g_parser_source)
+    int start = 0
+    int current = 1
+    while start < source_len && current < line {
+        if str_substring(g_parser_source, start, start + 1) == "\n" { current = current + 1 }
+        start = start + 1
+    }
+    if start >= source_len { return }
+    int end = start
+    while end < source_len && str_substring(g_parser_source, end, end + 1) != "\n" {
+        end = end + 1
+    }
+    if end <= start { return }
+    int shown_end = end
+    if shown_end - start > 240 { shown_end = start + 240 }
+    printin("  | " + str_substring(g_parser_source, start, shown_end))
+    if shown_end < end { printin("  | ...") }
+    str caret = ""
+    int i = 1
+    while i < col && len(caret) < 40 {
+        caret = caret + " "
+        i = i + 1
+    }
+    printin("  | " + caret + "^")
+}
+
+func error_at_tok_fields(Token tok, str message, str expected) {
+    str code = parser_error_code(message)
+    str prefix = "error [" + code + "] [" + to_str(tok.line) + ":" + to_str(tok.col) + "]: "
+    str found = ""
+    if tok.kind == TOKEN_EOF {
+        found = "end of file"
+        printin(prefix + message + " (at end of file)")
+    } else if tok.kind == TOKEN_ERROR {
+        printin(prefix + message)
+    } else {
+        found = "'" + tok.text + "'"
+        printin(prefix + message + " at '" + tok.text + "'")
+    }
+    print_source_excerpt(tok.line, tok.col)
+    if len(expected) > 0 {
+        printin("  = expected: " + expected)
+    }
+    if len(found) > 0 && tok.kind != TOKEN_ERROR {
+        printin("  = found: " + found)
+    }
+    printin("  = help: " + parser_error_help(code))
+    printin("  = rule: CN-" + code)
+}
+
+func error_at_tok_expected(Token tok, str message, str expected) {
     if g_parser.panic_mode {
         return
     }
     g_parser.panic_mode = true
     g_parser.had_error  = true
+    error_at_tok_fields(tok, message, expected)
+}
 
-    str prefix = "error [E000] [" + to_str(tok.line) + ":" + to_str(tok.col) + "]: "
-    if tok.kind == TOKEN_EOF {
-        printin(prefix + message + " (at end of file)")
-    } else if tok.kind == TOKEN_ERROR {
-        printin(prefix + message)
-    } else {
-        printin(prefix + message + " at '" + tok.text + "'")
-    }
+func error_at_tok(Token tok, str message) {
+    error_at_tok_expected(tok, message, "")
 }
 
 // Report an error at the previous token.
@@ -115,6 +195,13 @@ func parser_error(str message) {
 // Report an error at the current token.
 func error_at_current(str message) {
     error_at_tok(g_parser.current, message)
+}
+
+func semantic_error_at(str code, int line, int col, str message, str help) {
+    printin("error [" + code + "] [" + to_str(line) + ":" + to_str(col) + "]: " + message)
+    print_source_excerpt(line, col)
+    if len(help) > 0 { printin("  = help: " + help) }
+    printin("  = rule: CN-" + code)
 }
 
 // ---------------------------------------------------------------------------

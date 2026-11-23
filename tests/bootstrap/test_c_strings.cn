@@ -1,0 +1,9 @@
+main {
+    CStr text = to_cstr("hello")
+    str copied = from_cstr(text)
+    cstr_free(text)
+    printin(copied)
+    var inferred = to_cstr("")
+    printin(len(from_cstr(inferred)))
+    cstr_free(inferred)
+}

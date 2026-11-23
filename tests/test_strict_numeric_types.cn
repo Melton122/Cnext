@@ -1,0 +1,8 @@
+// EXPECT: 7
+// EXPECT: 7
+main {
+    long widened = 7
+    int narrowed = widened as int
+    printin(widened)
+    printin(narrowed)
+}

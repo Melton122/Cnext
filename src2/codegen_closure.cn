@@ -1,1 +1,359 @@
-﻿// stub
+// Self-hosted closure conversion. Semantic bindings distinguish shadowed locals.
+
+func codegen_push_closure_scope() {
+    var scope = new ClosureCleanupScope()
+    scope.parent = g_closure_cleanup_scope
+    scope.capture_cells = {}
+    scope.first_mark_name = ""
+    g_closure_cleanup_scope = scope
+}
+
+func codegen_register_closure(str name) {
+    if g_closure_cleanup_scope == null { return }
+    var cleanup = new ClosureCleanup()
+    cleanup.name = name
+    cleanup.next = g_closure_cleanup_scope.closures
+    g_closure_cleanup_scope.closures = cleanup
+    str mark_name = "_cnext_closure_mark_" + name
+    if len(g_closure_cleanup_scope.first_mark_name) == 0 {
+        g_closure_cleanup_scope.first_mark_name = mark_name
+    }
+    write_indent()
+    codegen_emit("int " + mark_name + " = _cnext_defer_count;\n")
+    write_indent()
+    codegen_emit("_CnextClosureGuard _cnext_closure_guard_" + name + " __attribute__((cleanup(_cnext_closure_guard_cleanup))) = ")
+    codegen_emit("{")
+    codegen_emit(" &" + name + ", " + mark_name + ", true };\n")
+    write_indent()
+    codegen_emit("_cnext_defer_push(_cnext_closure_guard_run, &_cnext_closure_guard_" + name + ");\n")
+}
+
+func emit_owned_closure(ASTNode node) {
+    if node.kind == AST_IDENTIFIER || node.kind == AST_MEMBER_ACCESS || node.kind == AST_INDEX {
+        codegen_emit("cnext_closure_retain(")
+        generate_expression(node)
+        codegen_emit(")")
+    } else if node.kind == AST_TERNARY {
+        codegen_emit("(")
+        generate_expression(node.condition)
+        codegen_emit(" ? ")
+        emit_owned_closure(node.left)
+        codegen_emit(" : ")
+        emit_owned_closure(node.right)
+        codegen_emit(")")
+    } else {
+        generate_expression(node)
+    }
+}
+
+func codegen_pop_closure_scope() {
+    if g_closure_cleanup_scope == null { return }
+    if len(g_closure_cleanup_scope.first_mark_name) > 0 {
+        write_indent()
+        codegen_emit("_cnext_defer_run_to(" + g_closure_cleanup_scope.first_mark_name + ");\n")
+    }
+    g_closure_cleanup_scope = g_closure_cleanup_scope.parent
+}
+
+func same_declaration(ASTNode? left, ASTNode? right): bool {
+    if left == null { return right == null }
+    if right == null { return false }
+    str left_address = to_str(left)
+    str right_address = to_str(right)
+    return left_address == right_address
+}
+
+func is_closure_argument(ASTNode node): bool {
+    if node.expr_type != TOKEN_FUNC { return false }
+    return node.kind == AST_LAMBDA || node.kind == AST_CALL || node.kind == AST_TERNARY ||
+        (node.kind == AST_IDENTIFIER && node.binding != null && node.binding.kind == AST_VAR_DECL)
+}
+
+func emit_managed_closure_arguments(ASTNode call): bool {
+    bool managed = false
+    int i = 0
+    while i < len(call.children) {
+        if is_closure_argument(call.children[i]) { managed = true }
+        i = i + 1
+    }
+    if !managed { return false }
+    ASTNode[] originals = {}
+    i = 0
+    while i < len(call.children) {
+        push(originals, call.children[i])
+        i = i + 1
+    }
+    codegen_emit("({ ")
+    i = 0
+    while i < len(call.children) {
+        if is_closure_argument(originals[i]) {
+            str id = to_str(i)
+            str name = "_cnext_arg_" + id
+            codegen_emit("CnextClosure " + name + " = ")
+            emit_owned_closure(originals[i])
+            codegen_emit("; _CnextClosureGuard _cnext_arg_guard_" + id + " __attribute__((cleanup(_cnext_closure_guard_cleanup))) = ")
+            codegen_emit("{")
+            codegen_emit(" &" + name + ", _cnext_defer_count, true }; _cnext_defer_push(_cnext_closure_guard_run, &_cnext_arg_guard_" + id + "); ")
+            var temporary = new ASTNode(AST_IDENTIFIER, make_token(TOKEN_IDENTIFIER, name, 0, 0))
+            temporary.expr_type = TOKEN_FUNC
+            call.children[i] = temporary
+        }
+        i = i + 1
+    }
+    generate_expression(call)
+    codegen_emit("; })")
+    i = 0
+    while i < len(call.children) {
+        call.children[i] = originals[i]
+        i = i + 1
+    }
+    return true
+}
+
+func find_capture(CapturedVar? captures, ASTNode? decl): CapturedVar? {
+    while captures != null {
+        if same_declaration(captures.declaration, decl) { return captures }
+        captures = captures.next
+    }
+    return null
+}
+
+func collect_captures(ASTNode? node, ASTNode lambda, CapturedVar? captures, bool written): CapturedVar? {
+    if node == null { return captures }
+    if node.kind == AST_IDENTIFIER {
+        var decl = node.binding
+        if decl != null && decl.kind == AST_VAR_DECL &&
+           decl.lambda_depth >= 0 && decl.lambda_depth < lambda.lambda_depth {
+            var cap = find_capture(captures, decl)
+            if cap == null {
+                cap = new CapturedVar()
+                cap.declaration = decl
+                cap.next = captures
+                captures = cap
+            }
+            if written { cap.by_reference = true }
+        }
+        return captures
+    }
+    bool increment = node.token.kind == TOKEN_INCREMENT || node.token.kind == TOKEN_DECREMENT
+    captures = collect_captures(node.left, lambda, captures, node.kind == AST_ASSIGN || (node.kind == AST_POSTFIX && increment))
+    captures = collect_captures(node.right, lambda, captures, node.kind == AST_UNARY && increment)
+    captures = collect_captures(node.init, lambda, captures, false)
+    captures = collect_captures(node.condition, lambda, captures, false)
+    captures = collect_captures(node.increment, lambda, captures, false)
+    int i = 0
+    while i < len(node.children) {
+        captures = collect_captures(node.children[i], lambda, captures, false)
+        i = i + 1
+    }
+    return captures
+}
+
+func scope_has_capture_cell(ClosureCleanupScope? scope, str name): bool {
+    while scope != null {
+        int i = 0
+        while i < len(scope.capture_cells) {
+            if scope.capture_cells[i] == name { return true }
+            i = i + 1
+        }
+        scope = scope.parent
+    }
+    return false
+}
+
+func emit_bound_name(ASTNode? decl, str name) {
+    var cap = find_capture(g_active_captures, decl)
+    if cap == null && decl != null && decl.capture_cell {
+        codegen_emit("(*_cnext_cell_" + name + ")")
+    } else if cap == null {
+        codegen_emit(name)
+    } else if cap.by_reference {
+        codegen_emit("(*__cnext_env->" + name + ")")
+    } else {
+        codegen_emit("(__cnext_env->" + name + ")")
+    }
+}
+
+func emit_capture_cell(ASTNode decl, bool parameter) {
+    str name = decl.token.text
+    str mark_name = "_cnext_cell_mark_" + name
+    generate_node_type(decl, false)
+    codegen_emit("* _cnext_cell_" + name + " = cnext_cell_create(sizeof(*_cnext_cell_" + name + "));\n")
+    write_indent()
+    codegen_emit("int " + mark_name + " = _cnext_defer_count;\n")
+    write_indent()
+    codegen_emit("_CnextCellGuard _cnext_cell_guard_" + name + " __attribute__((cleanup(_cnext_cell_guard_cleanup))) = { _cnext_cell_" + name + ", " + mark_name + ", true };\n")
+    write_indent()
+    codegen_emit("_cnext_defer_push(_cnext_cell_guard_run, &_cnext_cell_guard_" + name + ");\n")
+    if g_closure_cleanup_scope != null {
+        push(g_closure_cleanup_scope.capture_cells, name)
+        if len(g_closure_cleanup_scope.first_mark_name) == 0 {
+            g_closure_cleanup_scope.first_mark_name = mark_name
+        }
+    }
+    if parameter || decl.init != null {
+        write_indent()
+        codegen_emit("*_cnext_cell_" + name + " = ")
+        if parameter {
+            codegen_emit(name)
+        } else {
+            generate_expression(decl.init)
+        }
+        codegen_emit(";\n")
+    }
+}
+
+func emit_lambda_params(ASTNode lambda, bool names) {
+    int i = 0
+    while i < len(lambda.children) {
+        var param = lambda.children[i]
+        codegen_emit(", ")
+        generate_node_type(param, param.is_class || param.is_pointer)
+        if names { codegen_emit(" " + param.token.text) }
+        i = i + 1
+    }
+}
+
+func emit_lambda_call(ASTNode call, ASTNode lambda) {
+    codegen_emit("((")
+    codegen_emit_c_type(lambda.return_type, lambda.is_array, lambda.is_class)
+    codegen_emit(" (*)(void*")
+    emit_lambda_params(lambda, false)
+    codegen_emit("))")
+    generate_expression(call.left)
+    codegen_emit(".fn)(")
+    generate_expression(call.left)
+    codegen_emit(".env")
+    int i = 0
+    while i < len(call.children) {
+        codegen_emit(", ")
+        generate_expression(call.children[i])
+        i = i + 1
+    }
+    codegen_emit(")")
+}
+
+func emit_lambda(ASTNode lambda) {
+    g_lambda_counter = g_lambda_counter + 1
+    str id = to_str(g_lambda_counter)
+    str env_type = "struct __cnext_env_" + id
+    str fn_name = "__cnext_lambda_" + id
+    var captures = collect_captures(lambda.left, lambda, null, false)
+    str outer_output = codegen_flush_output()
+    int outer_indent = g_indent_level
+    var outer_caps = g_active_captures
+    codegen_output_set("")
+    g_indent_level = 0
+    g_active_captures = captures
+    var cap = captures
+    if cap != null {
+        codegen_emit(env_type + " {\n")
+        while cap != null {
+            var decl = cap.declaration
+            codegen_emit("    ")
+            generate_node_type(decl, decl.is_class || decl.is_pointer)
+            if cap.by_reference { codegen_emit("*") }
+            codegen_emit(" " + decl.token.text + ";\n")
+            cap = cap.next
+        }
+        codegen_emit("};\n")
+    }
+    bool owns_closures = false
+    bool local_references = false
+    cap = captures
+    while cap != null {
+        if (cap.declaration.var_type.kind == TOKEN_FUNC && !cap.by_reference) ||
+           (cap.by_reference && cap.declaration.capture_cell) { owns_closures = true }
+        if cap.by_reference && !cap.declaration.capture_cell { local_references = true }
+        cap = cap.next
+    }
+    if owns_closures {
+        codegen_emit("static void __cnext_drop_" + id + "(void* raw) ")
+        codegen_emit("{")
+        codegen_emit(" " + env_type + "* env = raw;")
+        cap = captures
+        while cap != null {
+            if cap.declaration.var_type.kind == TOKEN_FUNC && !cap.by_reference {
+                codegen_emit(" cnext_closure_decref(&env->" + cap.declaration.token.text + ");")
+            }
+            if cap.by_reference && cap.declaration.capture_cell {
+                codegen_emit(" cnext_cell_release(env->" + cap.declaration.token.text + ");")
+            }
+            cap = cap.next
+        }
+        codegen_emit(" }\n")
+    }
+    codegen_emit("static ")
+    codegen_emit_c_type(lambda.return_type, lambda.is_array, lambda.is_class)
+    codegen_emit(" " + fn_name + "(void* __cnext_raw")
+    emit_lambda_params(lambda, true)
+    codegen_emit(") {\n")
+    if captures != null { codegen_emit("    " + env_type + "* __cnext_env = __cnext_raw;\n") }
+    var saved_params = g_capture_cell_params
+    g_capture_cell_params = lambda
+    if lambda.left.kind == AST_BLOCK {
+        generate_block(lambda.left)
+    } else {
+        codegen_push_closure_scope()
+        int pi = 0
+        while pi < len(lambda.children) {
+            if lambda.children[pi].capture_cell { emit_capture_cell(lambda.children[pi], true) }
+            pi = pi + 1
+        }
+        codegen_emit("    return ")
+        if lambda.left.expr_type == TOKEN_FUNC {
+            codegen_emit("cnext_closure_escape(")
+            emit_owned_closure(lambda.left)
+            codegen_emit(")")
+        } else { generate_expression(lambda.left) }
+        codegen_emit(";\n")
+        codegen_pop_closure_scope()
+    }
+    g_capture_cell_params = saved_params
+    codegen_emit("}\n\n")
+    g_lambda_helpers = g_lambda_helpers + codegen_flush_output()
+    codegen_output_set(outer_output)
+    g_indent_level = outer_indent
+    g_active_captures = outer_caps
+
+    if captures != null {
+        codegen_emit("({ CnextClosure __cnext_value = cnext_closure_create((void*)" + fn_name + ", sizeof(" + env_type + "), ")
+        if owns_closures { codegen_emit("__cnext_drop_" + id) }
+        else { codegen_emit("NULL") }
+        codegen_emit(", ")
+        if local_references { codegen_emit("true") }
+        else { codegen_emit("false") }
+        codegen_emit("); ")
+        codegen_emit(env_type + "* __cnext_cap = (" + env_type + "*)__cnext_value.env; ")
+        cap = captures
+        while cap != null {
+            var decl = cap.declaration
+            codegen_emit("__cnext_cap->" + decl.token.text + " = ")
+            bool retaining = decl.var_type.kind == TOKEN_FUNC && !cap.by_reference
+            bool cell = cap.by_reference && decl.capture_cell
+            if cell { codegen_emit("cnext_cell_retain(") }
+            if retaining { codegen_emit("cnext_closure_capture(&__cnext_value, ") }
+            if cap.by_reference { codegen_emit("&") }
+            emit_bound_name(decl, decl.token.text)
+            if retaining || cell { codegen_emit(")") }
+            codegen_emit("; ")
+            cap = cap.next
+        }
+    }
+    if captures != null {
+        codegen_emit("__cnext_value; })")
+        return
+    }
+    codegen_emit("(CnextClosure){")
+    codegen_emit("(void*)" + fn_name + ", ")
+    if captures != null { codegen_emit("__cnext_cap") }
+    else { codegen_emit("NULL") }
+    codegen_emit(", 1}")
+    if captures != null { codegen_emit("; })") }
+}
+
+func flush_lambda_helpers(int start) {
+    if len(g_lambda_helpers) == 0 { return }
+    codegen_output_insert(start, g_lambda_helpers)
+    g_lambda_helpers = ""
+}

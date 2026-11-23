@@ -1,5 +1,7 @@
 #include "semantics_internal.h"
 
+static bool sem_is_numeric_type(CnextTokenType type);
+
 static bool is_input_call(ASTNode* node) {
     return node && node->type == AST_CALL && node->left &&
            node->left->type == AST_IDENTIFIER &&
@@ -37,6 +39,19 @@ static bool is_readable_scalar(CnextTokenType type) {
    it is what gives an uncontextualized read its default `str` type. */
 static bool apply_read_context(ASTNode* expr, CnextTokenType expected) {
     if (!expr || expected == TOKEN_EOF) return false;
+
+    if (expr->type == AST_LITERAL && expr->expr_type == TOKEN_EOF &&
+        sem_is_numeric_type(expected)) {
+        bool integer_literal = expr->token.type == TOKEN_NUMBER ||
+                               expr->token.type == TOKEN_CHAR_LITERAL;
+        bool float_literal = expr->token.type == TOKEN_FLOAT_LITERAL;
+        if (integer_literal ||
+            (float_literal &&
+             (expected == TOKEN_FLOAT_TYPE || expected == TOKEN_DOUBLE_TYPE))) {
+            expr->expr_type = expected;
+            return true;
+        }
+    }
 
     if (is_input_call(expr)) {
         if (expr->expr_type != TOKEN_EOF) return false;
@@ -85,6 +100,7 @@ static bool apply_read_context(ASTNode* expr, CnextTokenType expected) {
 /* The explicitly typed readers: `input_int()` and friends. Each names its
    own type, so it needs no destination context. */
 static CnextTokenType explicit_input_type(Token token) {
+    if (token.length == 9 && strncmp(token.start, "input_str", 9) == 0) return TOKEN_STR_TYPE;
     if (token.length == 9 && strncmp(token.start, "input_int", 9) == 0) return TOKEN_INT_TYPE;
     if (token.length == 10 && strncmp(token.start, "input_uint", 10) == 0) return TOKEN_UINT_TYPE;
     if (token.length == 10 && strncmp(token.start, "input_long", 10) == 0) return TOKEN_LONG_TYPE;
@@ -97,6 +113,38 @@ static CnextTokenType explicit_input_type(Token token) {
     if (token.length == 12 && strncmp(token.start, "input_ushort", 12) == 0) return TOKEN_USHORT_TYPE;
     if (token.length == 11 && strncmp(token.start, "input_ubyte", 11) == 0) return TOKEN_UBYTE_TYPE;
     return TOKEN_EOF;
+}
+
+static bool sem_is_numeric_type(CnextTokenType type) {
+    switch (type) {
+        case TOKEN_INT_TYPE: case TOKEN_LONG_TYPE: case TOKEN_FLOAT_TYPE:
+        case TOKEN_DOUBLE_TYPE: case TOKEN_CHAR_TYPE: case TOKEN_BYTE_TYPE:
+        case TOKEN_UINT_TYPE: case TOKEN_ULONG_TYPE: case TOKEN_USHORT_TYPE:
+        case TOKEN_UBYTE_TYPE:
+            return true;
+        default:
+            return false;
+    }
+}
+
+static CnextTokenType analyze_when_expression(ASTNode* node) {
+    CnextTokenType result = TOKEN_EOF;
+    for (int i = 0; i < node->child_count; i++) {
+        ASTNode* arm = node->children[i];
+        if (!arm) continue;
+        if (arm->condition) analyze_expression(arm->condition);
+        if (!arm->left) continue;
+        CnextTokenType arm_type = analyze_expression(arm->left);
+        if (result == TOKEN_EOF || result == TOKEN_VAR) {
+            result = arm_type;
+        } else if (arm_type != TOKEN_EOF && arm_type != TOKEN_VAR && arm_type != result) {
+            if ((result == TOKEN_STR_TYPE || arm_type == TOKEN_STR_TYPE) ||
+                !sem_is_numeric_type(result) || !sem_is_numeric_type(arm_type)) {
+                result = TOKEN_EOF;
+            }
+        }
+    }
+    return result;
 }
 
 bool sem_apply_expected_type(ASTNode* expr, CnextTokenType expected) {
@@ -113,6 +161,7 @@ static ASTNode* resolve_callee_decl(ASTNode* call) {
         if (sym && sym->decl_node && sym->decl_node->type == AST_FUNC_DECL) {
             return sym->decl_node;
         }
+        if (sym) return ast_closure_lambda(sym->decl_node);
         return NULL;
     }
 
@@ -139,13 +188,24 @@ static ASTNode* resolve_callee_decl(ASTNode* call) {
     return NULL;
 }
 
+static ASTNode* value_declaration(ASTNode* value) {
+    if (value && value->type == AST_IDENTIFIER) {
+        Symbol* symbol = resolve_symbol(value->token);
+        return symbol ? symbol->decl_node : NULL;
+    }
+    return resolve_field_decl(value);
+}
+
 CnextTokenType analyze_expression(ASTNode* node) {
     if (!node) return TOKEN_EOF;
 
     CnextTokenType type = TOKEN_EOF;
     switch (node->type) {
         case AST_LITERAL:
-            if (node->token.type == TOKEN_NUMBER) type = TOKEN_INT_TYPE;
+            if (node->expr_type != TOKEN_EOF && node->expr_type != TOKEN_VAR &&
+                sem_is_numeric_type(node->expr_type)) {
+                type = node->expr_type;
+            } else if (node->token.type == TOKEN_NUMBER) type = TOKEN_INT_TYPE;
             else if (node->token.type == TOKEN_FLOAT_LITERAL) type = TOKEN_FLOAT_TYPE;
             else if (node->token.type == TOKEN_STRING_LITERAL || node->token.type == TOKEN_RAW_STRING) type = TOKEN_STR_TYPE;
             else if (node->token.type == TOKEN_CHAR_LITERAL) type = TOKEN_CHAR_TYPE;
@@ -161,6 +221,7 @@ CnextTokenType analyze_expression(ASTNode* node) {
             if (!sym) {
                 report_token_error(ERR_SEM_UNDECLARED, node->token, "Undeclared identifier:");
             } else {
+                node->binding = sym->decl_node;
                 if (sym->type_name) {
                     free(node->type_name);
                     node->type_name = copy_cstring(sym->type_name);
@@ -188,6 +249,16 @@ CnextTokenType analyze_expression(ASTNode* node) {
         case AST_BINARY: {
             CnextTokenType left_type = analyze_expression(node->left);
             CnextTokenType right_type = analyze_expression(node->right);
+            if (sem_expr_is_cstr(node->left) || sem_expr_is_cstr(node->right)) {
+                bool equality = node->token.type == TOKEN_EQ_EQ || node->token.type == TOKEN_BANG_EQ;
+                bool left_pointer = sem_expr_is_cstr(node->left) || node->left->type == AST_NULL_LITERAL;
+                bool right_pointer = sem_expr_is_cstr(node->right) || node->right->type == AST_NULL_LITERAL;
+                if (!equality || !left_pointer || !right_pointer) {
+                    sem_report_cstr_error(node->token, "CStr supports pointer equality; convert to str for text operations.");
+                }
+                type = TOKEN_BOOL_TYPE;
+                break;
+            }
             // Propagate type to null literal in binary comparisons
             if (node->right && node->right->type == AST_NULL_LITERAL && left_type == TOKEN_STR_TYPE) {
                 node->right->expr_type = TOKEN_STR_TYPE;
@@ -256,8 +327,28 @@ CnextTokenType analyze_expression(ASTNode* node) {
             }
             break;
         }
+        case AST_BIT_MATCH:
+        case AST_BIT_EXTRACT: {
+            ASTNode* value = node->left;
+            CnextTokenType operand = analyze_expression(value);
+            ASTNode* decl = value_declaration(value);
+            if (value->type == AST_INDEX) {
+                ASTNode* base = value_declaration(value->left);
+                if (base && base->is_array) operand = base->var_type.type;
+            }
+            if (operand == TOKEN_FLOAT_TYPE || operand == TOKEN_DOUBLE_TYPE ||
+                operand == TOKEN_STR_TYPE || operand == TOKEN_NULL || operand == TOKEN_FUNC ||
+                value->is_class || value->type == AST_LITERAL_ARRAY || value->type == AST_SLICE ||
+                (decl && decl->is_array)) {
+                report_token_error(ERR_SEM_TYPE_MISMATCH, value->token,
+                                   "Bit patterns require an integer operand:");
+            }
+            type = node->type == AST_BIT_MATCH ? TOKEN_BOOL_TYPE : TOKEN_ULONG_TYPE;
+            break;
+        }
         case AST_UNARY:
             type = analyze_expression(node->right);
+            if (node->token.type == TOKEN_BANG) type = TOKEN_BOOL_TYPE;
             break;
         case AST_RANGE:
         case AST_RANGE_INCLUSIVE:
@@ -285,6 +376,40 @@ CnextTokenType analyze_expression(ASTNode* node) {
                                             callee_decl->children[i]->var_type.type);
                 }
                 analyze_expression(node->children[i]);
+                if (callee_decl && i < callee_decl->child_count) {
+                    sem_check_cstr_conversion(callee_decl->children[i]->var_type, node->children[i]);
+                }
+            }
+            if (callee_decl && callee_decl->type == AST_LAMBDA) {
+                type = callee_decl->return_type.type;
+            }
+            if (callee_decl) node->closure_signature = callee_decl->closure_signature;
+            if (node->left && node->left->type == AST_IDENTIFIER &&
+                (token_matches_name(node->left->token, "to_cstr") ||
+                 token_matches_name(node->left->token, "from_cstr") ||
+                 token_matches_name(node->left->token, "cstr_free"))) {
+                bool to_cstr = token_matches_name(node->left->token, "to_cstr");
+                bool from_cstr = token_matches_name(node->left->token, "from_cstr");
+                if (node->child_count != 1) {
+                    sem_report_cstr_error(node->left->token,
+                                       "C string conversion functions require exactly one argument.");
+                } else {
+                    ASTNode* arg = node->children[0];
+                    ASTNode* arg_decl = value_declaration(arg);
+                    bool array = arg->is_array || arg->type == AST_LITERAL_ARRAY ||
+                        (arg_decl && arg_decl->is_array);
+                    bool valid = to_cstr ? arg->expr_type == TOKEN_STR_TYPE :
+                        (sem_expr_is_cstr(arg) || arg->type == AST_NULL_LITERAL);
+                    if (!valid || array) {
+                        sem_report_cstr_error(arg->token,
+                            to_cstr ? "to_cstr expects str." : "from_cstr/cstr_free expects CStr.");
+                    }
+                }
+                free(node->type_name);
+                node->type_name = to_cstr ? copy_cstring("CStr") :
+                    (from_cstr ? copy_cstring("str") : NULL);
+                type = to_cstr ? TOKEN_IDENTIFIER : (from_cstr ? TOKEN_STR_TYPE : TOKEN_EOF);
+                break;
             }
             if (is_input_call(node)) {
                 // A declaration or assignment may seed expr_type with its
@@ -517,20 +642,24 @@ CnextTokenType analyze_expression(ASTNode* node) {
                 }
             }
             break;
+        case AST_SLICE: {
+            CnextTokenType base = analyze_expression(node->left);
+            analyze_expression(node->right);
+            analyze_expression(node->condition);
+            ASTNode* decl = value_declaration(node->left);
+            bool array = node->left->is_array || (decl && decl->is_array);
+            if (base == TOKEN_STR_TYPE && !array) {
+                type = TOKEN_STR_TYPE;
+            }
+            break;
+        }
         case AST_INDEX: {
             analyze_expression(node->left);
             analyze_expression(node->right);
             // Indexing an array of class instances yields a reference, so the
             // access has to be dereferenced with '->' and the element fetched
             // rather than its address taken.
-            ASTNode* base_decl = NULL;
-            ASTNode* base = node->left;
-            if (base && base->type == AST_IDENTIFIER) {
-                Symbol* base_sym = resolve_symbol(base->token);
-                if (base_sym) base_decl = base_sym->decl_node;
-            } else if (base && base->type == AST_MEMBER_ACCESS) {
-                base_decl = resolve_field_decl(base);
-            }
+            ASTNode* base_decl = value_declaration(node->left);
             if (base_decl && base_decl->is_array && base_decl->var_type.type == TOKEN_IDENTIFIER) {
                 char* elem = type_name_from_token(base_decl->var_type);
                 if (elem) {
@@ -581,19 +710,21 @@ CnextTokenType analyze_expression(ASTNode* node) {
             // super.expr — validated structurally by parser (must be inside class with extends)
             // Full validation would require tracking current class context
             break;
-        case AST_WHEN: {
-            for (int i = 0; i < node->child_count; i++) {
-                ASTNode* arm = node->children[i];
-                if (arm->condition) {
-                    analyze_expression(arm->condition);
-                }
-                if (arm->left) {
-                    analyze_expression(arm->left);
-                }
-            }
-            type = TOKEN_STR_TYPE;
+        case AST_OPTION_NONE:
+            type = TOKEN_EOF;
             break;
-        }
+        case AST_OPTION_SOME:
+        case AST_RESULT_OK:
+        case AST_RESULT_ERR:
+            analyze_expression(node->left);
+            type = TOKEN_EOF;
+            break;
+        case AST_TRY_EXPR:
+            type = analyze_expression(node->left);
+            break;
+        case AST_WHEN:
+            type = analyze_when_expression(node);
+            break;
         case AST_TYPEOF: {
             analyze_expression(node->left);
             type = TOKEN_STR_TYPE;
@@ -605,13 +736,20 @@ CnextTokenType analyze_expression(ASTNode* node) {
         case AST_CAST: {
             analyze_expression(node->left);
             validate_type_token(node->var_type);
+            sem_check_cstr_conversion(node->var_type, node->left);
             type = node->var_type.type;
+            if (sem_is_cstr_type(node->var_type)) {
+                free(node->type_name);
+                node->type_name = type_name_from_token(node->var_type);
+            }
             break;
         }
         case AST_LAMBDA: {
+            node->lambda_depth = ++sem_lambda_depth;
             sem_push_scope();
             for (int i = 0; i < node->child_count; i++) {
                 ASTNode* param = node->children[i];
+                param->lambda_depth = sem_lambda_depth;
                 validate_type_token(param->var_type);
                 char* tn = type_name_from_token(param->var_type);
                 define_symbol(param->token, param->var_type.type, false, tn, param);
@@ -621,19 +759,31 @@ CnextTokenType analyze_expression(ASTNode* node) {
                 // A lambda body has no declared return type, so a read inside
                 // it is not typed by the enclosing function.
                 CnextTokenType saved_return_type = sem_current_return_type;
+                Token saved_return_token = sem_current_return_token;
                 sem_current_return_type = TOKEN_EOF;
+                sem_current_return_token = (Token){0};
                 analyze_node(node->left);
                 sem_current_return_type = saved_return_type;
+                sem_current_return_token = saved_return_token;
             } else {
                 analyze_expression(node->left);
             }
+            sem_promote_capture_cells(node->left, node, false);
+            ASTNode* result = node->left->type == AST_BLOCK ? ast_return_value(node->left) : node->left;
+            if (result) node->return_type.type = result->expr_type;
+            node->closure_signature = result && result->expr_type == TOKEN_FUNC ? ast_closure_lambda(result) : NULL;
             sem_pop_scope();
+            sem_lambda_depth--;
             type = TOKEN_FUNC;
             break;
         }
         case AST_NULL_COALESCE: {
             CnextTokenType left_type = analyze_expression(node->left);
             CnextTokenType right_type = analyze_expression(node->right);
+            if (sem_expr_is_cstr(node->left) != sem_expr_is_cstr(node->right) &&
+                node->right->type != AST_NULL_LITERAL) {
+                sem_report_cstr_error(node->token, "CStr fallback requires another CStr.");
+            }
             (void)right_type;
             // Result type is the type of the left operand
             type = left_type;
@@ -648,6 +798,10 @@ CnextTokenType analyze_expression(ASTNode* node) {
             analyze_expression(node->condition);
             CnextTokenType true_type = analyze_expression(node->left);
             CnextTokenType false_type = analyze_expression(node->right);
+            if (sem_expr_is_cstr(node->left) != sem_expr_is_cstr(node->right) &&
+                node->left->type != AST_NULL_LITERAL && node->right->type != AST_NULL_LITERAL) {
+                sem_report_cstr_error(node->token, "CStr conditional branches require matching types.");
+            }
             (void)false_type;
             // Result type is the type of the true branch
             type = true_type;

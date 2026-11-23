@@ -4,11 +4,6 @@
 #include <stdio.h>
 #include <stdbool.h>
 
-// Terminal color support
-#ifdef _WIN32
-#include <windows.h>
-#endif
-
 // Error codes
 typedef enum {
     ERR_NONE = 0,
@@ -50,6 +45,11 @@ typedef enum {
     ERR_SEM_UNKNOWN_CLASS,  // E116
     ERR_SEM_MISSING_METHOD, // E117
     ERR_SEM_GENERIC,     // E118 - generic semantic error
+    ERR_SEM_RETURN_TYPE, // E119 - return expression type mismatch
+    ERR_SEM_DEFER_CONTROL, // E120 - invalid control transfer from a deferred body
+    ERR_CODEGEN_IO,         // E200 - code generation I/O failure
+    ERR_CODEGEN_UNHANDLED,  // E201 - unsupported node reached codegen
+    ERR_BACKEND_FAILED,     // E202 - native compiler/backend failure
     ERR_MAX
 } ErrorCode;
 
@@ -82,6 +82,13 @@ typedef struct {
     const char* note;
 } Diagnostic;
 
+typedef struct {
+    ErrorCode code;
+    const char* id;
+    const char* rule;
+    const char* help;
+} DiagnosticInfo;
+
 // Global error counter
 extern int _diag_error_count;
 extern int _diag_warning_count;
@@ -91,10 +98,17 @@ int diag_get_warning_count(void);
 void diag_reset_counts(void);
 
 const char* error_code_string(ErrorCode code);
+const DiagnosticInfo* get_diagnostic_info(ErrorCode code);
+const char* diag_rule_string(ErrorCode code);
+const char* diag_help_string(ErrorCode code);
 
 // Main diagnostic emission function
 void diag_emit(DiagLevel level, ErrorCode code, int line, int col,
                const char* message, const char* hint, const char* note);
+void diag_emit_context(DiagLevel level, ErrorCode code, int line, int col,
+                       int length, const char* source, const char* message,
+                       const char* expected, const char* found,
+                       const char* hint, const char* note);
 
 // Convenience functions
 void diag_error(ErrorCode code, int line, const char* message, const char* hint);

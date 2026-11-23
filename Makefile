@@ -16,13 +16,16 @@ ifeq ($(UNAME_S),Windows)
 endif
 ifdef WINDOWS_BUILD
     EXEC = cnext.exe
-    PLATFORM_LIBS = -lwinhttp -lws2_32
+    # The compiler itself talks to the registry through the curl command, not
+    # libcurl, so it links no HTTP or socket library. Programs that import
+    # net/http get their platform libraries from main.c when they are built.
+    PLATFORM_LIBS =
 else ifeq ($(UNAME_S),Darwin)
     EXEC = cnext
-    PLATFORM_LIBS = -lcurl -lpthread
+    PLATFORM_LIBS = -lpthread
 else
     EXEC = cnext
-    PLATFORM_LIBS = -lcurl -lpthread
+    PLATFORM_LIBS = -lpthread
 endif
 
 # Version (single source of truth: include/main_internal.h)
@@ -84,7 +87,7 @@ SRCS = src/main.c src/main_utils.c src/main_packages.c src/main_compiler.c \
 OBJS = $(SRCS:.c=.o)
 DEPS = $(OBJS:.o=.d)
 
-.PHONY: all clean test install uninstall help format bench check release coverage
+.PHONY: all clean test install uninstall help format bench check release coverage parity parser-parity bootstrap-test msvc-defer-test self-build
 
 all: $(EXEC)
 
@@ -95,8 +98,8 @@ $(EXEC): $(OBJS)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	$(RM) $(OBJS) $(DEPS) $(EXEC) temp_out.c _cnext_*.tmp $(LEAKTEST) $(LEAKTEST_OBJ) 2>/dev/null || true
-	$(RMDIR) $(PARITY_DIR) 2>/dev/null || true
+	$(RM) $(OBJS) $(DEPS) $(EXEC) temp_out.c _cnext_*.tmp __cnext_run_tmp.c _p*.c _probe* tests/_test_out tests/_test_out.exe tests/_test_list.txt tests/_test_methods_temp.c $(LEAKTEST) $(LEAKTEST_OBJ) 2>/dev/null || true
+	$(RMDIR) $(PARITY_DIR) out_parity 2>/dev/null || true
 
 test: $(EXEC)
 	./$(EXEC) test
@@ -104,6 +107,9 @@ test: $(EXEC)
 # Full test suite (compiler + Python tests)
 check: $(EXEC)
 	./$(EXEC) test
+	$(PARITY_PY) tests/test_native_linking.py
+	$(PARITY_PY) tests/test_diagnostics.py
+	$(MAKE) msvc-defer-test
 	@echo "Running Python test suite..."
 	@python3 tests/run_tests.py 2>/dev/null || python tests/run_tests.py 2>/dev/null || echo "Python tests skipped"
 	@echo "Running LSP tests..."
@@ -132,15 +138,17 @@ ifdef WINDOWS_BUILD
 endif
 	@echo "Removed $(EXEC) from $(INSTALL_BIN)"
 
-# Optimizer leak harness: links the compiler objects (minus main.c) with a
-# malloc/calloc/realloc/free interposer so repeated parse -> analyze ->
-# optimize -> free cycles can be verified byte-exact on the heap.
+# Optimizer leak harness: links the compiler objects (minus main.c) so repeated
+# parse -> analyze -> optimize -> free cycles can be compared against a control
+# pipeline using OS heap accounting. The harness also enforces the optimizer's
+# owned-token-text invariant after each optimized cycle.
 LEAKTEST = tools/optimizer_leak_harness$(if $(WINDOWS_BUILD),.exe,)
 LEAKTEST_OBJ = tools/optimizer_leak_harness.o
 
 .PHONY: leaktest
 
 leaktest: $(LEAKTEST)
+	$(LEAKTEST)
 
 $(LEAKTEST): $(filter-out src/main.o,$(OBJS)) $(LEAKTEST_OBJ)
 	$(CC) $(CFLAGS) -o $@ $(LEAKTEST_OBJ) $(filter-out src/main.o,$(OBJS)) $(LDFLAGS) $(if $(WINDOWS_BUILD),-lpsapi,)
@@ -159,6 +167,14 @@ PARITY_DIR = build/selfhost
 PARITY_CAND = $(PARITY_DIR)/lexer2$(if $(WINDOWS_BUILD),.exe,)
 PARITY_REF = $(PARITY_DIR)/lexdump$(if $(WINDOWS_BUILD),.exe,)
 PARITY_PY = $(shell if command -v python3 >/dev/null 2>&1; then echo python3; else echo python; fi)
+STAGE1_EXE = $(PARITY_DIR)/stage1_exe$(if $(WINDOWS_BUILD),.exe,)
+STAGE2_EXE = $(PARITY_DIR)/stage2_exe$(if $(WINDOWS_BUILD),.exe,)
+MSVC_DEFER_OBJ = $(PARITY_DIR)/codegen_node_msvc_defer.o
+MSVC_DEFER_EXE = $(PARITY_DIR)/cnext_msvc_defer$(if $(WINDOWS_BUILD),.exe,)
+# Bootstrap builds favor fast, lower-memory compilation. Override with
+# BOOTSTRAP_OPT=-O2 when measuring the self-hosted compiler's runtime speed.
+BOOTSTRAP_OPT ?= -O0
+BOOTSTRAP_CFLAGS = $(filter-out -O%,$(CFLAGS)) $(BOOTSTRAP_OPT)
 
 .PHONY: parity
 
@@ -168,6 +184,24 @@ parity: $(EXEC) $(PARITY_CAND) $(PARITY_REF)
 		--ref-binary "$(PARITY_REF)" \
 		--cand-cmd "$(PARITY_CAND) {file}" \
 		--paths "tests/*.cn" "examples/*.cn" "src2/*.cn"
+
+parser-parity: $(EXEC)
+	@echo "=== Self-hosting parser parity ==="
+	$(PARITY_PY) tools/parser_parity.py
+
+bootstrap-test: $(EXEC)
+	python tests/test_bootstrap_codegen.py --stage0 "./$(EXEC)"
+
+$(MSVC_DEFER_OBJ): src/codegen_node.c | $(PARITY_DIR)
+	$(CC) $(CFLAGS) -DCNEXT_FORCE_MSVC_DEFER -c $< -o $@
+
+$(MSVC_DEFER_EXE): $(filter-out src/codegen_node.o,$(OBJS)) $(MSVC_DEFER_OBJ)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+msvc-defer-test: $(MSVC_DEFER_EXE)
+	@echo "=== MSVC defer lowering ==="
+	$(PARITY_PY) tests/test_msvc_defer_codegen.py --compiler "$(MSVC_DEFER_EXE)"
+	$(PARITY_PY) tests/test_msvc_defer_codegen.py --compiler "$(MSVC_DEFER_EXE)" --source tests/test_defer_captures.cn
 
 $(PARITY_CAND): src2/lexer.cn $(EXEC) | $(PARITY_DIR)
 	@echo "Building self-hosted lexer: $@"
@@ -179,6 +213,27 @@ $(PARITY_REF): tools/lexdump.c src/lexer.c | $(PARITY_DIR)
 
 $(PARITY_DIR):
 	$(MKDIR) $(PARITY_DIR)
+
+.PHONY: self-build
+self-build: $(EXEC)
+	@echo "=== Starting Self-Hosting Bootstrap ==="
+	@$(MKDIR) $(PARITY_DIR)
+	@echo "Stage 0 -> Stage 1: Bundling src2..."
+	@python tools/build_bundle.py codegen -o $(PARITY_DIR)/stage1_bundle.cn
+	@echo "Stage 0 -> Stage 1: Compiling bundle to C..."
+	./$(EXEC) build $(PARITY_DIR)/stage1_bundle.cn --emit-c $(PARITY_DIR)/stage1_src.c
+	@echo "Stage 0 -> Stage 1: Building binary with GCC..."
+	$(CC) $(BOOTSTRAP_CFLAGS) -o $(STAGE1_EXE) $(PARITY_DIR)/stage1_src.c $(LDFLAGS)
+	@echo "Stage 1 binary built: $(STAGE1_EXE)"
+	@echo ""
+	@echo "Stage 1 -> Stage 2: Compiling bundle with Stage 1..."
+	$(STAGE1_EXE) $(PARITY_DIR)/stage1_bundle.cn -o $(PARITY_DIR)/stage2_src.c
+	@echo "Stage 1 -> Stage 2: Building binary with GCC..."
+	$(CC) $(BOOTSTRAP_CFLAGS) -o $(STAGE2_EXE) $(PARITY_DIR)/stage2_src.c $(LDFLAGS)
+	@echo "Stage 2 binary built: $(STAGE2_EXE)"
+	@echo ""
+	@echo "=== Self-Hosting Verification ==="
+	$(PARITY_PY) tools/verify_bootstrap.py --directory "$(PARITY_DIR)"
 
 # Build benchmark
 bench: $(EXEC)
@@ -229,6 +284,9 @@ help:
 	@echo "  test       Build and run compiler tests"
 	@echo "  check      Run full test suite (compiler + Python)"
 	@echo "  parity     Self-hosting lexer parity gate (src2/ vs src/)"
+	@echo "  parser-parity  Self-hosting parser AST parity gate"
+	@echo "  bootstrap-test  Compile and run bootstrap tests through Stage 1"
+	@echo "  msvc-defer-test  Validate MSVC defer lowering without MSVC"
 	@echo "  install    Install compiler to $(INSTALL_DIR)"
 	@echo "  uninstall  Remove compiler from $(INSTALL_DIR)"
 	@echo "  release    Package for release"
@@ -239,6 +297,7 @@ help:
 	@echo "Options:"
 	@echo "  DEBUG=1    Build with debug symbols (-O0 -g)"
 	@echo "  JOBS=N     Parallel compilation jobs"
+	@echo "  BOOTSTRAP_OPT=-O2  Optimize self-build binaries (default: -O0)"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make                    # Release build"
@@ -247,6 +306,7 @@ help:
 	@echo "  make install            # Install to $(INSTALL_DIR)"
 	@echo "  make release            # Package for release"
 	@echo "  make check              # Run all tests"
+	@echo "  make bootstrap-test    # Verify Stage 1 code generation"
 	@echo "  make clean              # Clean build artifacts"
 
 # Code coverage (gcov/lcov)

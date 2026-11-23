@@ -1,0 +1,27 @@
+func early(): int {
+    int value = 1
+    defer printin(value)
+    value = 2
+    printin("body")
+    return 7
+}
+
+func unwind() {
+    int value = 3
+    defer printin(value)
+    defer { printin("last registered") }
+    value = 4
+    printin("throwing")
+    throw "expected"
+}
+
+main {
+    printin(early())
+    try { unwind() }
+    catch (str error) { printin("caught") }
+    {
+        defer printin("scope cleanup")
+        printin("inside scope")
+    }
+    printin("after scope")
+}

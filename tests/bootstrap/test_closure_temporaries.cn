@@ -1,0 +1,33 @@
+extern "C" func bootstrap_tracked_allocations(): int
+
+func make(int base): func {
+    return (int value) => base + value
+}
+
+func wrap(func callback): func {
+    return (int value) => callback(value) + 1
+}
+
+func consume(int value, func callback): int {
+    return callback(value)
+}
+
+func failing(func callback) {
+    printin(callback(1))
+    throw "expected"
+}
+
+main {
+    int before = bootstrap_tracked_allocations()
+    int total = 0
+    for int i = 0; i < 100; i++ {
+        total = total + consume(1, wrap(make(i)))
+        make(i)
+    }
+    printin(total)
+    printin(bootstrap_tracked_allocations() == before)
+    printin(consume(2, (int value) => value + 7))
+    try { failing(make(9)) }
+    catch (str error) { printin("caught temporary") }
+    printin(bootstrap_tracked_allocations() == before)
+}

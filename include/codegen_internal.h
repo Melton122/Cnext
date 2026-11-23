@@ -18,6 +18,7 @@ typedef struct CodeGenContext {
     FILE* out;
     FILE* spec_out;
     FILE* closure_defs_out;
+    FILE* defer_defs_out;
     int indent_level;
     const char* current_parent_class;
     int lambda_counter;
@@ -43,6 +44,7 @@ extern CodeGenContext g_codegen;
 #define out                     g_codegen.out
 #define spec_out                g_codegen.spec_out
 #define closure_defs_out        g_codegen.closure_defs_out
+#define defer_defs_out          g_codegen.defer_defs_out
 #define indent_level            g_codegen.indent_level
 #define current_parent_class    g_codegen.current_parent_class
 #define lambda_counter          g_codegen.lambda_counter
@@ -152,6 +154,7 @@ void generate_generator_code(ASTNode* node, const char* func_name);
 
 /* --- Closure Support (codegen_closure.c) --- */
 typedef struct CapturedVar {
+    ASTNode* declaration;
     char* name;
     CnextTokenType type;
     bool is_pointer;
@@ -181,12 +184,17 @@ typedef struct ScopeClosureVar {
 
 typedef struct Scope {
     ScopeClosureVar* closures;
+    ClosureVar* saved_closure_vars;
     struct Scope* parent;
+    char* first_mark_name;
 } Scope;
 
 extern ClosureInfo* closure_list;
 extern int closure_counter;
 extern ClosureVar* closure_vars;
+extern CapturedVar* active_captures;
+void emit_bound_name(ASTNode* declaration, const char* name, int length);
+void emit_capture_cell(ASTNode* declaration, bool parameter);
 extern Scope* current_scope;
 extern ASTNode* current_func_params;
 extern bool current_func_returns_void;
@@ -194,6 +202,9 @@ extern bool current_func_returns_void;
 void push_scope(void);
 void pop_scope(void);
 void register_scope_closure(const char* name, int len);
+void generate_owned_closure_expression(ASTNode* node);
+FILE* codegen_open_lambda_temp(char* path);
+bool emit_managed_closure_arguments(ASTNode* call);
 bool is_lambda_param(ASTNode* lambda, const char* name, int name_len);
 void detect_captures_walk(ASTNode* node, CapturedVar** list, ASTNode* lambda, ASTNode* prog);
 bool find_var_type_in_block(ASTNode* block, const char* name, int nlen,

@@ -1,0 +1,17 @@
+extern "C" {
+    func abs(int value): int
+    func strcmp(CStr left, CStr right): int
+}
+
+extern func cnext_join_strings(str[] parts): str
+
+main {
+    printin(abs(-42))
+    CStr first = to_cstr("hello")
+    var second = to_cstr("hello")
+    printin(strcmp(first, second))
+    cstr_free(first)
+    cstr_free(second)
+    str[] parts = {"self", "host"}
+    printin(cnext_join_strings(parts))
+}

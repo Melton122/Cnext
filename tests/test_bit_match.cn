@@ -1,0 +1,27 @@
+// EXPECT: bit patterns passed
+func odd(int value): bool {
+    return value ~= "1"
+}
+
+main {
+    ubyte status = 165
+    var ready = status ~= "10??_???1"
+    assert(ready)
+    assert(!(status ~= "10??_???0"))
+    assert(status ~= "101" && odd(7))
+    assert(2 + 3 ~= "0101")
+    assert((status ~= "1010_0101") == true)
+    assert(0 ~= "0")
+    int[] values = {4, 5}
+    assert(values[1] ~= "101")
+
+    ulong high = 9223372036854775807
+    high = high + 1
+    assert(high ~= "10000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000")
+    assert(-1 ~= "11111111_11111111_11111111_11111111_11111111_11111111_11111111_11111111")
+
+    int calls = 0
+    assert(calls++ ~= "????")
+    assert(calls == 1)
+    printin("bit patterns passed")
+}

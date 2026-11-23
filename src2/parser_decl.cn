@@ -554,16 +554,51 @@ func parse_extern_declaration(): ASTNode? {
     var node = new ASTNode(AST_EXTERN_DECL, g_parser.previous)
     if match_token(TOKEN_STRING_LITERAL) {
     }
-    consume(TOKEN_LBRACE, "Expect '{' after 'extern'.")
-    while !check_token(TOKEN_RBRACE) && !check_token(TOKEN_EOF) {
-        if match_token(TOKEN_FUNC) {
-            consume(TOKEN_IDENTIFIER, "Expect function name.")
-            var func_node = new ASTNode(AST_FUNC_DECL, g_parser.previous)
-            consume(TOKEN_LPAREN, "Expect '(' after function name.")
-            if !check_token(TOKEN_RPAREN) {
-                while true {
+    if match_token(TOKEN_LBRACE) {
+        while !check_token(TOKEN_RBRACE) && !check_token(TOKEN_EOF) {
+            if match_token(TOKEN_FUNC) {
+                consume(TOKEN_IDENTIFIER, "Expect function name.")
+                var func_node = new ASTNode(AST_FUNC_DECL, g_parser.previous)
+                consume(TOKEN_LPAREN, "Expect '(' after function name.")
+                if !check_token(TOKEN_RPAREN) {
+                    while true {
+                        var typeNode = parse_type()
+                        bool variadic = match_token(TOKEN_ELLIPSIS)
+                        if check_token(TOKEN_IDENTIFIER) {
+                            consume(TOKEN_IDENTIFIER, "Expect parameter name.")
+                            var param = new ASTNode(AST_VAR_DECL, g_parser.previous)
+                            if typeNode != null {
+                                assign_type_from_node(param, typeNode)
+                            }
+                            param.is_variadic = variadic
+                            node_add_child(func_node, param)
+                        } else if typeNode != null {
+                        }
+                        if !match_token(TOKEN_COMMA) { break }
+                    }
+                }
+                consume(TOKEN_RPAREN, "Expect ')' after parameters.")
+                if match_token(TOKEN_COLON) {
                     var typeNode = parse_type()
-                    bool variadic = match_token(TOKEN_ELLIPSIS)
+                    if typeNode != null {
+                        assign_return_type_from_node(func_node, typeNode)
+                    }
+                }
+                node_add_child(node, func_node)
+            }
+            optionally_consume_semicolon()
+        }
+        consume(TOKEN_RBRACE, "Expect '}' after extern block.")
+        return node
+    } else if match_token(TOKEN_FUNC) {
+        consume(TOKEN_IDENTIFIER, "Expect function name.")
+        var func_node = new ASTNode(AST_FUNC_DECL, g_parser.previous)
+        consume(TOKEN_LPAREN, "Expect '(' after function name.")
+        if !check_token(TOKEN_RPAREN) {
+            while true {
+                var typeNode = parse_type()
+                bool variadic = match_token(TOKEN_ELLIPSIS)
+                if check_token(TOKEN_IDENTIFIER) {
                     consume(TOKEN_IDENTIFIER, "Expect parameter name.")
                     var param = new ASTNode(AST_VAR_DECL, g_parser.previous)
                     if typeNode != null {
@@ -571,22 +606,23 @@ func parse_extern_declaration(): ASTNode? {
                     }
                     param.is_variadic = variadic
                     node_add_child(func_node, param)
-                    if !match_token(TOKEN_COMMA) { break }
                 }
+                if !match_token(TOKEN_COMMA) { break }
             }
-            consume(TOKEN_RPAREN, "Expect ')' after parameters.")
-            if match_token(TOKEN_COLON) {
-                var typeNode = parse_type()
-                if typeNode != null {
-                    assign_return_type_from_node(func_node, typeNode)
-                }
-            }
-            node_add_child(node, func_node)
         }
-        optionally_consume_semicolon()
+        consume(TOKEN_RPAREN, "Expect ')' after parameters.")
+        if match_token(TOKEN_COLON) {
+            var typeNode = parse_type()
+            if typeNode != null {
+                assign_return_type_from_node(func_node, typeNode)
+            }
+        }
+        node_add_child(node, func_node)
+        return node
+    } else {
+        error_at_current("Expect '{' or 'func' after 'extern'.")
+        return node
     }
-    consume(TOKEN_RBRACE, "Expect '}' after extern block.")
-    return node
 }
 
 // ---------------------------------------------------------------------------

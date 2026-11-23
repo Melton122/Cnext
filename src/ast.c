@@ -4,6 +4,39 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+static ASTNode* closure_lambda_at(ASTNode* value, int depth) {
+    for (; value && depth < 64; depth++) {
+        if (value->type == AST_LAMBDA) return value;
+        if (value->closure_signature) return value->closure_signature;
+        if (value->type == AST_IDENTIFIER) value = value->binding;
+        else if (value->type == AST_CALL && value->left) {
+            ASTNode* callee = value->left->binding;
+            if (callee && callee->type == AST_FUNC_DECL) return callee->closure_signature;
+            ASTNode* lambda = closure_lambda_at(value->left, depth + 1);
+            return lambda ? lambda->closure_signature : NULL;
+        }
+        else value = value->init;
+    }
+    return NULL;
+}
+
+ASTNode* ast_closure_lambda(ASTNode* value) { return closure_lambda_at(value, 0); }
+
+ASTNode* ast_return_value(ASTNode* body) {
+    if (!body || body->type == AST_LAMBDA || body->type == AST_FUNC_DECL) return NULL;
+    if (body->type == AST_RETURN) return body->left;
+    for (int i = 0; i < body->child_count; i++) {
+        ASTNode* found = ast_return_value(body->children[i]);
+        if (found) return found;
+    }
+    ASTNode* found = ast_return_value(body->left);
+    return found ? found : ast_return_value(body->right);
+}
+
+ASTNode* ast_returned_closure(ASTNode* body) {
+    return ast_closure_lambda(ast_return_value(body));
+}
+
 ASTNode* create_node(ASTNodeType type, Token token) {
     ASTNode* node = (ASTNode*)checked_calloc(1, sizeof(ASTNode));
     node->type = type;

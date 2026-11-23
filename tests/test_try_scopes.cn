@@ -1,0 +1,16 @@
+// EXPECT: inner
+// EXPECT: outer
+func early(): int {
+    try { return 7 } catch (str err) { return 0 }
+}
+main {
+    int i = 0
+    while i < 100 {
+        assert(early() == 7)
+        i++
+    }
+    try {
+        try { throw "inner" } catch (str err) { printin(err) }
+        throw "outer"
+    } catch (str err) { printin(err) }
+}

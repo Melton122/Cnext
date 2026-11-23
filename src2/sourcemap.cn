@@ -1,1 +1,100 @@
-﻿// Self-hosting bootstrap: sourcemap
+// Self-hosting bootstrap: sourcemap
+// Port of src/sourcemap.c
+//
+// The C version manages a growable array by hand (capacity/count) and writes
+// the JSON mapping incrementally with fprintf; the port relies on dynamic
+// arrays and builds the JSON text before handing it to write_file.
+
+class SourceMapEntry {
+    int source_line    // Line in .cn source
+    int generated_line // Line in generated .c file
+    int source_col     // Column in .cn source
+    int generated_col  // Column in generated .c file
+
+    func new(int sl, int sc, int gl, int gc) {
+        self.source_line = sl
+        self.source_col = sc
+        self.generated_line = gl
+        self.generated_col = gc
+    }
+}
+
+class SourceMap {
+    SourceMapEntry[] entries
+    int count
+    str source_filename
+    str generated_filename
+
+    func new(str source_file, str generated_file) {
+        self.entries = {}
+        self.count = 0
+        self.source_filename = source_file
+        self.generated_filename = generated_file
+    }
+}
+
+func sourcemap_create(str source_file, str generated_file): SourceMap {
+    return new SourceMap(source_file, generated_file)
+}
+
+func sourcemap_add(SourceMap map, int src_line, int src_col, int gen_line, int gen_col) {
+    if map == null {
+        return
+    }
+    // push() grows the backing store; count tracks the C struct's invariant.
+    push(map.entries, new SourceMapEntry(src_line, src_col, gen_line, gen_col))
+    map.count = map.count + 1
+}
+
+func sourcemap_write(SourceMap map, str output_path) {
+    if map == null {
+        return
+    }
+
+    str out = "{\n"
+    out = out + "  \"source\": \"" + map.source_filename + "\",\n"
+    out = out + "  \"generated\": \"" + map.generated_filename + "\",\n"
+    out = out + "  \"mappings\": [\n"
+    int i = 0
+    while i < map.count {
+        str comma = ""
+        if i < map.count - 1 {
+            comma = ","
+        }
+        out = out + "    {\"src\":" + to_str(map.entries[i].source_line) +
+              ",\"scol\":" + to_str(map.entries[i].source_col) +
+              ",\"gen\":" + to_str(map.entries[i].generated_line) +
+              ",\"gcol\":" + to_str(map.entries[i].generated_col) + "}" + comma + "\n"
+        i = i + 1
+    }
+    out = out + "  ]\n"
+    out = out + "}\n"
+
+    write_file(output_path, out)
+}
+
+// The C version frees the map; the port's garbage collector owns the memory,
+// so this exists only for call-site parity and does nothing.
+func sourcemap_free(SourceMap map) {
+    return
+}
+
+// Binary search for the closest mapping at or before generated_line.
+func sourcemap_lookup(SourceMap map, int generated_line): int {
+    if map == null || map.count == 0 {
+        return -1
+    }
+    int lo = 0
+    int hi = map.count - 1
+    int best = -1
+    while lo <= hi {
+        int mid = (lo + hi) / 2
+        if map.entries[mid].generated_line <= generated_line {
+            best = map.entries[mid].source_line
+            lo = mid + 1
+        } else {
+            hi = mid - 1
+        }
+    }
+    return best
+}

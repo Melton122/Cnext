@@ -96,8 +96,6 @@ typedef enum {
     AST_ATTRIBUTE,      // @attribute(name, args) on declarations
     AST_CONSTEXPR_DECL, // constexpr var = expr
     AST_MACRO_INVOCATION, // macro_name(args) — expanded inline
-    // v4.0: Pattern matching improvements
-    AST_GUARD,          // guard condition in match arm
     // v4.5: Memory & FFI
     AST_EXTERN_DECL,    // extern "C" { func ... } — C function declarations
     AST_BENCH_DECL,     // bench { code } — performance measurement block
@@ -116,12 +114,20 @@ typedef enum {
     // v12.0: New features
     AST_RANGE_INCLUSIVE, // a..=b inclusive range expression
     AST_WHEN,            // when { ... } multi-branch conditional
-    AST_WHEN_ARM         // when arm: condition => expression
+    AST_WHEN_ARM,        // when arm: condition => expression
+    AST_BIT_MATCH,       // left is the value, token is the quoted bit pattern
+    AST_BIT_EXTRACT      // left is the value, token is the quoted field layout
 } ASTNodeType;
 
 typedef struct ASTNode {
     ASTNodeType type;
     Token token; // For identifying specific info, e.g., variable name
+    // Borrowed semantic links; free_ast must not follow these links.
+    struct ASTNode* binding;
+    struct ASTNode* closure_signature;
+    int lambda_depth;
+    bool capture_cell_candidate;
+    bool capture_cell;
     bool is_const;
     bool is_array;
     bool is_pointer;
@@ -186,6 +192,9 @@ typedef struct ASTNode {
 } ASTNode;
 
 ASTNode* create_node(ASTNodeType type, Token token);
+ASTNode* ast_closure_lambda(ASTNode* value);
+ASTNode* ast_returned_closure(ASTNode* body);
+ASTNode* ast_return_value(ASTNode* body);
 void add_child(ASTNode* parent, ASTNode* child);
 void add_type_param(ASTNode* parent, ASTNode* param);
 void add_type_arg(ASTNode* parent, ASTNode* arg);

@@ -1,84 +1,1292 @@
 // Self-hosting bootstrap: codegen expression generation.
 // Port of src/codegen_expr.c (simplified)
 
-extern func print(str s)
+// Mirrors src/codegen_expr.c builtin_dispatch exactly. Call special forms
+// (print/printin/input/push/...) are handled before this table is consulted.
+func builtin_c_name(str name): str {
+    if name == "str_upper" { return "cnext_str_to_upper" }
+    if name == "str_lower" { return "cnext_str_to_lower" }
+    if name == "str_trim" { return "cnext_str_trim" }
+    if name == "str_to_upper" { return "cnext_str_to_upper" }
+    if name == "str_to_lower" { return "cnext_str_to_lower" }
+    if name == "str_contains" { return "cnext_str_contains" }
+    if name == "str_starts_with" { return "cnext_str_starts_with" }
+    if name == "str_ends_with" { return "cnext_str_ends_with" }
+    if name == "str_index_of" { return "cnext_str_find" }
+    if name == "str_find" { return "cnext_str_find" }
+    if name == "str_last_index_of" { return "cnext_str_last_index_of" }
+    if name == "str_replace" { return "cnext_str_replace" }
+    if name == "str_substring" { return "cnext_str_sub" }
+    if name == "str_repeat" { return "cnext_str_repeat" }
+    if name == "str_reverse" { return "cnext_str_reverse" }
+    if name == "str_count" { return "cnext_str_count" }
+    if name == "str_is_empty" { return "cnext_str_is_empty" }
+    if name == "str_char_at" { return "cnext_str_char_at" }
+    if name == "str_char_count" { return "cnext_str_char_count" }
+    if name == "str_codepoint_at" { return "cnext_str_codepoint_at" }
+    if name == "str_sub_chars" { return "cnext_str_sub_chars" }
+    if name == "str_capitalize" { return "cnext_str_capitalize" }
+    if name == "str_title" { return "cnext_str_title" }
+    if name == "str_pad_left" { return "cnext_str_pad_left" }
+    if name == "str_pad_right" { return "cnext_str_pad_right" }
+    if name == "str_remove" { return "cnext_str_remove" }
+    if name == "str_insert" { return "cnext_str_insert" }
+    if name == "str_split" { return "cnext_str_split" }
+    if name == "str_join" { return "cnext_str_join" }
+    if name == "str_to_int" { return "cnext_str_to_int" }
+    if name == "str_to_float" { return "cnext_str_parse_float" }
+    if name == "to_int" { return "cnext_to_int" }
+    if name == "to_float" { return "cnext_to_float" }
+    if name == "to_str" { return "cnext_to_string" }    if name == "to_cstr" { return "cnext_to_cstr" }    if name == "from_cstr" { return "cnext_from_cstr" }    if name == "cstr_free" { return "cnext_cstr_free" }
+    if name == "to_bool" { return "cnext_to_bool" }
+    if name == "to_char" { return "cnext_to_char" }
+    if name == "parse_int" { return "cnext_parse_int" }
+    if name == "parse_float" { return "cnext_parse_float" }
+    if name == "char" { return "cnext_char_fn" }
+    if name == "ord" { return "cnext_ord" }
+    if name == "bytes" { return "cnext_bytes" }
+    if name == "clone" { return "cnext_clone" }
+    if name == "is_null" { return "cnext_is_null_ptr" }
+    if name == "unwrap" { return "cnext_unwrap_ptr" }
+    if name == "expect" { return "cnext_expect_str" }
+    if name == "free" { return "cnext_free" }
+    if name == "mem_arena_create" { return "cnext_mem_arena_create" }
+    if name == "mem_arena_alloc" { return "cnext_mem_arena_alloc" }
+    if name == "mem_arena_free" { return "cnext_mem_arena_free" }
+    if name == "mem_arena_destroy" { return "cnext_mem_arena_destroy" }
+    if name == "mem_arena_usage" { return "cnext_mem_arena_usage" }
+    if name == "mem_scope_begin" { return "cnext_mem_scope_begin" }
+    if name == "mem_scope_end" { return "cnext_mem_scope_end" }
+    if name == "mem_scope_usage" { return "cnext_mem_scope_usage" }
+    if name == "ref_new" { return "cnext_ref_new" }
+    if name == "ref_retain" { return "cnext_ref_handle_retain" }
+    if name == "ref_release" { return "cnext_ref_handle_release" }
+    if name == "ref_count" { return "cnext_ref_handle_count" }
+    if name == "math_abs" { return "cnext_abs" }
+    if name == "math_min" { return "cnext_min" }
+    if name == "math_max" { return "cnext_max" }
+    if name == "math_clamp" { return "cnext_clamp" }
+    if name == "math_round" { return "cnext_round" }
+    if name == "math_floor" { return "cnext_floor" }
+    if name == "math_ceil" { return "cnext_ceil" }
+    if name == "math_sqrt" { return "cnext_sqrt" }
+    if name == "math_pow" { return "cnext_pow" }
+    if name == "math_log" { return "cnext_log" }
+    if name == "math_exp" { return "cnext_exp" }
+    if name == "math_sin" { return "cnext_sin" }
+    if name == "math_cos" { return "cnext_cos" }
+    if name == "math_tan" { return "cnext_tan" }
+    if name == "math_random" { return "cnext_random" }
+    if name == "math_random_range" { return "cnext_random_range" }
+    if name == "math_gcd" { return "cnext_gcd" }
+    if name == "math_lcm" { return "cnext_lcm" }
+    if name == "math_factorial" { return "cnext_factorial" }
+    if name == "math_fibonacci" { return "cnext_fibonacci" }
+    if name == "time_now" { return "cnext_timestamp" }
+    if name == "time_sleep" { return "cnext_time_sleep" }
+    if name == "time_timestamp" { return "cnext_timestamp" }
+    if name == "time_date" { return "cnext_date" }
+    if name == "time_time" { return "cnext_time_str" }
+    if name == "time_stopwatch_start" { return "cnext_stopwatch_start" }
+    if name == "time_stopwatch_stop" { return "cnext_stopwatch_stop" }
+    if name == "time_format_time" { return "cnext_format_time" }
+    if name == "read_file" { return "cnext_read_file" }
+    if name == "write_file" { return "cnext_write_file" }
+    if name == "append_file" { return "cnext_append_file" }
+    if name == "delete_file" { return "cnext_delete_file" }
+    if name == "copy_file" { return "cnext_copy_file" }
+    if name == "move_file" { return "cnext_move_file" }
+    if name == "file_exists" { return "cnext_file_exists" }
+    if name == "file_size" { return "cnext_file_size" }
+    if name == "cwd" { return "cnext_cwd" }
+    if name == "chdir" { return "cnext_chdir" }
+    if name == "platform" { return "cnext_platform" }
+    if name == "sys_args" { return "cnext_args_str" }
+    if name == "sys_args_count" { return "cnext_arg_count" }
+    if name == "sys_arg_at" { return "cnext_arg_at" }
+    if name == "getenv" { return "cnext_getenv_str" }
+    if name == "setenv" { return "cnext_setenv_str" }
+    if name == "hostname" { return "cnext_hostname_str" }
+    if name == "username" { return "cnext_username_str" }
+    if name == "cpu_count" { return "cnext_cpu_count" }
+    if name == "temp_dir" { return "cnext_temp_dir" }
+    if name == "home_dir" { return "cnext_home_dir" }
+    if name == "sys_exec" { return "cnext_exec" }
+    if name == "sys_shell" { return "cnext_shell" }
+    if name == "json_parse" { return "cnext_json_parse" }
+    if name == "json_stringify" { return "cnext_json_stringify" }
+    if name == "base64_encode" { return "cnext_base64_encode" }
+    if name == "base64_decode" { return "cnext_base64_decode" }
+    if name == "hash_md5" { return "cnext_hash_md5_str" }
+    if name == "md5" { return "cnext_hash_md5_str" }
+    if name == "hash_sha1" { return "cnext_hash_sha1_str" }
+    if name == "sha1" { return "cnext_hash_sha1_str" }
+    if name == "hash_sha256" { return "cnext_hash_sha256_str" }
+    if name == "sha256" { return "cnext_hash_sha256_str" }
+    if name == "uuid" { return "cnext_uuid" }
+    if name == "debug" { return "cnext_debug" }
+    if name == "gc" { return "cnext_gc" }
+    if name == "benchmark" { return "cnext_benchmark" }
+    return ""
+}
+
+// The reader matching a typed destination for a context-sensitive input().
+func input_reader_for_type(int ttype): str {
+    if ttype == TOKEN_INT_TYPE { return "cnext_input_int" }
+    if ttype == TOKEN_UINT_TYPE { return "cnext_input_uint" }
+    if ttype == TOKEN_LONG_TYPE { return "cnext_input_long" }
+    if ttype == TOKEN_ULONG_TYPE { return "cnext_input_ulong" }
+    if ttype == TOKEN_FLOAT_TYPE { return "cnext_input_float" }
+    if ttype == TOKEN_DOUBLE_TYPE { return "cnext_input_double" }
+    if ttype == TOKEN_BOOL_TYPE { return "cnext_input_bool" }
+    if ttype == TOKEN_CHAR_TYPE { return "cnext_input_char" }
+    if ttype == TOKEN_BYTE_TYPE { return "cnext_input_byte" }
+    if ttype == TOKEN_USHORT_TYPE { return "cnext_input_ushort" }
+    if ttype == TOKEN_UBYTE_TYPE { return "cnext_input_ubyte" }
+    return "cnext_input"
+}
+
+// `input_int()` and friends name their own type, so they need no destination
+// context. Empty for identifiers that are not explicit readers.
+func explicit_input_reader(str name): str {
+    if name == "input_int" { return "cnext_input_int" }
+    if name == "input_uint" { return "cnext_input_uint" }
+    if name == "input_long" { return "cnext_input_long" }
+    if name == "input_ulong" { return "cnext_input_ulong" }
+    if name == "input_float" { return "cnext_input_float" }
+    if name == "input_double" { return "cnext_input_double" }
+    if name == "input_bool" { return "cnext_input_bool" }
+    if name == "input_char" { return "cnext_input_char" }
+    if name == "input_byte" { return "cnext_input_byte" }
+    if name == "input_ushort" { return "cnext_input_ushort" }
+    if name == "input_ubyte" { return "cnext_input_ubyte" }
+    if name == "input_str" { return "cnext_input" }
+    return ""
+}
+
+func is_string_equality(ASTNode? node): bool {
+    if node == null { return false }
+    if node.token.kind == TOKEN_EQ_EQ {
+        if node.left == null { return false }
+        if node.right == null { return false }
+        if node.left.expr_type == TOKEN_STR_TYPE { return true }
+        if node.right.expr_type == TOKEN_STR_TYPE { return true }
+    } else if node.token.kind == TOKEN_BANG_EQ {
+        if node.left == null { return false }
+        if node.right == null { return false }
+        if node.left.expr_type == TOKEN_STR_TYPE { return true }
+        if node.right.expr_type == TOKEN_STR_TYPE { return true }
+    }
+    return false
+}
+
+func is_string_ordering(ASTNode? node): bool {
+    if node == null { return false }
+    if node.left == null || node.right == null { return false }
+    if node.left.expr_type != TOKEN_STR_TYPE &&
+       node.right.expr_type != TOKEN_STR_TYPE {
+        return false
+    }
+    return node.token.kind == TOKEN_LESS ||
+           node.token.kind == TOKEN_LESS_EQ ||
+           node.token.kind == TOKEN_GREATER ||
+           node.token.kind == TOKEN_GREATER_EQ
+}
+
+func string_ordering_c_name(int op): str {
+    if op == TOKEN_LESS { return "cnext_str_lt" }
+    if op == TOKEN_LESS_EQ { return "cnext_str_le" }
+    if op == TOKEN_GREATER { return "cnext_str_gt" }
+    if op == TOKEN_GREATER_EQ { return "cnext_str_ge" }
+    return ""
+}
+
+func binop_precedence(int op): int {
+    if op == TOKEN_STAR || op == TOKEN_SLASH || op == TOKEN_PERCENT {
+        return 5
+    }
+    if op == TOKEN_PLUS || op == TOKEN_MINUS {
+        return 4
+    }
+    if op == TOKEN_LESS || op == TOKEN_LESS_EQ ||
+       op == TOKEN_GREATER || op == TOKEN_GREATER_EQ {
+        return 3
+    }
+    if op == TOKEN_EQ_EQ || op == TOKEN_BANG_EQ { return 2 }
+    if op == TOKEN_AND_AND { return 1 }
+    if op == TOKEN_OR_OR { return 0 }
+    return -1
+}
+
+func needs_parens(int parent_op, int child_op, bool is_right): bool {
+    int pp = binop_precedence(parent_op)
+    int cp = binop_precedence(child_op)
+    if cp < 0 { return false }
+    if cp < pp { return true }
+    if cp == pp && is_right { return true }
+    return false
+}
+
+func gen_with_parens(ASTNode? child, int parent_op, bool is_right) {
+    if child != null && child.kind == AST_BINARY &&
+       needs_parens(parent_op, child.token.kind, is_right) {
+        codegen_emit("(")
+        generate_expression(child)
+        codegen_emit(")")
+    } else {
+        generate_expression(child)
+    }
+}
+
+// An array whose element type is a class stores class instances, which are
+// pointers, so it uses CnextArrayObj rather than a typed value array.
+func node_array_is_object(ASTNode? node): bool {
+    if node == null { return false }
+    if !node.is_array { return false }
+    if node.var_type.kind == TOKEN_IDENTIFIER {
+        var subst = find_type_subst(node.var_type.text)
+        if subst != null {
+            return subst.concrete_type.kind == TOKEN_IDENTIFIER
+        }
+        return true
+    }
+    return false
+}
+
+// `arr = { ... }` assigns a whole array value, so it needs a compound literal
+// of the array struct. A bare braced list is not an expression in C.
+func is_array_literal_assignment(ASTNode? node): bool {
+    if node == null { return false }
+    if node.right == null { return false }
+    return node.right.kind == AST_LITERAL_ARRAY && node.right.is_array
+}
+
+// Emits `arr[i] = value` for an array of class instances, returning true when
+// it handled the whole assignment.
+func emit_object_array_element_assignment(ASTNode? node): bool {
+    if node == null { return false }
+    ASTNode? target = node.left
+    if target == null { return false }
+    if target.kind != AST_INDEX || !target.is_class { return false }
+    if node.right == null { return false }
+    if node.right.kind == AST_LITERAL_ARRAY || node.right.kind == AST_SLICE {
+        return false
+    }
+    codegen_emit("CNEXT_ARRAY_IDX_OBJ_ASSIGN(")
+    generate_expression(target.left)
+    codegen_emit(", ")
+    generate_expression(target.right)
+    codegen_emit(", ")
+    generate_expression(node.right)
+    codegen_emit(")")
+    return true
+}
+
+// Emits a whole array value from a literal. type_owner supplies the element
+// type (it is the array declaration, or the annotated literal for an
+// assignment). The backing store is heap allocated so the array can be grown
+// later by push.
+func generate_array_value(ASTNode? type_owner, ASTNode? literal) {
+    codegen_emit("({ ")
+    generate_node_type(type_owner, false)
+    codegen_emit(" _cnarr = { (")
+    if node_array_is_object(type_owner) {
+        codegen_emit("void*")
+    } else {
+        generate_type(type_owner.var_type, false)
+    }
+    codegen_emit("[])")
+    generate_expression(literal)
+    codegen_emit(", ")
+    codegen_emit(to_str(len(literal.children)))
+    codegen_emit(" }; ")
+    if node_array_is_object(type_owner) {
+        codegen_emit("_cnarr.data = (void**)_cnext_array_heap_copy(_cnarr.data, _cnarr.length, sizeof(void*)); ")
+    } else {
+        codegen_emit("_cnarr.data = (")
+        generate_type(type_owner.var_type, false)
+        codegen_emit("*)_cnext_array_heap_copy(_cnarr.data, _cnarr.length, sizeof(")
+        generate_type(type_owner.var_type, false)
+        codegen_emit(")); ")
+    }
+    codegen_emit("_cnarr; })")
+}
+
+func member_uses_pointer(ASTNode? node): bool {
+    if node == null { return false }
+    if node.is_pointer_access { return true }
+    if node.left == null { return false }    // Arrays are values even when their element type is a class.    if node.left.is_array { return false }
+    if node.left.is_pointer { return true }
+    // Semantics marks a value whose type is a class (a pointer in generated C)
+    // and a field that itself holds a class reference.
+    if node.left.is_class { return true }
+    if node.left.kind == AST_IDENTIFIER && codegen_is_pointer_param(node.left.token.text) { return true }
+    if node.left.kind == AST_IDENTIFIER {
+        str member_type = node.left.type_name
+        if len(member_type) == 0 { member_type = node.left.var_type.text }
+        if codegen_is_class_name(member_type) { return true }
+    }
+    if node.left.kind == AST_MEMBER_ACCESS &&
+       len(codegen_pointer_member_type(node.left)) > 0 {
+        return true
+    }
+    if node.left.kind == AST_IDENTIFIER &&
+       len(lookup_class_var(node.left.token.text)) > 0 {
+        return true
+    }
+    if node.left.kind == AST_IDENTIFIER && node.left.token.text == "self" {
+        return true
+    }
+    if node.left.kind == AST_MEMBER_ACCESS && node.left.is_class &&
+       codegen_is_class_name(node.left.var_type.text) {
+        return true
+    }
+    if node.left.kind == AST_INDEX {
+        if node.left.var_type.kind == TOKEN_IDENTIFIER {
+            return true
+        }
+    }
+    return false
+}
+
+func typeof_type_name(ASTNode? inner): str {
+    if inner == null { return "unknown" }
+    if inner.expr_type == TOKEN_INT_TYPE { return "int" }
+    if inner.expr_type == TOKEN_LONG_TYPE { return "long" }
+    if inner.expr_type == TOKEN_FLOAT_TYPE { return "float" }
+    if inner.expr_type == TOKEN_DOUBLE_TYPE { return "double" }
+    if inner.expr_type == TOKEN_STR_TYPE { return "str" }
+    if inner.expr_type == TOKEN_BOOL_TYPE { return "bool" }
+    if inner.expr_type == TOKEN_CHAR_TYPE { return "char" }
+    if inner.expr_type == TOKEN_BYTE_TYPE { return "byte" }
+    if inner.expr_type == TOKEN_UINT_TYPE { return "uint" }
+    if inner.expr_type == TOKEN_ULONG_TYPE { return "ulong" }
+    if inner.expr_type == TOKEN_USHORT_TYPE { return "ushort" }
+    if inner.expr_type == TOKEN_UBYTE_TYPE { return "ubyte" }
+    return "unknown"
+}
+
+func extension_prefix(int kind): str {
+    if kind == TOKEN_STR_TYPE { return "str" }
+    if kind == TOKEN_INT_TYPE { return "int" }
+    if kind == TOKEN_LONG_TYPE { return "long" }
+    if kind == TOKEN_FLOAT_TYPE { return "float" }
+    if kind == TOKEN_DOUBLE_TYPE { return "double" }
+    if kind == TOKEN_BOOL_TYPE { return "bool" }
+    if kind == TOKEN_CHAR_TYPE { return "char" }
+    return ""
+}
+
+func emit_variant_value(ASTNode? node, str var_name, str tag): bool {
+    codegen_emit("({ CnextVariant ")
+    codegen_emit(var_name)
+    codegen_emit(" = ")
+    codegen_emit("{")
+    codegen_emit(tag)
+    codegen_emit(", 0, ")
+    codegen_emit("{")
+    codegen_emit("0")
+    codegen_emit("}")
+    codegen_emit("}")
+    codegen_emit("; __typeof__(")
+    generate_expression(node.left)
+    codegen_emit(") _val = (")
+    generate_expression(node.left)
+    codegen_emit("); memcpy(")
+    codegen_emit(var_name)
+    codegen_emit(".payload, &_val, sizeof(_val)); ")
+    codegen_emit(var_name)
+    codegen_emit(".size = sizeof(_val); ")
+    codegen_emit(var_name)
+    codegen_emit("; })")
+    return true
+}
+
+func when_has_else(ASTNode node): bool {
+    int i = 0
+    while i < len(node.children) {
+        ASTNode? arm = node.children[i]
+        if arm != null && arm.is_const { return true }
+        i = i + 1
+    }
+    return false
+}
+
+func emit_when_arm_chain(ASTNode node, int index) {
+    if index >= len(node.children) {
+        codegen_emit("0")
+        return
+    }
+    ASTNode? arm = node.children[index]
+    if arm == null {
+        emit_when_arm_chain(node, index + 1)
+        return
+    }
+    if arm.is_const || ((arm.condition == null) && (arm.left != null)) {
+        codegen_emit("(")
+        if arm.left != null { generate_expression(arm.left) } else { codegen_emit("0") }
+        codegen_emit(")")
+        return
+    }
+    if arm.condition == null || arm.left == null {
+        emit_when_arm_chain(node, index + 1)
+        return
+    }
+    codegen_emit("(")
+    generate_expression(arm.condition)
+    codegen_emit(") ? (")
+    generate_expression(arm.left)
+    codegen_emit(") : ")
+    if index + 1 == len(node.children) && !when_has_else(node) {
+        codegen_emit("(")
+        generate_expression(arm.left)
+        codegen_emit(")")
+        return
+    }
+    emit_when_arm_chain(node, index + 1)
+}
 
 func generate_expression(ASTNode? node): bool {
     if node == null {
         return false
     }
-    
+    if node.kind == AST_CALL && emit_managed_closure_arguments(node) { return true }    if node.kind == AST_LAMBDA {        emit_lambda(node)
+        return true
+    }
+
     if node.kind == AST_LITERAL {
-        if node.token.kind == TOKEN_STRING {
-            print(\"cnext_string_new(\")
-            print(node.token.text)
-            print(\")\")
+
+        if node.token.kind == TOKEN_STRING_LITERAL {
+            generate_string_interpolation(node.token.text, len(node.token.text))
             return true
         } else if node.token.kind == TOKEN_NUMBER {
-            print(node.token.text)
+            codegen_emit(node.token.text)
             return true
         } else if node.token.kind == TOKEN_FLOAT_LITERAL {
-            print(node.token.text)
+            codegen_emit(node.token.text)
             return true
-        } else if node.token.kind == TOKEN_BOOL_TRUE {
-            print(\"true\")
+        } else if node.token.kind == TOKEN_TRUE {
+            codegen_emit("true")
             return true
-        } else if node.token.kind == TOKEN_BOOL_FALSE {
-            print(\"false\")
+        } else if node.token.kind == TOKEN_FALSE {
+            codegen_emit("false")
             return true
         } else if node.token.kind == TOKEN_NULL {
-            print(\"NULL\")
+            codegen_emit("NULL")
             return true
         }
-        print(node.token.text)
+        codegen_emit(node.token.text)
+        return true
+    } else if node.kind == AST_NULL_LITERAL {
+        if node.expr_type == TOKEN_STR_TYPE {
+            codegen_emit("(CnextString)")
+            codegen_emit("{")
+            codegen_emit("NULL, 0}")
+        } else {
+            codegen_emit("NULL")
+        }
+        return true
+    } else if node.kind == AST_OPTION_NONE {
+        codegen_emit("((CnextVariant)")
+        codegen_emit("{")
+        codegen_emit("0, 0, ")
+        codegen_emit("{")
+        codegen_emit("0}")
+        codegen_emit("})")
+        return true
+    } else if node.kind == AST_OPTION_SOME {
+        return emit_variant_value(node, "_opt", "1")
+
+    } else if node.kind == AST_RESULT_OK {
+        return emit_variant_value(node, "_res", "0")
+
+    } else if node.kind == AST_RESULT_ERR {
+        return emit_variant_value(node, "_res", "1")
+
+    } else if node.kind == AST_TYPEOF {
+        str type_str = typeof_type_name(node.left)
+        codegen_emit("(CnextString){(char*)\"")
+        codegen_emit(type_str)
+        codegen_emit("\", ")
+        codegen_emit(to_str(len(type_str)))
+        codegen_emit("}")
+        return true
+    } else if node.kind == AST_CAST {
+        if node.var_type.kind == TOKEN_STR_TYPE {
+            codegen_emit("cnext_to_string(")
+            generate_expression(node.left)
+            codegen_emit(")")
+        } else {
+            codegen_emit("((")
+            codegen_emit_c_type(node.var_type, false, false)
+            codegen_emit(")(")
+            generate_expression(node.left)
+            codegen_emit("))")
+        }
         return true
     } else if node.kind == AST_IDENTIFIER {
-        print(node.token.text)
+        emit_bound_name(node.binding, node.token.text)
+        return true
+    } else if node.kind == AST_BIT_EXTRACT {
+        ulong mask = 0
+        int shift = 0
+        int i = 1
+        while i < len(node.token.text) - 1 {
+            int bit = str_char_at(node.token.text, i)
+            if bit != '_' {
+                mask = mask * 2
+                if bit == '#' {
+                    mask = mask + 1
+                    shift = 0
+                } else {
+                    shift = shift + 1
+                }
+            }
+            i = i + 1
+        }
+        codegen_emit("(((")
+        generate_expression(node.left)
+        codegen_emit(") & " + to_str(mask) + "ULL) >> " + to_str(shift) + ")")
+        return true
+    } else if node.kind == AST_BIT_MATCH {
+        ulong mask = 0
+        ulong expected = 0
+        int i = 1
+        while i < len(node.token.text) - 1 {
+            int bit = str_char_at(node.token.text, i)
+            if bit != '_' {
+                mask = mask * 2
+                expected = expected * 2
+                if bit != '?' { mask = mask + 1 }
+                if bit == '1' { expected = expected + 1 }
+            }
+            i = i + 1
+        }
+        codegen_emit("((bool)(((")
+        generate_expression(node.left)
+        codegen_emit(") & " + to_str(mask) + "ULL) == " + to_str(expected) + "ULL))")
         return true
     } else if node.kind == AST_BINARY {
-        generate_expression(node.left)
-        print(\" \")
-        print(node.token.text)
-        print(\" \")
-        generate_expression(node.right)
-        return true
-    } else if node.kind == AST_CALL {
-        if node.left != null {
-            generate_expression(node.left)
+		bool null_cmp = false
+		if node.left != null && node.left.kind == AST_NULL_LITERAL { null_cmp = true }
+		if node.right != null && node.right.kind == AST_NULL_LITERAL { null_cmp = true }
+		if node.left != null && node.left.kind == AST_LITERAL && node.left.token.kind == TOKEN_NULL { null_cmp = true }
+		if node.right != null && node.right.kind == AST_LITERAL && node.right.token.kind == TOKEN_NULL { null_cmp = true }
+		bool has_op_class = false
+		str op_class = ""
+		str op_suffix = ""
+		if node.left != null {
+			op_class = node.left.type_name
+			if len(op_class) == 0 { op_class = node.left.var_type.text }
+			has_op_class = codegen_is_class_name(op_class)
+			op_suffix = operator_suffix(node.token.kind)
+		}
+		bool is_eq_op = node.token.kind == TOKEN_EQ_EQ || node.token.kind == TOKEN_BANG_EQ
+		bool either_str = false
+		if node.left != null && node.left.expr_type == TOKEN_STR_TYPE { either_str = true }
+		if node.right != null && node.right.expr_type == TOKEN_STR_TYPE { either_str = true }
+		if is_eq_op && either_str {
+			if node.token.kind == TOKEN_BANG_EQ { codegen_emit("!") }
+			codegen_emit("cnext_str_eq(")
+			generate_expression(node.left)
+			codegen_emit(", ")
+			generate_expression(node.right)
+			codegen_emit(")")
+		} else if is_string_ordering(node) {
+			codegen_emit(string_ordering_c_name(node.token.kind))
+			codegen_emit("(")
+			generate_expression(node.left)
+			codegen_emit(", ")
+			generate_expression(node.right)
+			codegen_emit(")")
+		} else if node.expr_type == TOKEN_STR_TYPE && node.token.kind == TOKEN_PLUS {
+			codegen_emit("cnext_concat(cnext_to_string(")
+			generate_expression(node.left)
+			codegen_emit("), cnext_to_string(")
+			generate_expression(node.right)
+			codegen_emit("))")
+		} else if has_op_class && !null_cmp && len(op_suffix) > 0 {
+			codegen_emit(op_class)
+			codegen_emit("_operator_")
+			codegen_emit(op_suffix)
+			codegen_emit("(")
+			generate_expression(node.left)
+			codegen_emit(", ")
+			generate_expression(node.right)
+			codegen_emit(")")
+		} else {
+			gen_with_parens(node.left, node.token.kind, false)
+			codegen_emit(" ")
+			codegen_emit(node.token.text)
+			codegen_emit(" ")
+			gen_with_parens(node.right, node.token.kind, true)
+		}
+        return true    } else if node.kind == AST_CALL {
+        if node.left != null && node.left.kind == AST_SAFE_ACCESS {
+            str class_type = ""
+            if node.left.left != null { class_type = node.left.left.type_name }
+            str zero_val = "NULL"
+            if node.expr_type == TOKEN_STR_TYPE { zero_val = "(CnextString)" + to_char(123) + "NULL, 0" + to_char(125) }
+            else if node.expr_type == TOKEN_INT_TYPE || node.expr_type == TOKEN_FLOAT_TYPE ||
+                    node.expr_type == TOKEN_DOUBLE_TYPE || node.expr_type == TOKEN_BOOL_TYPE ||
+                    node.expr_type == TOKEN_CHAR_TYPE || node.expr_type == TOKEN_BYTE_TYPE ||
+                    node.expr_type == TOKEN_UINT_TYPE || node.expr_type == TOKEN_ULONG_TYPE ||
+                    node.expr_type == TOKEN_USHORT_TYPE || node.expr_type == TOKEN_UBYTE_TYPE { zero_val = "0" }
+            codegen_emit("(((")
+            generate_expression(node.left.left)
+            codegen_emit(") != NULL) ? (")
+            if len(class_type) > 0 {
+                codegen_emit(class_type + "_" + node.left.token.text + "(")
+                generate_expression(node.left.left)
+                int ai = 0
+                while ai < len(node.children) {
+                    codegen_emit(", ")
+                    generate_expression(node.children[ai])
+                    ai = ai + 1
+                }
+                codegen_emit(")")
+            }
+            codegen_emit(") : (" + zero_val + "))")
+            return true
         }
-        print(\"(\")
+        if node.left != null && node.left.kind == AST_IDENTIFIER &&           node.left.binding != null && node.left.binding.kind == AST_VAR_DECL {            var lambda = sem_closure_lambda(node.left.binding)            if lambda != null {                emit_lambda_call(node, lambda)                return true            }            if node.left.binding != null && node.left.binding.var_type.kind == TOKEN_FUNC {                codegen_emit("((int(*)(void*, int))(")                generate_expression(node.left)                codegen_emit(").fn)((")                generate_expression(node.left)                codegen_emit(").env")                int i = 0                while i < len(node.children) {                    codegen_emit(", ")                    generate_expression(node.children[i])                    i = i + 1                }                codegen_emit(")")                return true            }        }
+        if node.left != null && node.left.kind == AST_SUPER_EXPR {
+            if len(g_codegen_current_parent_class) > 0 {
+                codegen_emit(g_codegen_current_parent_class)
+                codegen_emit("_")
+                codegen_emit(node.left.token.text)
+                codegen_emit("((")
+                codegen_emit(g_codegen_current_parent_class)
+                codegen_emit("*)self")
+                int si = 0
+                while si < len(node.children) {
+                    codegen_emit(", ")
+                    generate_expression(node.children[si])
+                    si = si + 1
+                }
+                codegen_emit(")")
+            } else {
+                codegen_emit("/* invalid super call */")
+            }
+            return true
+        }
+        if node.left != null && node.left.kind == AST_MEMBER_ACCESS &&
+           node.left.left != null && node.left.left.kind == AST_IDENTIFIER {
+            // Check for module-prefixed builtins (math.abs → math_abs)
+            str module_name = node.left.left.token.text
+            str func_name = node.left.token.text
+            int is_prefixed = 0
+            if module_name == "json" && len(module_name) == 4 {
+                codegen_emit("json_")
+                codegen_emit(func_name)
+                is_prefixed = 1
+            } else if module_name == "math" && len(module_name) == 4 {
+                codegen_emit("math_")
+                codegen_emit(func_name)
+                is_prefixed = 1
+            } else if module_name == "os" && len(module_name) == 2 {
+                codegen_emit("os_")
+                codegen_emit(func_name)
+                is_prefixed = 1
+            } else if module_name == "time" && len(module_name) == 4 {
+                codegen_emit("time_")
+                codegen_emit(func_name)
+                is_prefixed = 1
+            } else if module_name == "regex" && len(module_name) == 5 {
+                codegen_emit("regex_")
+                codegen_emit(func_name)
+                is_prefixed = 1
+            } else if module_name == "crypto" && len(module_name) == 6 {
+                codegen_emit("crypto_")
+                codegen_emit(func_name)
+                is_prefixed = 1
+            } else if module_name == "path" && len(module_name) == 4 {
+                codegen_emit("path_")
+                codegen_emit(func_name)
+                is_prefixed = 1
+            } else if module_name == "process" && len(module_name) == 7 {
+                codegen_emit("process_")
+                codegen_emit(func_name)
+                is_prefixed = 1
+            } else if module_name == "random" && len(module_name) == 6 {
+                codegen_emit("random_")
+                codegen_emit(func_name)
+                is_prefixed = 1
+            }
+            if is_prefixed {
+                codegen_emit("(")
+                int i = 0
+                int n = len(node.children)
+                while i < n {
+                    if i > 0 { codegen_emit(", ") }
+                    generate_expression(node.children[i])
+                    i = i + 1
+                }
+                codegen_emit(")")
+                return true
+            }
+            // Check for class method calls
+            str class_name = lookup_class_var(module_name)
+            if len(class_name) == 0 && node.left.left != null {
+                class_name = extension_prefix(node.left.left.expr_type)
+                if len(class_name) == 0 { class_name = node.left.left.var_type.text }
+            }
+            if len(class_name) > 0 {
+                codegen_emit(class_name)
+                codegen_emit("_")
+                codegen_emit(func_name)
+                codegen_emit("(")
+                generate_expression(node.left.left)
+                int i = 0
+                if len(node.children) > 0 &&
+                   node.children[0].token.text == "self" {
+                    i = 1
+                }
+                while i < len(node.children) {
+                    codegen_emit(", ")
+                    generate_expression(node.children[i])
+                    i = i + 1
+                }
+                codegen_emit(")")
+                return true
+            }
+            // Stage 0 falls through to a plain call on the member token:
+            // obj.method(args) -> method(args)
+            codegen_emit(node.left.token.text)
+            codegen_emit("(")
+            int i = 0
+            int n = len(node.children)
+            while i < n {
+                if i > 0 { codegen_emit(", ") }
+                generate_expression(node.children[i])
+                i = i + 1
+            }
+            codegen_emit(")")
+            return true
+        }
+        if node.left != null && node.left.kind == AST_IDENTIFIER {
+            str builtin = builtin_c_name(node.left.token.text)
+            if node.left.token.text == "push" && len(node.children) >= 2 {
+                generate_expression(node.children[0])
+                codegen_emit(" = CNEXT_ARRAY_PUSH(")
+                generate_expression(node.children[0])
+                codegen_emit(", (")
+                generate_expression(node.children[1])
+                codegen_emit("))")
+                return true
+            }
+            if node.left.token.text == "len" {
+                codegen_emit("(int)(")
+                if len(node.children) > 0 {
+                    generate_expression(node.children[0])
+                }
+                codegen_emit(".length)")
+                return true
+            }	if node.left.token.text == "printin" {
+		if len(node.children) > 1 {
+			int pi = 0
+			while pi < len(node.children) - 1 {
+				codegen_emit("print_raw(")
+				generate_expression(node.children[pi])
+				codegen_emit("); ")
+				pi = pi + 1
+			}
+			codegen_emit("printin(")
+			generate_expression(node.children[len(node.children) - 1])
+			codegen_emit(")")
+		} else {
+			codegen_emit("printin(")
+			if len(node.children) > 0 {
+				generate_expression(node.children[0])
+			}
+			codegen_emit(")")
+		}
+		return true
+	}
+            if node.left.token.text == "print" {
+                if len(node.children) > 1 {
+                    int pi = 0
+                    while pi < len(node.children) {
+                        codegen_emit("print_raw(")
+                        generate_expression(node.children[pi])
+                        codegen_emit(")")
+                        if pi < len(node.children) - 1 { codegen_emit("; ") }
+                        pi = pi + 1
+                    }
+                } else {
+                    codegen_emit("print_raw(")
+                    if len(node.children) > 0 {
+                        generate_expression(node.children[0])
+                    }
+                    codegen_emit(")")
+                }
+                return true
+            }
+            if node.left.token.text == "input_key" {
+                codegen_emit("cnext_input_key()")
+                return true
+            }
+            if node.left.token.text == "input" {
+                codegen_emit(input_reader_for_type(node.expr_type))
+                codegen_emit("(")
+                if len(node.children) > 0 {
+                    generate_expression(node.children[0])
+                } else {
+                    codegen_emit("(CnextString)")
+                    codegen_emit("{")
+                    codegen_emit("NULL, 0}")
+                }
+                codegen_emit(")")
+                return true
+            }
+            str reader = explicit_input_reader(node.left.token.text)
+            if len(reader) > 0 {
+                codegen_emit(reader)
+                codegen_emit("(")
+                if len(node.children) > 0 {
+                    generate_expression(node.children[0])
+                } else {
+                    codegen_emit("(CnextString)")
+                    codegen_emit("{")
+                    codegen_emit("NULL, 0}")
+                }
+                codegen_emit(")")
+                return true
+            }
+            if node.left.token.text == "free" {
+                codegen_emit("cnext_free(")
+                if len(node.children) > 0 {
+                    generate_expression(node.children[0])
+                }
+                codegen_emit(")")
+                return true
+            }
+            if node.left.token.text == "is_null" {
+                if len(node.children) > 0 {
+                    ASTNode? arg = node.children[0]
+                    bool arg_is_str = str_starts_with(arg.type_name, "str") ||
+                        (arg.kind == AST_LITERAL &&
+                         arg.token.kind == TOKEN_STRING_LITERAL) ||
+                        arg.expr_type == TOKEN_STR_TYPE
+                    if arg_is_str {
+                        codegen_emit("cnext_is_null_str(")
+                        generate_expression(arg)
+                        codegen_emit(")")
+                    } else {
+                        codegen_emit("cnext_is_null_ptr((void*)(")
+                        generate_expression(arg)
+                        codegen_emit("))")
+                    }
+                } else {
+                    codegen_emit("true")
+                }
+                return true
+            }
+            if node.left.token.text == "split" {
+                codegen_emit("cnext_str_split(")
+                if len(node.children) > 0 {
+                    generate_expression(node.children[0])
+                }
+                if len(node.children) > 1 {
+                    codegen_emit(", ")
+                    generate_expression(node.children[1])
+                }
+                codegen_emit(")")
+                return true
+            }
+            if node.left.token.text == "join" {
+                codegen_emit("cnext_str_join(")
+                if len(node.children) > 0 {
+                    generate_expression(node.children[0])
+                }
+                if len(node.children) > 1 {
+                    codegen_emit(", ")
+                    generate_expression(node.children[1])
+                }
+                codegen_emit(")")
+                return true
+            }
+            if node.left.token.text == "unwrap" {
+                codegen_emit("cnext_unwrap_str(")
+                if len(node.children) > 0 {
+                    generate_expression(node.children[0])
+                }
+                codegen_emit(", \"unwrap failed: value is null\")")
+                return true
+            }
+            if node.left.token.text == "expect" {
+                codegen_emit("cnext_expect_str(")
+                if len(node.children) > 0 {
+                    generate_expression(node.children[0])
+                }
+                codegen_emit(", ")
+                if len(node.children) > 1 {
+                    generate_expression(node.children[1])
+                } else {
+                    codegen_emit("\"expect failed: value is null\"")
+                }
+                codegen_emit(")")
+                return true
+            }
+            if node.left.token.text == "str_to_int" {
+                codegen_emit("cnext_str_to_int(")
+                if len(node.children) > 0 {
+                    generate_expression(node.children[0])
+                }
+                codegen_emit(")")
+                return true
+            }
+            if node.left.token.text == "str_to_float" {
+                codegen_emit("cnext_str_parse_float(")
+                if len(node.children) > 0 {
+                    generate_expression(node.children[0])
+                }
+                codegen_emit(")")
+                return true
+            }
+            if node.left.token.text == "panic" {
+                codegen_emit("cnext_panic(")
+                if len(node.children) > 0 {
+                    generate_expression(node.children[0])
+                } else {
+                    codegen_emit("(CnextString){(char*)\"panic\", 5}")
+                }
+                codegen_emit(")")
+                return true
+            }
+            if node.left.token.text == "exit" {
+                codegen_emit("cnext_exit_fn(")
+                if len(node.children) > 0 {
+                    generate_expression(node.children[0])
+                } else {
+                    codegen_emit("0")
+                }
+                codegen_emit(")")
+                return true
+            }
+            if node.left.token.text == "assert" {
+                codegen_emit("cnext_assert_fn(")
+                if len(node.children) > 0 {
+                    generate_expression(node.children[0])
+                }
+                codegen_emit(", ")
+                if len(node.children) > 1 {
+                    generate_expression(node.children[1])
+                } else {
+                    codegen_emit("(CnextString){(char*)\"assertion failed\", 16}")
+                }
+                codegen_emit(")")
+                return true
+            }
+            if node.left.token.text == "typeof" {
+                codegen_emit("cnext_typeof(")
+                if len(node.children) > 0 {
+                    generate_expression(node.children[0])
+                }
+                codegen_emit(")")
+                return true
+            }
+            if node.left.token.text == "stacktrace" {
+                codegen_emit("/* stacktrace */ ")
+                int i = 0
+                int n = len(node.children)
+                while i < n {
+                    generate_expression(node.children[i])
+                    i = i + 1
+                }
+                codegen_emit(")")
+                return true
+            }
+            if len(builtin) > 0 {
+                codegen_emit(builtin)
+                codegen_emit("(")
+                int i = 0
+                int n = len(node.children)
+                while i < n {
+                    if i > 0 { codegen_emit(", ") }
+                    generate_expression(node.children[i])
+                    i = i + 1
+                }
+                codegen_emit(")")
+                return true
+            }
+        }
+        if node.left != null && node.left.kind == AST_IDENTIFIER {
+            var callee_decl = codegen_find_func_decl(node.left.token.text)
+            if callee_decl != null {
+                // A known function: fill in default arguments and honor
+                // named arguments, exactly as stage 0 does.
+                if len(callee_decl.type_params) > 0 {
+                    codegen_emit(mangle_generic_name(node.left))
+                } else {
+                    codegen_emit(node.left.token.text)
+                }
+                codegen_emit("(")
+                bool first_arg = true
+                int pos_count = 0
+                int ai = 0
+                while ai < len(node.children) {
+                    if node.children[ai].kind == AST_NAMED_ARG {
+                        ai = ai + 1
+                        continue
+                    }
+                    if !first_arg { codegen_emit(", ") }
+                    generate_expression(node.children[ai])
+                    first_arg = false
+                    pos_count = pos_count + 1
+                    ai = ai + 1
+                }
+                int pi = pos_count
+                while pi < len(callee_decl.children) {
+                    var param = callee_decl.children[pi]
+                    bool found = false
+                    int j = 0
+                    while j < len(node.children) {
+                        var arg = node.children[j]
+                        if arg.kind == AST_NAMED_ARG &&
+                           arg.named_arg_name.text == param.token.text {
+                            if !first_arg { codegen_emit(", ") }
+                            if arg.right != null { generate_expression(arg.right) }
+                            first_arg = false
+                            found = true
+                            break
+                        }
+                        j = j + 1
+                    }
+                    if !found && param.default_value != null {
+                        if !first_arg { codegen_emit(", ") }
+                        generate_expression(param.default_value)
+                        first_arg = false
+                    }
+                    pi = pi + 1
+                }
+                codegen_emit(")")
+                return true
+            }
+        }
+        if node.left != null { generate_expression(node.left) }
+        codegen_emit("(")
         int i = 0
         int n = len(node.children)
         while i < n {
-            if i > 0 { print(\", \") }
+            if i > 0 { codegen_emit(", ") }
             generate_expression(node.children[i])
             i = i + 1
         }
-        print(\")\")
+        codegen_emit(")")
+        return true
+    } else if node.kind == AST_UNARY {
+        codegen_emit(node.token.text)
+        generate_expression(node.right)
+        return true
+    } else if node.kind == AST_INDEX {
+        bool object_array = false
+        if node.left != null {
+            if node.left.var_type.kind == TOKEN_IDENTIFIER {
+                var element_subst = find_type_subst(node.left.var_type.text)                object_array = element_subst == null ||                               element_subst.concrete_type.kind == TOKEN_IDENTIFIER
+            }
+            if node.var_type.kind == TOKEN_IDENTIFIER {
+                var result_subst = find_type_subst(node.var_type.text)                object_array = object_array || result_subst == null ||                               result_subst.concrete_type.kind == TOKEN_IDENTIFIER
+            }
+        }
+        if object_array {
+            codegen_emit("((")
+            codegen_emit_c_type(node.left.var_type, false, true)
+            codegen_emit(")CNEXT_ARRAY_IDX_OBJ(")
+            generate_expression(node.left)
+            codegen_emit(", ")
+            generate_expression(node.right)
+            codegen_emit("))")
+        } else {
+            codegen_emit("CNEXT_ARRAY_IDX(")
+            generate_expression(node.left)
+            codegen_emit(", ")
+            generate_expression(node.right)
+            codegen_emit(")")
+        }
+        return true
+    } else if node.kind == AST_SLICE {
+        codegen_emit("CNEXT_SLICE(")
+        generate_expression(node.left)
+        codegen_emit(", ")
+        if node.init != null {
+            generate_expression(node.init)
+        } else {
+            codegen_emit("0")
+        }
+        codegen_emit(", ")
+        if node.right != null {
+            generate_expression(node.right)
+        } else {
+            generate_expression(node.left)
+            codegen_emit(".length")
+        }
+        codegen_emit(")")
+        return true
+    } else if node.kind == AST_NEW_EXPR {        str c_name = class_mangled_name(node)
+        codegen_emit("({ ")
+        codegen_emit(c_name)
+        codegen_emit("* _obj; if (_cnext_cur_arena) { _obj = (")
+        codegen_emit(c_name)
+        codegen_emit("*)cnext_arena_alloc(_cnext_cur_arena, sizeof(")
+        codegen_emit(c_name)
+        codegen_emit(")); } else { _obj = (")
+        codegen_emit(c_name)
+        codegen_emit("*)malloc(sizeof(")
+        codegen_emit(c_name)
+        codegen_emit(")); if (!_obj) { fprintf(stderr, \"Cnext runtime: out of memory.\\n\"); exit(70); } _cnext_track(_obj); } ")
+        codegen_emit("memset(_obj, 0, sizeof(")
+        codegen_emit(c_name)
+        codegen_emit(")); ")
+        codegen_emit(c_name)        codegen_emit("_new(_obj")
+        int i = 0
+        while i < len(node.children) {
+            codegen_emit(", ")
+            generate_expression(node.children[i])
+            i = i + 1
+        }
+        codegen_emit("); _obj; })")
+        return true
+    } else if node.kind == AST_POSTFIX {
+        generate_expression(node.left)
+        codegen_emit(node.token.text)
+        return true
+    } else if node.kind == AST_TUPLE_ACCESS {
+        generate_expression(node.left)
+        codegen_emit("._")
+        codegen_emit(node.token.text)
+        return true
+    } else if node.kind == AST_LITERAL_ARRAY {
+        codegen_emit("{")
+        int i = 0
+        int n = len(node.children)
+        while i < n {
+            if i > 0 { codegen_emit(", ") }
+            generate_expression(node.children[i])
+            i = i + 1
+        }
+        codegen_emit("}")
+        return true
+    } else if node.kind == AST_TUPLE {
+        codegen_emit("({ CnextString _tr = (CnextString){(char*)\"(\", 1}; ")
+        int i = 0
+        int n = len(node.children)
+        while i < n {
+            if i > 0 {
+                codegen_emit("_tr = cnext_concat(_tr, (CnextString){(char*)\", \", 2}); ")
+            }
+            codegen_emit("_tr = cnext_concat(_tr, cnext_to_string(")
+            generate_expression(node.children[i])
+            codegen_emit(")); ")
+            i = i + 1
+        }
+        codegen_emit("_tr = cnext_concat(_tr, (CnextString){(char*)\")\", 1}); ")
+        codegen_emit("(CnextTuple)")
+        codegen_emit("{")
+        codegen_emit(to_str(n))
+        codegen_emit(", _tr}; })")
         return true
     } else if node.kind == AST_BLOCK {
-        print(\"{\n\")
+        codegen_emit("{\n")
         int i = 0
         int n = len(node.children)
         while i < n {
             generate_statement(node.children[i])
             i = i + 1
         }
-        print(\"}\")
+        codegen_emit("}")
         return true
-    } else if node.kind == AST_ASSIGN {
+    } else if node.kind == AST_ASSIGN {        if node.left != null && node.left.expr_type == TOKEN_FUNC && node.token.kind == TOKEN_EQUAL {            codegen_emit("cnext_closure_assign(&(")            generate_expression(node.left)            codegen_emit("), ")            emit_owned_closure(node.right)            codegen_emit(")")            return true        }
+        if emit_object_array_element_assignment(node) {
+            return true
+        }
         generate_expression(node.left)
-        print(\" = \")
+        codegen_emit(" ")
+        codegen_emit(node.token.text)
+        codegen_emit(" ")
+        if is_array_literal_assignment(node) {
+            generate_array_value(node.right, node.right)
+        } else if node.left != null && node.left.kind == AST_MEMBER_ACCESS &&
+                  (node.left.token.text == "children" ||
+                   node.left.token.text == "type_params" ||
+                   node.left.token.text == "type_args") &&
+                  node.right != null && node.right.kind == AST_LITERAL_ARRAY &&
+                  len(node.right.children) == 0 {
+            // src2 self-compile workaround: an empty object-array field
+            // literal that semantics could not annotate.
+            codegen_emit("(CnextArrayObj)")
+            codegen_emit("{")
+            codegen_emit("0")
+            codegen_emit("}")
+        } else {
+            generate_expression(node.right)
+        }
+        return true
+    } else if node.kind == AST_NULL_COALESCE {
+        bool is_str = node.expr_type == TOKEN_STR_TYPE || node.type_name == "str"
+        bool is_class = node.expr_type == TOKEN_IDENTIFIER && len(node.type_name) > 0 && node.type_name != "str"
+        if is_str {
+            codegen_emit("(((")
+            generate_expression(node.left)
+            codegen_emit(").data != NULL) ? (")
+            generate_expression(node.left)
+            codegen_emit(") : (")
+            generate_expression(node.right)
+            codegen_emit("))")
+        } else if is_class {
+            codegen_emit("(((")
+            generate_expression(node.left)
+            codegen_emit(") != NULL) ? (")
+            generate_expression(node.left)
+            codegen_emit(") : (")
+            generate_expression(node.right)
+            codegen_emit("))")
+        } else {
+            generate_expression(node.left)
+        }
+        return true
+    } else if node.kind == AST_SAFE_ACCESS {
+        str zero_val = "NULL"
+        if node.expr_type == TOKEN_STR_TYPE || node.type_name == "str" { zero_val = "(CnextString)" + to_char(123) + "NULL, 0" + to_char(125) }
+        else if node.expr_type == TOKEN_INT_TYPE { zero_val = "0" }
+        else if node.expr_type == TOKEN_FLOAT_TYPE { zero_val = "0.0f" }
+        else if node.expr_type == TOKEN_DOUBLE_TYPE { zero_val = "0.0" }
+        else if node.expr_type == TOKEN_BOOL_TYPE { zero_val = "0" }
+        codegen_emit("(((")
+        generate_expression(node.left)
+        codegen_emit(") != NULL) ? (")
+        generate_expression(node.left)
+        if member_uses_pointer(node) { codegen_emit("->") } else { codegen_emit(".") }
+        codegen_emit(node.token.text)
+        codegen_emit(") : (" + zero_val + "))")
+        return true
+    } else if node.kind == AST_TERNARY {
+        codegen_emit("(")
+        generate_expression(node.condition)
+        codegen_emit(") ? (")
+        generate_expression(node.left)
+        codegen_emit(") : (")
         generate_expression(node.right)
+        codegen_emit(")")
         return true
     } else if node.kind == AST_MEMBER_ACCESS {
         generate_expression(node.left)
-        print(\"->\")
-        if node.right != null {
-            generate_expression(node.right)
+        if member_uses_pointer(node) {
+            codegen_emit("->")
         } else {
-            print(node.token.text)
+            codegen_emit(".")
         }
+        codegen_emit(node.token.text)
+        return true
+    } else if node.kind == AST_AWAIT_EXPR {
+        codegen_emit("({ __auto_type _af = (")
+        if node.left != null { generate_expression(node.left) }
+        codegen_emit("); while (_af->_next(_af)); _af->current; })")
+        return true
+    } else if node.kind == AST_WHEN {
+        codegen_emit("(")
+        emit_when_arm_chain(node, 0)
+        codegen_emit(")")
         return true
     }
     
@@ -90,6 +1298,39 @@ func generate_expression(ASTNode? node): bool {
 
 func generate_expression_stmt(ASTNode? node) {
     if node == null { return }
+    if node.expr_type == TOKEN_FUNC &&       (node.kind == AST_CALL || node.kind == AST_LAMBDA || node.kind == AST_TERNARY) {        codegen_emit("{ CnextClosure _cnext_unused = ")        emit_owned_closure(node)        codegen_emit("; cnext_closure_decref(&_cnext_unused); }\n")        return    }    if node.kind == AST_TRY_EXPR {
+        bool try_nullable = node.expr_type == TOKEN_STR_TYPE || node.expr_type == TOKEN_IDENTIFIER || node.expr_type == TOKEN_FUNC
+        if !try_nullable {
+            generate_expression(node)
+            codegen_emit(";\n")
+            return
+        }
+        int d = g_try_counter
+        g_try_counter = g_try_counter + 1
+        str id = to_str(d)
+        codegen_emit("{\n")
+        g_indent_level = g_indent_level + 1
+        write_indent()
+        codegen_emit("__auto_type _try_" + id + " = ")
+        generate_expression(node)
+        codegen_emit(";\n")
+        write_indent()
+        if node.expr_type == TOKEN_STR_TYPE {
+            codegen_emit("if (_try_" + id + ".data == NULL) {\n")
+        } else {
+            codegen_emit("if (_try_" + id + " == NULL) {\n")
+        }
+        g_indent_level = g_indent_level + 1
+        write_indent()
+        codegen_emit("return;\n")
+        g_indent_level = g_indent_level - 1
+        write_indent()
+        codegen_emit("}\n")
+        g_indent_level = g_indent_level - 1
+        write_indent()
+        codegen_emit("}\n")
+        return
+    }
     generate_expression(node)
-    print(\";\n\")
+    codegen_emit(";\n")
 }

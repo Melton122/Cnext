@@ -1,10 +1,56 @@
 #include "codegen_internal.h"
+#include "diagnostics.h"
 
 int bench_counter = 0;
 int loop_counter = 0;
 int try_counter = 0;
 int match_counter = 0;
 int defer_counter = 0;
+
+#if defined(_MSC_VER) || defined(CNEXT_FORCE_MSVC_DEFER)
+static bool defer_declared_inside(ASTNode* body, ASTNode* declaration) {
+    if (!body) return false;
+    if (body == declaration) return true;
+    if (defer_declared_inside(body->left, declaration) ||
+        defer_declared_inside(body->right, declaration) ||
+        defer_declared_inside(body->condition, declaration) ||
+        defer_declared_inside(body->init, declaration) ||
+        defer_declared_inside(body->increment, declaration)) return true;
+    for (int i = 0; i < body->child_count; i++) {
+        if (defer_declared_inside(body->children[i], declaration)) return true;
+    }
+    return false;
+}
+
+static void collect_defer_captures(ASTNode* node, ASTNode* body, CapturedVar** captures) {
+    if (!node) return;
+    ASTNode* declaration = node->binding;
+    if (node->type == AST_IDENTIFIER && declaration && declaration->type == AST_VAR_DECL &&
+        declaration->lambda_depth >= 0 && !declaration->is_global &&
+        !defer_declared_inside(body, declaration)) {
+        int capture_id = 0;
+        for (CapturedVar* cap = *captures; cap; cap = cap->next) {
+            if (cap->declaration == declaration) return;
+            capture_id++;
+        }
+        CapturedVar* cap = checked_calloc(1, sizeof(*cap));
+        cap->declaration = declaration;
+        char field[64];
+        snprintf(field, sizeof(field), "_capture_%d", capture_id);
+        cap->name = checked_strdup(field);
+        cap->by_reference = true;
+        cap->next = *captures;
+        *captures = cap;
+        return;
+    }
+    collect_defer_captures(node->left, body, captures);
+    collect_defer_captures(node->right, body, captures);
+    collect_defer_captures(node->condition, body, captures);
+    collect_defer_captures(node->init, body, captures);
+    collect_defer_captures(node->increment, body, captures);
+    for (int i = 0; i < node->child_count; i++) collect_defer_captures(node->children[i], body, captures);
+}
+#endif
 
 void generate_block(ASTNode* node) {
     if (!node) { fprintf(out, "{}\n"); return; }
@@ -13,12 +59,48 @@ void generate_block(ASTNode* node) {
     fprintf(out, "{\n");
     codegen_gen_line++;
     indent_level++;
+#if defined(_MSC_VER) || defined(CNEXT_FORCE_MSVC_DEFER)
+    bool has_defer = false;
+    for (int i = 0; i < node->child_count; i++) {
+        if (node->children[i]->type == AST_DEFER) { has_defer = true; break; }
+    }
+    int scope_mark = -1;
+    if (has_defer) {
+        scope_mark = defer_counter++;
+        write_indent();
+        fprintf(out, "volatile int _cnext_defer_scope_mark_%d = _cnext_defer_count;\n", scope_mark);
+        write_indent();
+        fprintf(out, "__try {\n");
+        indent_level++;
+    }
+#endif
+    if (current_func_params && current_func_params->left == node) {
+        for (int i = 0; i < current_func_params->child_count; i++) {
+            if (current_func_params->children[i]->capture_cell) {
+                write_indent();
+                emit_capture_cell(current_func_params->children[i], true);
+            }
+        }
+    }
     for (int i = 0; i < node->child_count; i++) {
         emit_line_directive(node->children[i]->token.line);
         write_indent();
         generate_node(node->children[i]);
     }
     pop_scope();
+#if defined(_MSC_VER) || defined(CNEXT_FORCE_MSVC_DEFER)
+    if (has_defer) {
+        indent_level--;
+        write_indent();
+        fprintf(out, "} __finally {\n");
+        indent_level++;
+        write_indent();
+        fprintf(out, "_cnext_defer_run_to(_cnext_defer_scope_mark_%d);\n", scope_mark);
+        indent_level--;
+        write_indent();
+        fprintf(out, "}\n");
+    }
+#endif
     indent_level--;
     write_indent();
     fprintf(out, "}\n");
@@ -394,6 +476,7 @@ void generate_node(ASTNode* node) {
             break;
         }
         case AST_VAR_DECL:
+            if (node->capture_cell) { emit_capture_cell(node, false); break; }
             if (node->is_const) fprintf(out, "const ");
             if (node->is_array) {
                 generate_node_type(node, false);
@@ -467,6 +550,9 @@ void generate_node(ASTNode* node) {
                             fprintf(out, " = ");
                             generate_expression(node->init);
                         }
+                    } else if (node->var_type.type == TOKEN_FUNC) {
+                        fprintf(out, " = ");
+                        generate_owned_closure_expression(node->init);
                     } else {
                         fprintf(out, " = ");
                         generate_expression(node->init);
@@ -492,6 +578,23 @@ void generate_node(ASTNode* node) {
                 cv->lambda_node = node->init;
                 cv->next = closure_vars;
                 closure_vars = cv;
+            } else if (node->var_type.type == TOKEN_FUNC && node->init &&
+                       node->init->type == AST_IDENTIFIER) {
+                char* source_name = copy_token_text(node->init->token);
+                ClosureVar* original = find_closure_var(source_name);
+                free(source_name);
+                if (original) {
+                    // Aliases borrow the environment; only the creating variable
+                    // owns cleanup. Preserve its call signature in this scope.
+                    ClosureVar* alias = (ClosureVar*)checked_malloc(sizeof(ClosureVar));
+                    alias->var_name = checked_strndup(node->token.start, node->token.length);
+                    alias->closure_id = original->closure_id;
+                    alias->lambda_node = original->lambda_node;
+                    alias->next = closure_vars;
+                    closure_vars = alias;
+                }
+            }
+            if (node->var_type.type == TOKEN_FUNC && node->init) {
                 register_scope_closure(node->token.start, node->token.length);
             }
             break;
@@ -548,7 +651,16 @@ void generate_node(ASTNode* node) {
             fprintf(out, "}\n");
             break;
         }
-        case AST_MAIN:
+        case AST_MAIN: {
+#if defined(_MSC_VER) || defined(CNEXT_FORCE_MSVC_DEFER)
+            bool has_defer = false;
+            int scope_mark = -1;
+            if (node->left) {
+                for (int i = 0; i < node->left->child_count; i++) {
+                    if (node->left->children[i]->type == AST_DEFER) { has_defer = true; break; }
+                }
+            }
+#endif
             push_scope();
             fprintf(out, "int main(int argc, char** argv) {\n");
             indent_level++;
@@ -566,6 +678,16 @@ void generate_node(ASTNode* node) {
                 write_indent();
                 fprintf(out, "if (_cnext_tf > 0) { _cnext_free_all(); return 1; }\n");
             }
+#if defined(_MSC_VER) || defined(CNEXT_FORCE_MSVC_DEFER)
+            if (has_defer) {
+                scope_mark = defer_counter++;
+                write_indent();
+                fprintf(out, "volatile int _cnext_defer_scope_mark_%d = _cnext_defer_count;\n", scope_mark);
+                write_indent();
+                fprintf(out, "__try {\n");
+                indent_level++;
+            }
+#endif
             if (node->left) {
                 for (int i = 0; i < node->left->child_count; i++) {
                     write_indent();
@@ -573,6 +695,19 @@ void generate_node(ASTNode* node) {
                 }
             }
             pop_scope();
+#if defined(_MSC_VER) || defined(CNEXT_FORCE_MSVC_DEFER)
+            if (has_defer) {
+                indent_level--;
+                write_indent();
+                fprintf(out, "} __finally {\n");
+                indent_level++;
+                write_indent();
+                fprintf(out, "_cnext_defer_run_to(_cnext_defer_scope_mark_%d);\n", scope_mark);
+                indent_level--;
+                write_indent();
+                fprintf(out, "}\n");
+            }
+#endif
             write_indent();
             fprintf(out, "_cnext_free_all();\n");
             if (codegen_profile_mode) {
@@ -584,34 +719,52 @@ void generate_node(ASTNode* node) {
             indent_level--;
             fprintf(out, "}\n\n");
             break;
+        }
         case AST_EXPR_STMT:
-            if (node->left && node->left->type == AST_TRY_EXPR) {
-                // expr? as statement — generate null/tag check + early return
-                int d = try_counter++;
-                write_indent();
-                fprintf(out, "{\n");
-                indent_level++;
-                write_indent();
-                fprintf(out, "__auto_type _try_%d = ", d);
-                generate_expression(node->left->left);
-                fprintf(out, ";\n");
-                write_indent();
-                fprintf(out, "if (_try_%d == NULL) {\n", d);
-                indent_level++;
-                write_indent();
-                fprintf(out, "return;\n");
-                indent_level--;
-                write_indent();
-                fprintf(out, "}\n");
-                indent_level--;
-                write_indent();
-                fprintf(out, "}\n");
+            if (node->left && node->left->expr_type == TOKEN_FUNC &&
+                (node->left->type == AST_CALL || node->left->type == AST_LAMBDA || node->left->type == AST_TERNARY)) {
+                fprintf(out, "{ CnextClosure _cnext_unused = ");
+                generate_owned_closure_expression(node->left);
+                fprintf(out, "; cnext_closure_decref(&_cnext_unused); }\n");
+            } else if (node->left && node->left->type == AST_TRY_EXPR) {
+                CnextTokenType try_type = node->left->expr_type;
+                bool try_nullable = try_type == TOKEN_STR_TYPE || try_type == TOKEN_IDENTIFIER || try_type == TOKEN_FUNC;
+                if (!try_nullable) {
+                    generate_expression(node->left);
+                    fprintf(out, ";\n");
+                } else {
+                    int d = try_counter++;
+                    write_indent();
+                    fprintf(out, "{\n");
+                    indent_level++;
+                    write_indent();
+                    fprintf(out, "__auto_type _try_%d = ", d);
+                    generate_expression(node->left);
+                    fprintf(out, ";\n");
+                    write_indent();
+                    if (try_type == TOKEN_STR_TYPE) fprintf(out, "if (_try_%d.data == NULL) {\n", d);
+                    else fprintf(out, "if (_try_%d == NULL) {\n", d);
+                    indent_level++;
+                    write_indent();
+                    fprintf(out, "return;\n");
+                    indent_level--;
+                    write_indent();
+                    fprintf(out, "}\n");
+                    indent_level--;
+                    write_indent();
+                    fprintf(out, "}\n");
+                }
             } else {
                 generate_expression(node->left);
                 fprintf(out, ";\n");
             }
             break;
         case AST_ASSIGN:
+            if (node->left && node->left->expr_type == TOKEN_FUNC && node->token.type == TOKEN_EQUAL) {
+                generate_expression(node);
+                fprintf(out, ";\n");
+                break;
+            }
             if (node->right && node->right->type == AST_SLICE) {
                 fprintf(out, "CNEXT_SLICE_TO(");
                 generate_expression(node->left);
@@ -813,7 +966,12 @@ void generate_node(ASTNode* node) {
             fprintf(out, "return");
             if (node->left) {
                 fprintf(out, " ");
-                generate_expression(node->left);
+                if (node->left->expr_type == TOKEN_FUNC) {
+                    fprintf(out, "cnext_closure_escape(");
+                    generate_owned_closure_expression(node->left);
+                    fprintf(out, ")");
+                }
+                else generate_expression(node->left);
             }
             fprintf(out, ";\n");
             break;
@@ -825,8 +983,37 @@ void generate_node(ASTNode* node) {
             break;
         case AST_DEFER: {
             int d = defer_counter++;
+#if defined(_MSC_VER) || defined(CNEXT_FORCE_MSVC_DEFER)
+            FILE* saved_out = out;
+            int saved_indent = indent_level;
+            CapturedVar* captures = NULL;
+            collect_defer_captures(node->left, node->left, &captures);
+            CapturedVar* saved_captures = active_captures;
+            char helper_path[1024];
+            FILE* helper = codegen_open_lambda_temp(helper_path);
+            if (!helper) { diag_emit(DIAG_ERROR, ERR_CODEGEN_IO, node->token.line, node->token.column, "Could not buffer defer helper.", NULL, NULL); exit(70); }
+            out = helper;
+            indent_level = 0;
+            fprintf(out, "struct _cnext_defer_env_%d { unsigned int flag;\n", d);
+            for (CapturedVar* cap = captures; cap; cap = cap->next) {
+                fprintf(out, "    ");
+                generate_node_type(cap->declaration, cap->declaration->is_pointer || cap->declaration->is_class);
+                fprintf(out, "* %s;\n", cap->name);
+            }
+            fprintf(out, "};\n");
+            fprintf(out, "static void _cnext_defer_fn_%d(void* _d) {\n", d);
+            indent_level++;
+            write_indent();
+            fprintf(out, "struct _cnext_defer_env_%d* _env = (struct _cnext_defer_env_%d*)_d;\n", d, d);
+            write_indent();
+            fprintf(out, "unsigned int* _f_%d = &_env->flag;\n", d);
+            write_indent();
+            fprintf(out, "if (*_f_%d & 1) { return; }\n", d);
+            active_captures = captures;
+#else
             write_indent();
             fprintf(out, "void _cnext_defer_fn_%d(void* _d) { unsigned int* _f_%d = (unsigned int*)_d; if (*_f_%d & 1) { return; } ", d, d, d);
+#endif
             if (node->left) {
                 if (node->left->type == AST_BLOCK) {
                     // Block form: defer { ... }
@@ -837,24 +1024,37 @@ void generate_node(ASTNode* node) {
                     fprintf(out, ";");
                 }
             }
-            fprintf(out, " *_f_%d |= 1; if (!_cnext_unwinding) { _cnext_defer_release((int)(*_f_%d >> 1)); } }\n", d, d);
+#if defined(_MSC_VER) || defined(CNEXT_FORCE_MSVC_DEFER)
             write_indent();
-#ifdef _MSC_VER
-            fprintf(out, "volatile int _cnext_defer_done_%d = 0;\n", d);
+            fprintf(out, "*_f_%d |= 1;\n", d);
+            indent_level--;
             write_indent();
-            fprintf(out, "__try { _cnext_defer_done_%d = 1; }\n", d);
-            write_indent();
-            fprintf(out, "__finally { if (_cnext_defer_done_%d) { ", d);
-            if (node->left) {
-                if (node->left->type == AST_BLOCK) {
-                    generate_block(node->left);
-                } else {
-                    generate_expression(node->left);
-                    fprintf(out, ";");
-                }
+            fprintf(out, "}\n");
+            if (fflush(helper) || ferror(helper)) { diag_emit(DIAG_ERROR, ERR_CODEGEN_IO, node->token.line, node->token.column, "Could not write defer helper.", NULL, NULL); exit(70); }
+            rewind(helper);
+            char buffer[4096];
+            size_t count;
+            while ((count = fread(buffer, 1, sizeof(buffer), helper)) != 0) {
+                if (fwrite(buffer, 1, count, defer_defs_out) != count) { diag_emit(DIAG_ERROR, ERR_CODEGEN_IO, node->token.line, node->token.column, "Could not write defer helper.", NULL, NULL); exit(70); }
             }
-            fprintf(out, " } }\n");
+            if (ferror(helper)) { diag_emit(DIAG_ERROR, ERR_CODEGEN_IO, node->token.line, node->token.column, "Could not read defer helper.", NULL, NULL); exit(70); }
+            fclose(helper);
+            if (helper_path[0]) remove(helper_path);
+            out = saved_out;
+            indent_level = saved_indent;
+            active_captures = saved_captures;
+            write_indent();
+            fprintf(out, "struct _cnext_defer_env_%d _cnext_defer_flag_%d = { (_cnext_defer_count << 1)", d, d);
+            for (CapturedVar* cap = captures; cap; cap = cap->next) {
+                fprintf(out, ", &");
+                emit_bound_name(cap->declaration, cap->declaration->token.start, cap->declaration->token.length);
+            }
+            fprintf(out, " };\n");
+            write_indent();
+            fprintf(out, "_cnext_defer_push(_cnext_defer_fn_%d, &_cnext_defer_flag_%d);\n", d, d);
+            free_captures(captures);
 #else
+            fprintf(out, " *_f_%d |= 1; if (!_cnext_unwinding) { _cnext_defer_release((int)(*_f_%d >> 1)); } }\n", d, d);
             write_indent();
             fprintf(out, "unsigned int _cnext_defer_flag_%d __attribute__((cleanup(_cnext_defer_fn_%d))) = (_cnext_defer_count << 1);\n", d, d);
             write_indent();
@@ -866,6 +1066,12 @@ void generate_node(ASTNode* node) {
             int current_try = try_counter++;
             fprintf(out, "{\n");
             indent_level++;
+            write_indent();
+#if defined(_MSC_VER) || defined(CNEXT_FORCE_MSVC_DEFER)
+            fprintf(out, "int _try_mark = _cnext_try_depth;\n");
+#else
+            fprintf(out, "int _try_mark __attribute__((cleanup(_cnext_restore_try_depth))) = _cnext_try_depth;\n");
+#endif
             write_indent();
             fprintf(out, "_cnext_push_try();\n");
             write_indent();
@@ -892,7 +1098,7 @@ void generate_node(ASTNode* node) {
                 fprintf(out, "}\n");
             }
             write_indent();
-            fprintf(out, "_cnext_pop_try();\n");
+            fprintf(out, "_cnext_restore_try_depth(&_try_mark);\n");
             if (node->condition) {
                 for (int i = 0; i < node->condition->child_count; i++) {
                     write_indent();
@@ -1078,7 +1284,10 @@ void generate_node(ASTNode* node) {
             break;
         }
         default:
-            fprintf(stderr, "warning: unhandled AST node type %d at line %d\n", node->type, node->token.line);
+            char message[128];
+            snprintf(message, sizeof(message), "Unhandled AST node type %d.", node->type);
+            diag_emit(DIAG_WARNING, ERR_CODEGEN_UNHANDLED, node->token.line,
+                      node->token.column > 0 ? node->token.column : 1, message, NULL, NULL);
             break;
     }
 }

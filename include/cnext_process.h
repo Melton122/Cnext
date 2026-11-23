@@ -93,6 +93,104 @@ static CnextString process_run(CnextString command) {
 #endif
 }
 
+/* Copy one argv element into a NUL-terminated buffer. Cnext strings may be
+   slices, so the length (not a NUL) decides where the text ends. */
+static char* _cnext_spawn_dup(CnextString value) {
+    if (!value.data) return NULL;
+    char* copy = (char*)malloc(value.length + 1);
+    if (!copy) return NULL;
+    memcpy(copy, value.data, value.length);
+    copy[value.length] = '\0';
+    return copy;
+}
+
+static void _cnext_spawn_free(char** vec, size_t count) {
+    for (size_t i = 0; i < count; i++) free(vec[i]);
+    free(vec);
+}
+
+#ifdef _WIN32
+/* Append arg to a CommandLineToArgvW-compatible command line. Each token is
+   wrapped in quotes; runs of backslashes are doubled, and a run immediately
+   before a literal '"' gains one extra so the quote stays data instead of
+   closing the token. */
+static size_t _cnext_spawn_quote(char* dst, size_t cap, size_t pos, const char* arg) {
+    if (pos < cap - 1) dst[pos++] = '"';
+    int slashes = 0;
+    for (const char* p = arg; *p; p++) {
+        if (*p == '\\') {
+            slashes++;
+            continue;
+        }
+        int n = (*p == '"') ? slashes * 2 + 1 : slashes;
+        for (int s = 0; s < n; s++)
+            if (pos < cap - 1) dst[pos++] = '\\';
+        slashes = 0;
+        if (pos < cap - 1) dst[pos++] = *p;
+    }
+    for (int s = 0; s < slashes * 2; s++)
+        if (pos < cap - 1) dst[pos++] = '\\';
+    if (pos < cap - 1) dst[pos++] = '"';
+    return pos;
+}
+#endif
+
+/* Run a program straight from an argv vector: no shell, no re-parsing, no
+   globbing and no metacharacter interpretation. argv[0] is the program, the
+   remaining elements are passed verbatim, so untrusted arguments cannot turn
+   into extra commands. Returns the child's exit status, 127 when the program
+   could not be started, or -1 when argv is empty or unusable. Use the
+   process_run* functions only when shell syntax is genuinely wanted. */
+static int process_spawn(CnextArrayString argv) {
+    if (!argv.data || argv.length == 0) return -1;
+    char** vec = (char**)calloc(argv.length + 1, sizeof(char*));
+    if (!vec) return -1;
+    for (size_t i = 0; i < argv.length; i++) {
+        vec[i] = _cnext_spawn_dup(argv.data[i]);
+        if (!vec[i]) { _cnext_spawn_free(vec, i); return -1; }
+    }
+#ifdef _WIN32
+    size_t cap = 1;
+    for (size_t i = 0; i < argv.length; i++) cap += 2 * strlen(vec[i]) + 3;
+    char* cmdline = (char*)malloc(cap);
+    if (!cmdline) { _cnext_spawn_free(vec, argv.length); return -1; }
+    size_t pos = 0;
+    for (size_t i = 0; i < argv.length; i++) {
+        if (i > 0) cmdline[pos++] = ' ';
+        pos = _cnext_spawn_quote(cmdline, cap, pos, vec[i]);
+    }
+    cmdline[pos] = '\0';
+    STARTUPINFOA si = {0};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi;
+    memset(&pi, 0, sizeof(pi));
+    int started = CreateProcessA(NULL, cmdline, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi);
+    free(cmdline);
+    _cnext_spawn_free(vec, argv.length);
+    if (!started) return 127;
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    DWORD code = 127;
+    GetExitCodeProcess(pi.hProcess, &code);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    return (int)code;
+#else
+    pid_t pid = fork();
+    if (pid < 0) { _cnext_spawn_free(vec, argv.length); return 127; }
+    if (pid == 0) {
+        execvp(vec[0], vec);
+        _exit(127);
+    }
+    int status = 0;
+    if (waitpid(pid, &status, 0) < 0) {
+        _cnext_spawn_free(vec, argv.length);
+        return 127;
+    }
+    _cnext_spawn_free(vec, argv.length);
+    return WIFEXITED(status) ? WEXITSTATUS(status) : 127;
+#endif
+}
+
 #ifndef _WIN32
 static int process_kill(int pid) {
     return kill((pid_t)pid, 9) == 0;

@@ -1,0 +1,18 @@
+class Counter {
+    int value
+
+    func new(int start) {
+        self.value = start
+    }
+
+    func add(int amount): int {
+        self.value = self.value + amount
+        return self.value
+    }
+}
+
+main {
+    var counter = new Counter(4)
+    printin(counter.add(3))
+    printin(counter.value)
+}

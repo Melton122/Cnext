@@ -1,5 +1,15 @@
 #include "semantics_internal.h"
 
+static bool defer_body_direct_control(void) {
+    return defer_depth > 0 && sem_lambda_depth == defer_lambda_depth;
+}
+
+static void report_defer_control(ASTNode* node, const char* keyword) {
+    char message[96];
+    snprintf(message, sizeof(message), "Cannot use '%s' inside a deferred body.", keyword);
+    report_error(ERR_SEM_DEFER_CONTROL, node->token.line, message, NULL);
+}
+
 // Defines a parameter in the current scope and marks class-typed parameters as
 // pointers. Class instances are heap-allocated, so a parameter of class type is
 // passed as `Klass*`; without this the declaration is emitted by value and every
@@ -7,6 +17,7 @@
 // constructors and operator declarations need the same treatment or a
 // `func new(Node n)` signature disagrees with its own call sites.
 static void define_parameter(ASTNode* param) {
+    param->lambda_depth = sem_lambda_depth;
     validate_type_token(param->var_type);
     char* type_name = type_name_from_token(param->var_type);
     define_symbol(param->token, param->var_type.type, false, type_name, param);
@@ -74,13 +85,18 @@ void analyze_function(ASTNode* node, bool define_name) {
         // Analyze default value if present
         if (param->default_value) {
             analyze_expression(param->default_value);
+            sem_check_cstr_conversion(param->var_type, param->default_value);
         }
     }
     // The return type types a `return input()` in the body.
     CnextTokenType saved_return_type = sem_current_return_type;
+    Token saved_return_token = sem_current_return_token;
     sem_current_return_type = node->return_type.type;
+    sem_current_return_token = node->return_type;
     analyze_node(node->left);
+    if (node->return_type.type == TOKEN_FUNC) node->closure_signature = ast_returned_closure(node->left);
     sem_current_return_type = saved_return_type;
+    sem_current_return_token = saved_return_token;
     sem_pop_scope();
     if (was_generator) generator_depth--;
 }
@@ -182,6 +198,17 @@ void analyze_assignment(ASTNode* node) {
     }
     analyze_expression(node->right);
 
+    if (node->left) {
+        Token expected = {.type = left_type};
+        if (node->left->type_name && left_type == TOKEN_IDENTIFIER) {
+            expected.start = node->left->type_name;
+            expected.length = (int)strlen(expected.start);
+        }
+        sem_check_cstr_conversion(expected, node->right);
+        sem_check_assignment_type(expected, node->right,
+                                  node->right ? node->right->expr_type : TOKEN_EOF);
+    }
+
     if (node->right && node->right->type == AST_NULL_LITERAL) {
         node->right->expr_type = left_type;
         if (node->left->type_name) {
@@ -229,6 +256,7 @@ void analyze_postfix(ASTNode* node) {
     }
 
     if (node->left->type == AST_IDENTIFIER) {
+        analyze_expression(node->left);
         Symbol* sym = resolve_symbol(node->left->token);
         if (!sym) {
             report_token_error(ERR_SEM_UNDECLARED, node->left->token, "Undeclared variable:");
@@ -247,8 +275,64 @@ void analyze_postfix(ASTNode* node) {
     report_error(ERR_SEM_INVALID_POSTFIX, node->token.line, "Invalid postfix target.", NULL);
 }
 
+static bool sem_call_named(ASTNode* node, const char* name) {
+    return node && node->type == AST_CALL && node->left &&
+           node->left->type == AST_IDENTIFIER && token_matches_name(node->left->token, name);
+}
+
+static CnextTokenType sem_for_in_element_type(ASTNode* iterable, char** type_name, bool* is_class) {
+    *type_name = NULL;
+    *is_class = false;
+    if (!iterable) return TOKEN_EOF;
+
+    if (iterable->type == AST_RANGE || iterable->type == AST_RANGE_INCLUSIVE) {
+        return TOKEN_INT_TYPE;
+    }
+    if (sem_call_named(iterable, "str_split")) {
+        return TOKEN_STR_TYPE;
+    }
+    if (iterable->type == AST_CALL && iterable->left &&
+        iterable->left->type == AST_IDENTIFIER) {
+        Symbol* callee = resolve_symbol(iterable->left->token);
+        if (callee && callee->decl_node &&
+            (callee->decl_node->is_generator ||
+             callee->decl_node->return_type.type == TOKEN_ITER)) {
+            return TOKEN_INT_TYPE;
+        }
+    }
+    if (iterable->type == AST_LITERAL &&
+        (iterable->token.type == TOKEN_STRING_LITERAL ||
+         iterable->token.type == TOKEN_RAW_STRING)) {
+        return TOKEN_CHAR_TYPE;
+    }
+    if (iterable->type == AST_SLICE) {
+        return sem_for_in_element_type(iterable->left, type_name, is_class);
+    }
+
+    ASTNode* decl = NULL;
+    if (iterable->type == AST_IDENTIFIER) {
+        Symbol* sym = resolve_symbol(iterable->token);
+        decl = sym ? sym->decl_node : NULL;
+    } else if (iterable->type_name) {
+        Token type_token = {TOKEN_IDENTIFIER, iterable->type_name,
+                            (int)strlen(iterable->type_name), iterable->token.line, 0};
+        Symbol* sym = resolve_symbol(type_token);
+        decl = sym ? sym->decl_node : NULL;
+        if (!decl) decl = resolve_field_decl(iterable);
+    }
+
+    if (!decl || !decl->is_array) return TOKEN_EOF;
+    if (decl->var_type.type == TOKEN_IDENTIFIER) {
+        *type_name = decl->type_name ? copy_cstring(decl->type_name) :
+                                       sem_copy_token_text(decl->var_type);
+        *is_class = decl->is_class;
+    }
+    return decl->var_type.type;
+}
+
 void analyze_node(ASTNode* node) {
     if (!node) return;
+
 
     switch (node->type) {
         case AST_PROGRAM:
@@ -360,6 +444,11 @@ void analyze_node(ASTNode* node) {
             analyze_assignment(node);
             break;
         case AST_EXPR_STMT:
+            if (node->left && node->left->type == AST_TRY_EXPR &&
+                sem_current_return_type != TOKEN_EOF) {
+                report_token_error(ERR_SEM_TYPE_MISMATCH, node->left->token,
+                                   "Try expression requires a void function.");
+            }
             analyze_expression(node->left);
             break;
         case AST_IF:
@@ -388,8 +477,35 @@ void analyze_node(ASTNode* node) {
             sem_push_scope();
             analyze_expression(node->condition);
             if (node->init) {
-                if (node->init->type == AST_VAR_DECL && node->init->var_type.type != TOKEN_VAR) {
-                    define_symbol(node->init->token, node->init->var_type.type, false, NULL, node->init);
+                bool implicit_binding = node->init->type == AST_VAR_DECL &&
+                                        node->init->var_type.type == TOKEN_VAR;
+                if (implicit_binding) {
+                    char* element_name = NULL;
+                    bool element_class = false;
+                    CnextTokenType element_type = sem_for_in_element_type(
+                        node->condition, &element_name, &element_class);
+                    if (element_type != TOKEN_EOF) {
+                        node->init->var_type.type = element_type;
+                        if (element_name) {
+                            free(node->init->type_name);
+                            node->init->type_name = element_name;
+                            node->init->var_type.start = node->init->type_name;
+                            node->init->var_type.length = (int)strlen(node->init->type_name);
+                        }
+                        node->init->is_class = element_class;
+                        node->init->expr_type = element_type;
+                    }
+                    free(element_name);
+                }
+                if (node->init->type == AST_VAR_DECL &&
+                    node->init->var_type.type != TOKEN_VAR) {
+                    char* explicit_name = node->init->type_name ?
+                        copy_cstring(node->init->type_name) :
+                        (node->init->var_type.type == TOKEN_IDENTIFIER ?
+                         sem_copy_token_text(node->init->var_type) : NULL);
+                    define_symbol(node->init->token, node->init->var_type.type, false,
+                                  explicit_name, node->init);
+                    free(explicit_name);
                 } else {
                     define_symbol(node->init->token, TOKEN_VAR, false, NULL, node->init);
                 }
@@ -414,16 +530,24 @@ void analyze_node(ASTNode* node) {
             analyze_node(node->left);
             break;
         case AST_BREAK:
-            if (loop_depth == 0 && switch_depth == 0) {
+            if (defer_body_direct_control()) {
+                report_defer_control(node, "break");
+            } else if (loop_depth == 0 && switch_depth == 0) {
                 report_error(ERR_SEM_BREAK_OUTSIDE, node->token.line, "Cannot use 'break' outside of a loop or switch.", NULL);
             }
             break;
         case AST_CONTINUE:
-            if (loop_depth == 0) {
+            if (defer_body_direct_control()) {
+                report_defer_control(node, "continue");
+            } else if (loop_depth == 0) {
                 report_error(ERR_SEM_CONTINUE_OUTSIDE, node->token.line, "Cannot use 'continue' outside of a loop.", NULL);
             }
             break;
-        case AST_DEFER:
+        case AST_DEFER: {
+            int previous_defer_depth = defer_depth;
+            int previous_lambda_depth = defer_lambda_depth;
+            defer_depth++;
+            defer_lambda_depth = sem_lambda_depth;
             if (node->left) {
                 if (node->left->type == AST_BLOCK) {
                     sem_push_scope();
@@ -433,7 +557,10 @@ void analyze_node(ASTNode* node) {
                     analyze_expression(node->left);
                 }
             }
+            defer_depth = previous_defer_depth;
+            defer_lambda_depth = previous_lambda_depth;
             break;
+        }
         case AST_YIELD:
             if (generator_depth == 0) {
                 report_error(ERR_SEM_YIELD_OUTSIDE, node->token.line, "Cannot use 'yield' outside of a generator function.", NULL);
@@ -470,11 +597,34 @@ void analyze_node(ASTNode* node) {
             analyze_postfix(node);
             break;
         case AST_RETURN:
+            if (defer_body_direct_control()) {
+                report_defer_control(node, "return");
+                break;
+            }
             if (node->left) {
                 // `return input()` in `func ask(): int` reads an integer: the
                 // return type is the context that types the read.
                 sem_apply_expected_type(node->left, sem_current_return_type);
-                analyze_expression(node->left);
+                CnextTokenType actual = analyze_expression(node->left);
+                if (sem_current_return_type == TOKEN_FUNC) sem_validate_closure_escape(node->left);
+                sem_check_cstr_conversion(sem_current_return_token, node->left);
+                Token expected = {.type = sem_current_return_type};
+                bool expected_known = is_builtin_value_type(expected.type) && expected.type != TOKEN_VAR;
+                bool actual_known = (is_builtin_value_type(actual) && actual != TOKEN_VAR) || actual == TOKEN_NULL;
+                if (expected_known && actual_known &&
+                    !assignment_types_compatible(expected, actual)) {
+                    char* want = type_name_from_token(expected);
+                    Token actual_token = (Token){.type = actual};
+                    if (actual == TOKEN_IDENTIFIER && node->left->token.type == TOKEN_IDENTIFIER) {
+                        actual_token = node->left->token;
+                    }
+                    char* got = type_name_from_token(actual_token);
+                    report_error_expected(ERR_SEM_RETURN_TYPE, node->token.line, node->token.column,
+                                          "Return type mismatch.",
+                                          want ? want : "unknown", got ? got : "unknown");
+                    free(want);
+                    free(got);
+                }
             }
             break;
         case AST_TRY:
@@ -492,6 +642,10 @@ void analyze_node(ASTNode* node) {
             }
             break;
         case AST_THROW:
+            if (defer_body_direct_control()) {
+                report_defer_control(node, "throw");
+                break;
+            }
             if (node->left) analyze_expression(node->left);
             break;
         case AST_MATCH:

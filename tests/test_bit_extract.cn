@@ -1,0 +1,31 @@
+// EXPECT: packed fields passed
+const ulong sample_channel = 165 ~> "??##_#???"
+
+func channel_of(ubyte status): ulong {
+    return status ~> "??##_#???"
+}
+
+main {
+    assert(sample_channel == 4)
+    // Check every possible status byte against the arithmetic definition.
+    int status = 0
+    while status < 256 {
+        assert(channel_of(status as ubyte) == (status / 8) % 8)
+        status++
+    }
+
+    int[] samples = {10, 15}
+    int i = 0
+    assert(samples[i++] ~> "##??" == 2)
+    assert(i == 1)
+    assert(3 * 10 ~> "##??" + 1 == 7)
+    assert(165 ~> "??##_#???" ~= "100")
+    assert(165 ~> "####_????" ~> "##" == 2)
+    assert(-2 ~> "####" == 14)
+
+    ulong high = 9223372036854775807
+    high = high + 1
+    assert(high ~> "#???????_????????_????????_????????_????????_????????_????????_????????" == 1)
+    assert(high ~> "########_########_########_########_########_########_########_########" == high)
+    printin("packed fields passed")
+}

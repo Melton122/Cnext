@@ -21,7 +21,9 @@ ASTNode* parse_program(const char* source) {
                 decl->type == AST_ASSIGN || decl->type == AST_BLOCK ||
                 decl->type == AST_TRY || decl->type == AST_THROW || decl->type == AST_MATCH ||
                 decl->type == AST_ASSERT || decl->type == AST_RESUME_EXPR ||
-                decl->type == AST_AWAIT_EXPR || decl->type == AST_RUN_ASYNC) {
+                decl->type == AST_AWAIT_EXPR || decl->type == AST_RUN_ASYNC ||
+                decl->type == AST_DEFER || decl->type == AST_WHEN ||
+                decl->type == AST_YIELD) {
                 error_at(&decl->token, "Statements cannot appear at the top level.");
             } else {
                 add_child(program, decl);

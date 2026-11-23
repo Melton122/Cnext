@@ -1,0 +1,23 @@
+// process_spawn runs an argv-style array with no shell in between: each element
+// reaches the child as exactly one argument, spaces included.
+// The child writes to the inherited stdout immediately, while the test's own
+// buffered lines are flushed when it exits, so the child's line comes first.
+// EXPECT: spawn arg with spaces
+// EXPECT: 0
+// EXPECT: 127
+import process
+
+main {
+    // Re-execute this program as the child, so the test exercises argv directly
+    // without depending on a shell or a separately installed interpreter.
+    if sys_args_count() > 1 {
+        printin(sys_arg_at(1))
+        return 0
+    }
+    str[] args = {sys_arg_at(0), "spawn arg with spaces"}
+    printin(process_spawn(args))
+
+    // A program that cannot be started reports 127 instead of running anything.
+    str[] missing = {"cnext_definitely_missing_program"}
+    printin(process_spawn(missing))
+}

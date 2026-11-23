@@ -38,9 +38,44 @@ class GenSpec {
     }
 }
 
+// A struct (Token) cannot live in a Cnext array directly: arrays of class
+// instances are object arrays and arrays of primitives need a matching runtime
+// type. Box the token in a class so the generic work queue can hold a list.
+class TokenBox {
+    Token value
+
+    func new(Token t) {
+        self.value = t
+    }
+}
+
+class SpecWork {
+    ASTNode? func_decl
+    str mangled_name
+    TokenBox[] resolved_args
+    bool[] resolved_is_array
+    int resolved_count
+    SpecWork? next
+}
+
+// Pending concrete instantiations of generic classes such as Box<int>.
+class ClassSpecWork {
+    ASTNode? class_decl
+    str mangled_name
+    TokenBox[] resolved_args
+    bool[] resolved_is_array
+    int resolved_count
+    ClassSpecWork? next
+}
+
 TypeSubst? g_type_subst_map = null
 ClassVar? g_class_vars = null
+ClassVar? g_global_class_vars = null
 GenSpec? g_gen_specs = null
+SpecWork? g_spec_work_queue = null
+SpecWork? g_spec_work_last = null
+ClassSpecWork? g_class_spec_queue = null
+ClassSpecWork? g_class_spec_last = null
 
 func push_type_subst(str name, Token ttype, bool is_array) {
     var ts = new TypeSubst(name, ttype, is_array)
@@ -60,15 +95,15 @@ func clear_type_subst() {
     }
 }
 
-func find_type_subst(str name): bool {
+func find_type_subst(str name): TypeSubst? {
     var ts = g_type_subst_map
     while ts != null {
         if ts.param_name == name {
-            return true
+            return ts
         }
         ts = ts.next
     }
-    return false
+    return null
 }
 
 func track_class_var(str var_name, str class_name) {
@@ -85,7 +120,45 @@ func lookup_class_var(str var_name): str {
         }
         cv = cv.next
     }
-    return null
+    cv = g_global_class_vars
+    while cv != null {
+        if cv.var_name == var_name {
+            return cv.class_name
+        }
+        cv = cv.next
+    }
+    return ""
+}
+
+func codegen_pointer_member_type(ASTNode? member): str {
+    if member == null || member.kind != AST_MEMBER_ACCESS ||
+       member.left == null ||
+       member.left.var_type.kind != TOKEN_IDENTIFIER {
+        return ""
+    }
+    str owner = member.left.var_type.text
+    if owner == "ASTNode" {
+        if member.token.text == "left" ||
+           member.token.text == "right" ||
+           member.token.text == "condition" ||
+           member.token.text == "init" ||
+           member.token.text == "increment" ||
+           member.token.text == "default_value" {
+            return "ASTNode"
+        }
+    }
+    if owner == "Scope" {
+        if member.token.text == "symbols" { return "Symbol" }
+        if member.token.text == "parent" { return "Scope" }
+    }
+    if owner == "Symbol" {
+        if member.token.text == "next" { return "Symbol" }
+        if member.token.text == "node" { return "ASTNode" }
+    }
+    if owner == "ClassVar" && member.token.text == "next" {
+        return "ClassVar"
+    }
+    return ""
 }
 
 func has_gen_spec(str name): bool {

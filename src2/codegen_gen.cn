@@ -1,1 +1,376 @@
-﻿// stub
+// Self-hosting bootstrap: generator codegen.
+// Port of src/codegen_gen.c
+
+class GenLocal {
+    str name
+    int name_len
+    int kind
+    bool is_pointer
+    bool is_class
+    GenLocal? next
+    func new(str n, int nl, int k, bool ip, bool ic) {
+        self.name = n
+        self.name_len = nl
+        self.kind = k
+        self.is_pointer = ip
+        self.is_class = ic
+        self.next = null
+    }
+}
+
+int g_gen_yield_counter = 0
+
+func collect_locals_from_block(ASTNode? block, GenLocal? list): GenLocal? {
+    if block == null { return list }
+    int i = 0
+    int n = len(block.children)
+    while i < n {
+        ASTNode? stmt = block.children[i]
+        if stmt != null && stmt.kind == AST_VAR_DECL {
+            GenLocal? existing = list
+            bool found = false
+            while existing != null {
+                if existing.name_len == stmt.token.text.length &&
+                   str_substring(existing.name, 0, existing.name_len) == stmt.token.text {
+                    found = true
+                    break
+                }
+                existing = existing.next
+            }
+            if !found {
+                var gl = new GenLocal(stmt.token.text, stmt.token.text.length, stmt.var_type.kind, stmt.is_pointer, stmt.is_class)
+                gl.next = list
+                list = gl
+            }
+        }
+        if stmt != null {
+            if stmt.kind == AST_BLOCK {
+                list = collect_locals_from_block(stmt, list)
+            } else if stmt.kind == AST_IF {
+                list = collect_locals_from_block(stmt.left, list)
+                list = collect_locals_from_block(stmt.right, list)
+            } else if stmt.kind == AST_FOR || stmt.kind == AST_WHILE || stmt.kind == AST_FOR_IN {
+                if stmt.kind == AST_FOR && stmt.init != null && stmt.init.kind == AST_VAR_DECL {
+                    var init_block = new ASTNode(AST_BLOCK, stmt.token)
+                    node_add_child(init_block, stmt.init)
+                    list = collect_locals_from_block(init_block, list)
+                }
+                list = collect_locals_from_block(stmt.left, list)
+            }
+        }
+        i = i + 1
+    }
+    return list
+}
+
+func free_gen_locals(GenLocal? list) {
+    while list != null {
+        var next = list.next
+        list = next
+    }
+}
+
+func generate_gen_body_node(ASTNode? node, GenLocal? all_vars) {
+    if node == null { return }
+
+    if node.kind == AST_YIELD {
+        g_gen_yield_counter = g_gen_yield_counter + 1
+        codegen_emit("        f->current = (")
+        if node.left != null {
+            generate_expression(node.left)
+        } else {
+            codegen_emit("0")
+        }
+        codegen_emit(");\n")
+        codegen_emit("        f->_pc = ")
+        codegen_emit(to_str(g_gen_yield_counter))
+        codegen_emit(";\n")
+        codegen_emit("        return true;\n")
+        codegen_emit("    case ")
+        codegen_emit(to_str(g_gen_yield_counter))
+        codegen_emit(":\n")
+    } else if node.kind == AST_VAR_DECL {
+        GenLocal? existing = all_vars
+        bool found = false
+        while existing != null {
+            if existing.name_len == node.token.text.length &&
+               existing.name == node.token.text {
+                found = true
+                break
+            }
+            existing = existing.next
+        }
+        if found {
+            write_indent()
+            codegen_emit(node.token.text)
+            if node.init != null {
+                codegen_emit(" = ")
+                generate_expression(node.init)
+            }
+            codegen_emit(";\n")
+        } else {
+            generate_node(node)
+        }
+    } else if node.kind == AST_BLOCK {
+        write_indent()
+        codegen_emit("{\n")
+        g_indent_level = g_indent_level + 1
+        int i = 0
+        int n = len(node.children)
+        while i < n {
+            generate_gen_body_node(node.children[i], all_vars)
+            i = i + 1
+        }
+        g_indent_level = g_indent_level - 1
+        write_indent()
+        codegen_emit("}\n")
+    } else if node.kind == AST_WHILE {
+        write_indent()
+        codegen_emit("while (")
+        generate_expression(node.condition)
+        codegen_emit(") {\n")
+        g_indent_level = g_indent_level + 1
+        generate_gen_body_node(node.left, all_vars)
+        g_indent_level = g_indent_level - 1
+        write_indent()
+        codegen_emit("}\n")
+    } else if node.kind == AST_FOR {
+        write_indent()
+        codegen_emit("for (")
+        if node.init != null {
+            if node.init.kind == AST_VAR_DECL {
+                GenLocal? existing = all_vars
+                bool lifted = false
+                while existing != null {
+                    if existing.name_len == node.init.token.text.length &&
+                       existing.name == node.init.token.text {
+                        codegen_emit(node.init.token.text)
+                        codegen_emit(" = ")
+                        if node.init.init != null {
+                            generate_expression(node.init.init)
+                        }
+                        lifted = true
+                        break
+                    }
+                    existing = existing.next
+                }
+                if !lifted {
+                    generate_node(node.init)
+                }
+            } else if node.init.kind == AST_ASSIGN {
+                generate_expression(node.init)
+            } else {
+                generate_node(node.init)
+            }
+        }
+        codegen_emit("; ")
+        if node.condition != null {
+            generate_expression(node.condition)
+        }
+        codegen_emit("; ")
+        if node.increment != null {
+            if node.increment.kind == AST_EXPR_STMT && node.increment.left != null {
+                generate_expression(node.increment.left)
+            } else if node.increment.kind == AST_ASSIGN {
+                generate_expression(node.increment)
+            } else {
+                generate_node(node.increment)
+            }
+        }
+        codegen_emit(") ")
+        generate_gen_body_node(node.left, all_vars)
+    } else if node.kind == AST_IF {
+        write_indent()
+        codegen_emit("if (")
+        generate_expression(node.condition)
+        codegen_emit(") ")
+        generate_gen_body_node(node.left, all_vars)
+
+        if node.right != null {
+            codegen_emit(" else ")
+            generate_gen_body_node(node.right, all_vars)
+        }
+    } else if node.kind == AST_EXPR_STMT {
+        generate_node(node)
+    } else if node.kind == AST_RETURN {
+        write_indent()
+        codegen_emit("f->current = (")
+
+        if node.left != null {
+            generate_expression(node.left)
+        } else {
+            codegen_emit("0")
+        }
+        codegen_emit(");\n")
+    } else {
+        generate_node(node)
+    }
+}
+
+func clone_gen_local(GenLocal? src): GenLocal? {
+    if src == null { return null }
+    var copy = new GenLocal(src.name, src.name_len, src.kind, src.is_pointer, src.is_class)
+    copy.next = null
+    return copy
+}
+
+func gen_local_append(GenLocal? head, GenLocal? item): GenLocal? {
+    if item == null { return head }
+    if head == null { return item }
+    GenLocal? cur = head
+    while cur.next != null {
+        cur = cur.next
+    }
+    cur.next = item
+    return head
+}
+
+func emit_gen_local_type(GenLocal? gl) {
+    if gl == null { return }
+    str ctype = type_token_to_c_name(gl.kind)
+    if len(ctype) == 0 { ctype = "__auto_type" }
+    codegen_emit(ctype)
+    if gl.is_pointer || gl.is_class { codegen_emit("*") }
+}
+
+func generate_generator_code(ASTNode? node, str func_name): bool {
+    if node == null { return false }
+    GenLocal? params = null
+    int i = len(node.children) - 1
+    while i >= 0 {
+        var param = node.children[i]
+        var gl = new GenLocal(param.token.text, len(param.token.text), param.var_type.kind,
+                              param.is_pointer, param.is_class)
+        gl.next = params
+        params = gl
+        i = i - 1
+    }
+    GenLocal? locals = collect_locals_from_block(node.left, null)
+    GenLocal? all_vars = null
+    GenLocal? p = params
+    while p != null {
+        var copy = clone_gen_local(p)
+        copy.next = all_vars
+        all_vars = copy
+        p = p.next
+    }
+    GenLocal? l = locals
+    while l != null {
+        var copy = clone_gen_local(l)
+        copy.next = all_vars
+        all_vars = copy
+        l = l.next
+    }
+
+    str outer_output = codegen_flush_output()
+    int outer_indent = g_indent_level
+    codegen_output_set("")
+    g_indent_level = 0
+
+    codegen_emit("typedef struct {")
+    codegen_emit("\n    int _pc;\n    int current;\n    bool done;\n    int _received;\n    bool (*_next)(void*);\n")
+    p = params
+    while p != null {
+        codegen_emit("    ")
+        emit_gen_local_type(p)
+        codegen_emit(" ")
+        codegen_emit(p.name)
+        codegen_emit(";\n")
+        p = p.next
+    }
+    l = locals
+    while l != null {
+        codegen_emit("    ")
+        emit_gen_local_type(l)
+        codegen_emit(" ")
+        codegen_emit(l.name)
+        codegen_emit(";\n")
+        l = l.next
+    }
+    codegen_emit("} _gen_")
+    codegen_emit(func_name)
+    codegen_emit("_frame;\n\n")
+
+    codegen_emit("bool _gen_")
+    codegen_emit(func_name)
+    codegen_emit("_next(_gen_")
+    codegen_emit(func_name)
+    codegen_emit("_frame* f);\n")
+    codegen_emit("bool _gen_")
+    codegen_emit(func_name)
+    codegen_emit("_next(_gen_")
+    codegen_emit(func_name)
+    codegen_emit("_frame* f) {\n    switch (f->_pc) {\n")
+
+    GenLocal? v = all_vars
+    while v != null {
+        codegen_emit("    #define ")
+        codegen_emit(v.name)
+        codegen_emit(" (f->")
+        codegen_emit(v.name)
+        codegen_emit(")\n")
+        v = v.next
+    }
+    codegen_emit("    case 0:\n")
+    g_gen_yield_counter = 0
+    generate_gen_body_node(node.left, all_vars)
+    v = all_vars
+    while v != null {
+        codegen_emit("    #undef ")
+        codegen_emit(v.name)
+        codegen_emit("\n")
+        v = v.next
+    }
+    codegen_emit("    }\n    f->done = true;\n    return false;\n}\n\n")
+
+    codegen_emit("static bool _gen_")
+    codegen_emit(func_name)
+    codegen_emit("_next_v(void* _p) {\n    return _gen_")
+    codegen_emit(func_name)
+    codegen_emit("_next((_gen_")
+    codegen_emit(func_name)
+    codegen_emit("_frame*)_p);\n}\n\n")
+
+    codegen_emit("_gen_")
+    codegen_emit(func_name)
+    codegen_emit("_frame* ")
+    codegen_emit(func_name)
+    codegen_emit("(")
+    bool first_param = true
+    p = params
+    while p != null {
+        if !first_param { codegen_emit(", ") }
+        emit_gen_local_type(p)
+        codegen_emit(" ")
+        codegen_emit(p.name)
+        first_param = false
+        p = p.next
+    }
+    codegen_emit(") {\n    _gen_")
+    codegen_emit(func_name)
+    codegen_emit("_frame* f = (_gen_")
+    codegen_emit(func_name)
+    codegen_emit("_frame*)malloc(sizeof(_gen_")
+    codegen_emit(func_name)
+    codegen_emit("_frame));\n")
+    codegen_emit("    if (!f) { fprintf(stderr, \"Cnext runtime: out of memory.\\n\"); exit(70); }\n")
+    codegen_emit("    _cnext_track(f);\n    f->_pc = 0;\n    f->done = false;\n    f->current = 0;\n    f->_received = 0;\n")
+    codegen_emit("    f->_next = _gen_")
+    codegen_emit(func_name)
+    codegen_emit("_next_v;\n")
+    p = params
+    while p != null {
+        codegen_emit("    f->")
+        codegen_emit(p.name)
+        codegen_emit(" = ")
+        codegen_emit(p.name)
+        codegen_emit(";\n")
+        p = p.next
+    }
+    codegen_emit("    return f;\n}\n\n")
+
+    push(g_generator_helper_chunks, codegen_flush_output())
+    codegen_output_set(outer_output)
+    g_indent_level = outer_indent
+    return true
+}

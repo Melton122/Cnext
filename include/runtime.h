@@ -10,12 +10,23 @@
 #include <math.h>
 #include <time.h>
 #include <stdint.h>
+#include <stddef.h>
+#include <errno.h>
+#include <limits.h>
 #ifdef _WIN32
 #include <conio.h>
 #endif
 #ifndef _WIN32
 #include <termios.h>
 #include <unistd.h>
+#endif
+#ifdef _MSC_VER
+#include <io.h>
+#define CNEXT_MAX_ALIGN_T long double
+#define popen _popen
+#define pclose _pclose
+#else
+#define CNEXT_MAX_ALIGN_T max_align_t
 #endif
 
 /* ========================================================================
@@ -38,6 +49,9 @@ typedef struct {
     size_t length;
 } CnextString;
 
+/* Read-only, NUL-terminated C text. Ownership is separate from this ABI type. */
+typedef const char* CStr;
+
 typedef struct { int* data; size_t length; } CnextArrayInt;
 typedef struct { long long* data; size_t length; } CnextArrayLong;
 typedef struct { float* data; size_t length; } CnextArrayFloat;
@@ -51,6 +65,7 @@ typedef struct { void** data; size_t length; } CnextArrayObj;
 /* --- Memory Tracking --- */
 typedef struct _AllocNode {
     void* ptr;
+    bool is_cstr;
     struct _AllocNode* next;
 } _AllocNode;
 
@@ -70,15 +85,20 @@ static void _cnext_mem_lock_release(void) {
     atomic_flag_clear_explicit(&_cnext_mem_lock, memory_order_release);
 }
 
-static void _cnext_track(void* ptr) {
+static void _cnext_track_kind(void* ptr, bool is_cstr) {
     if (!ptr) return;
     _AllocNode* node = (_AllocNode*)malloc(sizeof(_AllocNode));
     if (!node) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
     node->ptr = ptr;
+    node->is_cstr = is_cstr;
     _cnext_mem_lock_acquire();
     node->next = _cnext_allocs;
     _cnext_allocs = node;
     _cnext_mem_lock_release();
+}
+
+static void _cnext_track(void* ptr) {
+    _cnext_track_kind(ptr, false);
 }
 
 static void _cnext_untrack(void* ptr) {
@@ -417,9 +437,9 @@ typedef struct {
     int defer_mark;
 } _CnextTryFrame;
 
-static _CnextTryFrame _cnext_try_stack[CNEXT_MAX_TRY_DEPTH];
-static int _cnext_try_depth = 0;
-static CnextString _cnext_error_message = {NULL, 0};
+static _Thread_local _CnextTryFrame _cnext_try_stack[CNEXT_MAX_TRY_DEPTH];
+static _Thread_local int _cnext_try_depth = 0;
+static _Thread_local CnextString _cnext_error_message = {NULL, 0};
 
 /* Deferred-call registry. Defers are registered here so they run during
  * unwinding (longjmp does not trigger GCC/Clang cleanup attributes). */
@@ -427,10 +447,10 @@ static CnextString _cnext_error_message = {NULL, 0};
 
 typedef void (*_CnextDeferFn)(void*);
 
-static _CnextDeferFn _cnext_defer_stack[CNEXT_MAX_DEFER_DEPTH];
-static void* _cnext_defer_arg_stack[CNEXT_MAX_DEFER_DEPTH];
-static int _cnext_defer_count = 0;
-static int _cnext_unwinding = 0;
+static _Thread_local _CnextDeferFn _cnext_defer_stack[CNEXT_MAX_DEFER_DEPTH];
+static _Thread_local void* _cnext_defer_arg_stack[CNEXT_MAX_DEFER_DEPTH];
+static _Thread_local int _cnext_defer_count = 0;
+static _Thread_local int _cnext_unwinding = 0;
 
 static inline void _cnext_defer_push(_CnextDeferFn fn, void* arg) {
     if (_cnext_defer_count >= CNEXT_MAX_DEFER_DEPTH) {
@@ -475,6 +495,12 @@ static inline void _cnext_pop_try(void) {
     }
 }
 
+/* Normal exits (including return/break) release this scope's frame. A throw
+   has already popped the catching frame before jumping to its handler. */
+static inline void _cnext_restore_try_depth(int* mark) {
+    while (_cnext_try_depth > *mark) _cnext_pop_try();
+}
+
 static inline _Noreturn void cnext_throw(CnextString message) {
     _cnext_error_message = message;
     if (_cnext_try_depth > 0) {
@@ -492,6 +518,48 @@ static inline _Noreturn void cnext_throw(CnextString message) {
 
 static inline void cnext_throw_cstr(const char* message) {
     cnext_throw((CnextString){(char*)message, strlen(message)});
+}
+
+/* --- Explicit C String Interoperability --- */
+
+static inline CStr cnext_to_cstr(CnextString text) {
+    if (!text.data) cnext_throw_cstr("to_cstr: null string");
+    if (text.length == SIZE_MAX) cnext_throw_cstr("to_cstr: string too large");
+    if (memchr(text.data, '\0', text.length)) {
+        cnext_throw_cstr("to_cstr: embedded zero byte");
+    }
+    char* copy = (char*)malloc(text.length + 1);
+    if (!copy) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
+    memcpy(copy, text.data, text.length);
+    copy[text.length] = '\0';
+    _cnext_track_kind(copy, true);
+    return copy;
+}
+
+static inline CnextString cnext_from_cstr(CStr text) {
+    if (!text) cnext_throw_cstr("from_cstr: null pointer");
+    size_t length = strlen(text);
+    if (length == SIZE_MAX) cnext_throw_cstr("from_cstr: string too large");
+    char* copy = (char*)malloc(length + 1);
+    if (!copy) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
+    memcpy(copy, text, length + 1);
+    _cnext_track(copy);
+    return (CnextString){copy, length};
+}
+
+static inline void cnext_cstr_free(CStr text) {
+    if (!text) return;
+    _cnext_mem_lock_acquire();
+    _AllocNode** slot = &_cnext_allocs;
+    while (*slot && ((*slot)->ptr != text || !(*slot)->is_cstr)) {
+        slot = &(*slot)->next;
+    }
+    _AllocNode* owned = *slot;
+    if (owned) *slot = owned->next;
+    _cnext_mem_lock_release();
+    if (!owned) cnext_throw_cstr("cstr_free: expected a live to_cstr allocation");
+    free(owned->ptr);
+    free(owned);
 }
 
 /* --- Print Functions --- */
@@ -522,21 +590,151 @@ static inline void printin_ptr(void* x) { _cnext_printin("%p", x); }
 static inline void printin_char(char x) { _cnext_printin("%c", x); }
 
 /* --- Closure Type --- */
+// A scalar captured by reference has one owner in its declaring scope and one
+// in each capturing environment. The payload remains stable across returns.
+typedef struct {
+    atomic_int references;
+    _Alignas(CNEXT_MAX_ALIGN_T) unsigned char value[];
+} _CnextCaptureCell;
+
+static inline _CnextCaptureCell* _cnext_cell_header(void* value) {
+    return (_CnextCaptureCell*)((unsigned char*)value - offsetof(_CnextCaptureCell, value));
+}
+
+static inline void* cnext_cell_create(size_t size) {
+    if (size > SIZE_MAX - sizeof(_CnextCaptureCell)) cnext_throw_cstr("capture cell too large");
+    _CnextCaptureCell* cell = calloc(1, sizeof(*cell) + size);
+    if (!cell) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
+    atomic_init(&cell->references, 1);
+    _cnext_track(cell);
+    return cell->value;
+}
+
+static inline void* cnext_cell_retain(void* value) {
+    if (value) atomic_fetch_add_explicit(&_cnext_cell_header(value)->references, 1, memory_order_relaxed);
+    return value;
+}
+
+static inline void cnext_cell_release(void* value) {
+    if (!value) return;
+    _CnextCaptureCell* cell = _cnext_cell_header(value);
+    if (atomic_fetch_sub_explicit(&cell->references, 1, memory_order_acq_rel) == 1) {
+        _cnext_untrack(cell);
+        free(cell);
+    }
+}
+
+typedef struct {
+    void* value;
+    int mark;
+    bool active;
+} _CnextCellGuard;
+
+static inline void _cnext_cell_guard_run(void* raw) {
+    _CnextCellGuard* guard = raw;
+    if (!guard->active) return;
+    guard->active = false;
+    cnext_cell_release(guard->value);
+    if (!_cnext_unwinding) _cnext_defer_release(guard->mark);
+}
+
+static inline void _cnext_cell_guard_cleanup(_CnextCellGuard* guard) {
+    _cnext_cell_guard_run(guard);
+}
+
+typedef struct {
+    atomic_int references;
+    void (*destroy)(void*);
+    bool local_references;
+    _Alignas(CNEXT_MAX_ALIGN_T) unsigned char environment[];
+} _CnextClosureOwner;
+
 typedef struct {
     void* fn;
     void* env;
     int refcount;
+    _CnextClosureOwner* owner;
 } CnextClosure;
+
+static inline CnextClosure cnext_closure_create(void* fn, size_t environment_size, void (*destroy)(void*), bool local_references) {
+    if (!environment_size) return (CnextClosure){fn, NULL, 1, NULL};
+    if (environment_size > SIZE_MAX - sizeof(_CnextClosureOwner)) {
+        cnext_throw_cstr("closure environment too large");
+    }
+    _CnextClosureOwner* owner = malloc(sizeof(*owner) + environment_size);
+    if (!owner) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
+    atomic_init(&owner->references, 1);
+    owner->destroy = destroy;
+    owner->local_references = local_references;
+    _cnext_track(owner);
+    return (CnextClosure){fn, owner->environment, 1, owner};
+}
+
+static inline CnextClosure cnext_closure_retain(CnextClosure value) {
+    if (value.owner) atomic_fetch_add_explicit(&value.owner->references, 1, memory_order_relaxed);
+    return value;
+}
+
+static inline CnextClosure cnext_closure_capture(CnextClosure* enclosing, CnextClosure value) {
+    if (enclosing->owner && value.owner && value.owner->local_references) {
+        enclosing->owner->local_references = true;
+    }
+    return cnext_closure_retain(value);
+}
 
 static inline void cnext_closure_decref(CnextClosure* c) {
     if (!c) return;
+    if (c->owner) {
+        if (atomic_fetch_sub_explicit(&c->owner->references, 1, memory_order_acq_rel) == 1) {
+            if (c->owner->destroy) c->owner->destroy(c->env);
+            _cnext_untrack(c->owner);
+            free(c->owner);
+        }
+        *c = (CnextClosure){0};
+        return;
+    }
     if (--c->refcount <= 0) {
         if (c->env) {
+            // Self-hosted code tracks capture environments until scope cleanup.
+            // Untracking is also safe for the native compiler's untracked envs.
+            _cnext_untrack(c->env);
             free(c->env);
             c->env = NULL;
         }
         c->fn = NULL;
     }
+}
+
+static inline CnextClosure cnext_closure_escape(CnextClosure owned_value) {
+    if (owned_value.owner && owned_value.owner->local_references) {
+        cnext_closure_decref(&owned_value);
+        cnext_throw_cstr("Local reference captures cannot escape; use value captures instead.");
+    }
+    return owned_value;
+}
+
+static inline void cnext_closure_assign(CnextClosure* target, CnextClosure owned_value) {
+    owned_value = cnext_closure_escape(owned_value);
+    cnext_closure_decref(target);
+    *target = owned_value;
+}
+
+typedef struct {
+    CnextClosure* value;
+    int mark;
+    bool active;
+} _CnextClosureGuard;
+
+static inline void _cnext_closure_guard_run(void* raw) {
+    _CnextClosureGuard* guard = raw;
+    if (!guard->active) return;
+    guard->active = false;
+    cnext_closure_decref(guard->value);
+    if (!_cnext_unwinding) _cnext_defer_release(guard->mark);
+}
+
+static inline void _cnext_closure_guard_cleanup(_CnextClosureGuard* guard) {
+    _cnext_closure_guard_run(guard);
 }
 
 static inline void printin_closure(CnextClosure x) { (void)x; _cnext_printin("<closure>"); }
@@ -631,6 +829,29 @@ static inline void print_tuple(CnextTuple x) { printf("%s", x.repr.data ? x.repr
     CnextIterBase: printin_iter, \
     default: printin_ptr)(_x); } while(0)
 
+#ifdef _MSC_VER
+#undef print_raw
+#undef printin
+#define print_raw(...) _Generic((__VA_ARGS__), \
+    int: print_int, unsigned int: print_uint, short: print_int, \
+    unsigned short: print_uint, long: print_long, unsigned long: print_ulong, \
+    long long: print_llong, unsigned long long: print_ullong, \
+    float: print_float, double: print_double, CnextString: print_str, \
+    CnextTuple: print_tuple, char*: print_cstr, const char*: print_cstr, \
+    char: print_char, unsigned char: print_uint, bool: print_bool, \
+    CnextClosure: print_closure, CnextIterBase: print_iter, \
+    default: print_ptr)(__VA_ARGS__)
+#define printin(...) _Generic((__VA_ARGS__), \
+    int: printin_int, unsigned int: printin_uint, short: printin_int, \
+    unsigned short: printin_uint, long: printin_long, unsigned long: printin_ulong, \
+    long long: printin_llong, unsigned long long: printin_ullong, \
+    float: printin_float, double: printin_double, CnextString: printin_str, \
+    CnextTuple: printin_tuple, char*: printin_cstr, const char*: printin_cstr, \
+    char: printin_char, unsigned char: printin_uint, bool: printin_bool, \
+    CnextClosure: printin_closure, CnextIterBase: printin_iter, \
+    default: printin_ptr)(__VA_ARGS__)
+#endif
+
 /* --- Input --- */
 
 /* Read one whole line from stdin, without the trailing newline. The buffer
@@ -709,40 +930,73 @@ static inline CnextString cnext_input_key(void) {
 /* --- Typed readers ---
    Every reader shares the same shape: show the prompt, read one line, parse
    it. A line that does not parse yields the zero value for the type rather
-   than aborting, so a mistyped entry never takes the program down. */
+   than aborting, so a mistyped entry never takes the program down.
+
+   Parsing is strict about the whole line: leading and trailing whitespace is
+   ignored, but trailing text ("42abc") or an out-of-range value reads as zero
+   instead of silently truncating. Values that do not fit the destination type
+   are rejected for the same reason, so nothing is lost to an implementation-
+   defined cast. */
+
+static inline bool _cnext_input_only_space(const char* text) {
+    while (*text == ' ' || *text == '\t' || *text == '\r' || *text == '\n') text++;
+    return *text == '\0';
+}
+
+static inline bool _cnext_input_word_is(const char* text, size_t length, const char* word) {
+    size_t i = 0;
+    while (word[i] != '\0') {
+        if (i >= length) return false;
+        char a = text[i];
+        char b = word[i];
+        if (a >= 'A' && a <= 'Z') a = (char)(a - 'A' + 'a');
+        if (b >= 'A' && b <= 'Z') b = (char)(b - 'A' + 'a');
+        if (a != b) return false;
+        i++;
+    }
+    return i == length;
+}
 
 static inline int cnext_input_int(CnextString prompt) {
     _cnext_input_prompt(prompt);
     char* buffer = _cnext_read_line();
     char* end = NULL;
+    errno = 0;
     long value = strtol(buffer, &end, 10);
-    return end == buffer ? 0 : (int)value;
+    if (end == buffer || !_cnext_input_only_space(end) || errno == ERANGE) return 0;
+    if (value < INT_MIN || value > INT_MAX) return 0;
+    return (int)value;
 }
 
 static inline unsigned int cnext_input_uint(CnextString prompt) {
     _cnext_input_prompt(prompt);
     char* buffer = _cnext_read_line();
     char* end = NULL;
-    /* strtoul is used so a negative entry wraps the way an unsigned read
-       should rather than being clamped by strtol's signed range check. */
+    errno = 0;
     unsigned long value = strtoul(buffer, &end, 10);
-    return end == buffer ? 0u : (unsigned int)value;
+    if (end == buffer || !_cnext_input_only_space(end) || errno == ERANGE) return 0u;
+    if (value > UINT_MAX) return 0u;
+    return (unsigned int)value;
 }
 
 static inline long long cnext_input_long(CnextString prompt) {
     _cnext_input_prompt(prompt);
     char* buffer = _cnext_read_line();
     char* end = NULL;
+    errno = 0;
     long long value = strtoll(buffer, &end, 10);
-    return end == buffer ? 0LL : value;
+    if (end == buffer || !_cnext_input_only_space(end) || errno == ERANGE) return 0LL;
+    return value;
 }
 
 static inline unsigned long long cnext_input_ulong(CnextString prompt) {
     _cnext_input_prompt(prompt);
     char* buffer = _cnext_read_line();
     char* end = NULL;
+    errno = 0;
     unsigned long long value = strtoull(buffer, &end, 10);
-    return end == buffer ? 0ULL : value;
+    if (end == buffer || !_cnext_input_only_space(end) || errno == ERANGE) return 0ULL;
+    return value;
 }
 
 static inline float cnext_input_float(CnextString prompt) {
@@ -750,7 +1004,8 @@ static inline float cnext_input_float(CnextString prompt) {
     char* buffer = _cnext_read_line();
     char* end = NULL;
     float value = strtof(buffer, &end);
-    return end == buffer ? 0.0f : value;
+    if (end == buffer || !_cnext_input_only_space(end)) return 0.0f;
+    return value;
 }
 
 static inline double cnext_input_double(CnextString prompt) {
@@ -758,13 +1013,15 @@ static inline double cnext_input_double(CnextString prompt) {
     char* buffer = _cnext_read_line();
     char* end = NULL;
     double value = strtod(buffer, &end);
-    return end == buffer ? 0.0 : value;
+    if (end == buffer || !_cnext_input_only_space(end)) return 0.0;
+    return value;
 }
 
 static inline bool cnext_input_bool(CnextString prompt) {
     _cnext_input_prompt(prompt);
     char* buffer = _cnext_read_line();
-    /* Trim leading and trailing whitespace so " true " reads as true. */
+    /* Trim leading and trailing whitespace so " true " reads as true, then
+       accept the common spellings instead of only one capitalization. */
     char* start = buffer;
     while (*start == ' ' || *start == '\t' || *start == '\r' || *start == '\n') start++;
     size_t length = strlen(start);
@@ -772,11 +1029,14 @@ static inline bool cnext_input_bool(CnextString prompt) {
                           start[length - 1] == '\r' || start[length - 1] == '\n')) {
         length--;
     }
-    if (length == 4 && strncmp(start, "true", 4) == 0) return true;
-    if (length == 4 && strncmp(start, "TRUE", 4) == 0) return true;
-    if (length == 4 && strncmp(start, "True", 4) == 0) return true;
-    if (length == 1 && start[0] == '1') return true;
-    if (length == 3 && strncmp(start, "yes", 3) == 0) return true;
+    if (_cnext_input_word_is(start, length, "true") ||
+        _cnext_input_word_is(start, length, "t") ||
+        _cnext_input_word_is(start, length, "yes") ||
+        _cnext_input_word_is(start, length, "y") ||
+        _cnext_input_word_is(start, length, "on") ||
+        _cnext_input_word_is(start, length, "1")) {
+        return true;
+    }
     return false;
 }
 
@@ -786,29 +1046,37 @@ static inline char cnext_input_char(CnextString prompt) {
     return buffer[0] ? buffer[0] : '\0';
 }
 
-static inline char cnext_input_byte(CnextString prompt) {
+static inline unsigned char cnext_input_byte(CnextString prompt) {
     _cnext_input_prompt(prompt);
     char* buffer = _cnext_read_line();
-    if (!buffer[0]) return 0;
-    /* A byte is a signed 8-bit value: 200 is -56, not 200. */
-    int value = (int)(signed char)buffer[0];
-    return (char)value;
+    char* end = NULL;
+    errno = 0;
+    unsigned long value = strtoul(buffer, &end, 10);
+    if (end == buffer || !_cnext_input_only_space(end) || errno == ERANGE) return 0;
+    if (value > UCHAR_MAX) return 0;
+    return (unsigned char)value;
 }
 
 static inline unsigned short cnext_input_ushort(CnextString prompt) {
     _cnext_input_prompt(prompt);
     char* buffer = _cnext_read_line();
     char* end = NULL;
+    errno = 0;
     unsigned long value = strtoul(buffer, &end, 10);
-    return end == buffer ? (unsigned short)0 : (unsigned short)value;
+    if (end == buffer || !_cnext_input_only_space(end) || errno == ERANGE) return (unsigned short)0;
+    if (value > USHRT_MAX) return (unsigned short)0;
+    return (unsigned short)value;
 }
 
 static inline unsigned char cnext_input_ubyte(CnextString prompt) {
     _cnext_input_prompt(prompt);
     char* buffer = _cnext_read_line();
     char* end = NULL;
+    errno = 0;
     unsigned long value = strtoul(buffer, &end, 10);
-    return end == buffer ? (unsigned char)0 : (unsigned char)value;
+    if (end == buffer || !_cnext_input_only_space(end) || errno == ERANGE) return (unsigned char)0;
+    if (value > UCHAR_MAX) return (unsigned char)0;
+    return (unsigned char)value;
 }
 
 /* --- String Concatenation --- */
@@ -828,6 +1096,29 @@ static inline CnextString cnext_concat(CnextString s1, CnextString s2) {
     if (!result) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
     memcpy(result, s1.data, s1.length);
     memcpy(result + s1.length, s2.data, s2.length);
+    result[total] = '\0';
+    _cnext_track(result);
+    return (CnextString){result, total};
+}
+
+static inline CnextString cnext_join_strings(CnextArrayString parts) {
+    size_t total = 0;
+    size_t i = 0;
+    for (i = 0; i < parts.length; i++) {
+        size_t part = parts.data[i].length;
+        if (total > (size_t)-1 - part) {
+            fprintf(stderr, "Cnext runtime: string concatenation overflow.\n");
+            exit(70);
+        }
+        total += part;
+    }
+    char* result = (char*)malloc(total + 1);
+    if (!result) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
+    size_t offset = 0;
+    for (i = 0; i < parts.length; i++) {
+        memcpy(result + offset, parts.data[i].data, parts.data[i].length);
+        offset += parts.data[i].length;
+    }
     result[total] = '\0';
     _cnext_track(result);
     return (CnextString){result, total};
@@ -996,22 +1287,41 @@ static inline int cnext_str_find(CnextString s, CnextString sub) {
 
 static inline CnextString cnext_str_replace(CnextString s, CnextString from, CnextString to) {
     if (!from.data || from.length == 0) return s;
-    int pos = cnext_str_find(s, from);
-    if (pos < 0) return s;
 
-    size_t new_len = s.length - from.length + to.length;
-    if (to.length > from.length && new_len < to.length) {
-        fprintf(stderr, "Cnext runtime: string replace overflow.\n");
-        exit(70);
+    // Count occurrences to allocate correct buffer size
+    int count = 0;
+    size_t offset = 0;
+    while (offset < s.length) {
+        int pos = cnext_str_find((CnextString){s.data + offset, s.length - offset}, from);
+        if (pos < 0) break;
+        count++;
+        offset += pos + from.length;
     }
+
+    size_t new_len = s.length + count * (to.length - from.length);
     char* result = (char*)malloc(new_len + 1);
     if (!result) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
 
-    memcpy(result, s.data, pos);
-    if (to.data && to.length > 0) {
-        memcpy(result + pos, to.data, to.length);
+    size_t dest_pos = 0;
+    offset = 0;
+    while (offset < s.length) {
+        int pos = cnext_str_find((CnextString){s.data + offset, s.length - offset}, from);
+        if (pos < 0) {
+            // Copy remaining
+            memcpy(result + dest_pos, s.data + offset, s.length - offset);
+            dest_pos += s.length - offset;
+            break;
+        }
+        // Copy up to match
+        memcpy(result + dest_pos, s.data + offset, pos);
+        dest_pos += pos;
+        // Copy replacement
+        if (to.data && to.length > 0) {
+            memcpy(result + dest_pos, to.data, to.length);
+        }
+        dest_pos += to.length;
+        offset += pos + from.length;
     }
-    memcpy(result + pos + to.length, s.data + pos + from.length, s.length - pos - from.length);
     result[new_len] = '\0';
     _cnext_track(result);
     return (CnextString){result, new_len};
@@ -1827,7 +2137,8 @@ static inline long long cnext_stopwatch_stop(void) {
 
 static inline CnextString cnext_read_file(CnextString path) {
     char buf[1024];
-    size_t plen = path.length < 1023 ? path.length : 1023;
+    if (!path.data || path.length >= sizeof(buf) || memchr(path.data, 0, path.length)) return (CnextString){NULL, 0};
+    size_t plen = path.length;
     memcpy(buf, path.data, plen);
     buf[plen] = '\0';
     FILE* f = fopen(buf, "rb");
@@ -1845,15 +2156,16 @@ static inline CnextString cnext_read_file(CnextString path) {
     return (CnextString){data, read};
 }
 
-static inline void cnext_write_file(CnextString path, CnextString content) {
+static inline bool cnext_write_file(CnextString path, CnextString content) {
     char buf[1024];
-    size_t plen = path.length < 1023 ? path.length : 1023;
+    if (!path.data || path.length >= sizeof(buf) || memchr(path.data, 0, path.length)) return false;
+    size_t plen = path.length;
     memcpy(buf, path.data, plen);
     buf[plen] = '\0';
     FILE* f = fopen(buf, "wb");
-    if (!f) { fprintf(stderr, "Cannot write to file: %.*s\n", (int)path.length, path.data); return; }
-    fwrite(content.data, 1, content.length, f);
-    fclose(f);
+    if (!f) { fprintf(stderr, "Cannot write to file: %.*s\n", (int)path.length, path.data); return false; }
+    bool complete = !content.length || fwrite(content.data, 1, content.length, f) == content.length;
+    return fclose(f) == 0 && complete;
 }
 
 static inline void cnext_append_file(CnextString path, CnextString content) {

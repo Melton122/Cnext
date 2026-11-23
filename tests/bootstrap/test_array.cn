@@ -1,0 +1,7 @@
+// Bootstrap test: arrays
+main {
+    int[] arr = {1, 2, 3}
+    printin(arr[0])
+    printin(arr[1])
+    printin(arr[2])
+}

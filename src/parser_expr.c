@@ -403,9 +403,10 @@ static ASTNode* primary() {
         ASTNode* node = create_node(AST_WHEN, parser.previous);
         consume(TOKEN_LBRACE, "Expect '{' after 'when'.");
         while (!check(TOKEN_RBRACE) && !check(TOKEN_EOF)) {
+            const char* arm_start = parser.current.start;
             ASTNode* arm = create_node(AST_WHEN_ARM, parser.current);
             // Check for else arm
-            if (check_identifier_text("else", 4)) {
+            if (check(TOKEN_ELSE) || check_identifier_text("else", 4)) {
                 advance_token();
                 arm->is_const = true; // else/default arm
             } else {
@@ -417,6 +418,7 @@ static ASTNode* primary() {
                 advance_token();
             }
             add_child(node, arm);
+            if (!check(TOKEN_EOF) && parser.current.start == arm_start) advance_token();
         }
         consume(TOKEN_RBRACE, "Expect '}' after when body.");
         return node;
@@ -459,12 +461,55 @@ static ASTNode* unary() {
     return postfix();
 }
 
-static ASTNode* factor() {
+static ASTNode* bit_pattern(ASTNode* value, ASTNodeType kind) {
+    bool extract = kind == AST_BIT_EXTRACT;
+    consume(TOKEN_STRING_LITERAL, extract ? "Expected a quoted field layout after '~>'."
+                                          : "Expected a quoted bit pattern after '~='.");
+    Token pattern = parser.previous;
+    ASTNode* node = create_node(kind, pattern);
+    node->left = value;
+    int width = 0;
+    bool saw_field = false;
+    bool field_ended = false;
+    for (int i = 1; i < pattern.length - 1; i++) {
+        char bit = pattern.start[i];
+        if (bit == '_') continue;
+        width++;
+        if (extract) {
+            if (bit == '#') {
+                if (field_ended) {
+                    error("A field layout must select one contiguous field.");
+                    return node;
+                }
+                saw_field = true;
+            } else if (bit == '?') {
+                field_ended = saw_field;
+            } else {
+                error("A field layout accepts only #, ? and _.");
+                return node;
+            }
+        } else if (bit != '0' && bit != '1' && bit != '?') {
+            error("A bit pattern accepts only 0, 1, ? and _.");
+            return node;
+        }
+    }
+    if (width < 1 || width > 64) error("A bit pattern must contain 1 to 64 bits.");
+    else if (extract && !saw_field) error("A field layout must select at least one bit with '#'.");
+    return node;
+}
+
+static ASTNode* field_extraction() {
     ASTNode* expr = unary();
+    while (match_token(TOKEN_BIT_EXTRACT)) expr = bit_pattern(expr, AST_BIT_EXTRACT);
+    return expr;
+}
+
+static ASTNode* factor() {
+    ASTNode* expr = field_extraction();
     while (match_token(TOKEN_STAR) || match_token(TOKEN_SLASH) || match_token(TOKEN_PERCENT)) {
         ASTNode* node = create_node(AST_BINARY, parser.previous);
         node->left = expr;
-        node->right = unary();
+        node->right = field_extraction();
         expr = node;
     }
     return expr;
@@ -495,7 +540,11 @@ static ASTNode* comparison() {
 
 static ASTNode* equality() {
     ASTNode* expr = comparison();
-    while (match_token(TOKEN_BANG_EQ) || match_token(TOKEN_EQ_EQ)) {
+    while (match_token(TOKEN_BANG_EQ) || match_token(TOKEN_EQ_EQ) || match_token(TOKEN_BIT_MATCH)) {
+        if (parser.previous.type == TOKEN_BIT_MATCH) {
+            expr = bit_pattern(expr, AST_BIT_MATCH);
+            continue;
+        }
         ASTNode* node = create_node(AST_BINARY, parser.previous);
         node->left = expr;
         node->right = comparison();

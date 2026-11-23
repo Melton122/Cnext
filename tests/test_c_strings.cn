@@ -1,0 +1,72 @@
+// EXPECT: 0
+// EXPECT: hello
+// EXPECT: 0
+// EXPECT: slice
+// EXPECT: heap copy
+// EXPECT: unicode: café
+// EXPECT: embedded zero rejected
+// EXPECT: null string rejected
+// EXPECT: null pointer rejected
+// EXPECT: released pointer rejected
+
+extern "C" func strcmp(CStr left, CStr right): int
+
+func make_text(str text): CStr {
+    return to_cstr(text)
+}
+
+main {
+    var text = make_text("hello")
+    CStr other = to_cstr("hello")
+    printin(strcmp(text, other))
+    str copied = from_cstr(text)
+    cstr_free(text)
+    cstr_free(other)
+    printin(copied)
+
+    CStr empty = to_cstr("")
+    printin(len(from_cstr(empty)))
+    cstr_free(empty)
+
+    str longer = "slice and more"
+    var slice = to_cstr(longer[0:5])
+    printin(from_cstr(slice))
+    cstr_free(slice)
+
+    str original = "heap" + " copy"
+    CStr independent = to_cstr(original)
+    free(original)
+    printin(from_cstr(independent))
+    cstr_free(independent)
+    var unicode = to_cstr("unicode: café")
+    printin(from_cstr(unicode))
+    cstr_free(unicode)
+
+    try {
+        var invalid = to_cstr("a\0b")
+        printin("unexpected success")
+    } catch (str error) {
+        printin("embedded zero rejected")
+    }
+    str missing = null
+    try {
+        var invalid = to_cstr(missing)
+    } catch (str error) {
+        printin("null string rejected")
+    }
+    CStr absent = null
+    try {
+        printin(from_cstr(absent))
+    } catch (str error) {
+        printin("null pointer rejected")
+    }
+    cstr_free(absent)
+
+    var owned = to_cstr("release once")
+    cstr_free(owned)
+    try {
+        cstr_free(owned)
+    } catch (str error) {
+        printin("released pointer rejected")
+    }
+}

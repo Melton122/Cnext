@@ -1,0 +1,9 @@
+// Call the C standard library from an ordinary Cnext program.
+// Build: cnext build examples/c_interop.cn
+extern "C" func abs(int value): int
+
+main {
+    int offset = -42
+    int distance = abs(offset)
+    printin("Distance from zero: {distance}")
+}

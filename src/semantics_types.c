@@ -11,6 +11,39 @@
     ((t) == TOKEN_UINT_TYPE || (t) == TOKEN_ULONG_TYPE || \
      (t) == TOKEN_USHORT_TYPE || (t) == TOKEN_UBYTE_TYPE)
 
+static bool numeric_assignment_allowed(CnextTokenType expected, CnextTokenType actual) {
+    switch (actual) {
+        case TOKEN_CHAR_TYPE:
+            return expected == TOKEN_CHAR_TYPE || expected == TOKEN_INT_TYPE ||
+                   expected == TOKEN_LONG_TYPE;
+        case TOKEN_INT_TYPE:
+            return expected == TOKEN_INT_TYPE || expected == TOKEN_LONG_TYPE ||
+                   expected == TOKEN_DOUBLE_TYPE;
+        case TOKEN_LONG_TYPE:
+            return expected == TOKEN_LONG_TYPE;
+        case TOKEN_BYTE_TYPE:
+            return expected == TOKEN_BYTE_TYPE || expected == TOKEN_USHORT_TYPE ||
+                   expected == TOKEN_UINT_TYPE || expected == TOKEN_ULONG_TYPE;
+        case TOKEN_UBYTE_TYPE:
+            return expected == TOKEN_UBYTE_TYPE || expected == TOKEN_USHORT_TYPE ||
+                   expected == TOKEN_UINT_TYPE || expected == TOKEN_ULONG_TYPE;
+        case TOKEN_USHORT_TYPE:
+            return expected == TOKEN_USHORT_TYPE || expected == TOKEN_UINT_TYPE ||
+                   expected == TOKEN_ULONG_TYPE;
+        case TOKEN_UINT_TYPE:
+            return expected == TOKEN_UINT_TYPE || expected == TOKEN_ULONG_TYPE ||
+                   expected == TOKEN_DOUBLE_TYPE;
+        case TOKEN_ULONG_TYPE:
+            return expected == TOKEN_ULONG_TYPE;
+        case TOKEN_FLOAT_TYPE:
+            return expected == TOKEN_FLOAT_TYPE || expected == TOKEN_DOUBLE_TYPE;
+        case TOKEN_DOUBLE_TYPE:
+            return expected == TOKEN_DOUBLE_TYPE;
+        default:
+            return false;
+    }
+}
+
 char* type_name_from_token(Token token) {
     if (token.type == TOKEN_STR_TYPE) return copy_cstring("str");
     if (token.type == TOKEN_INT_TYPE) return copy_cstring("int");
@@ -32,8 +65,11 @@ char* type_name_from_token(Token token) {
 bool assignment_types_compatible(Token expected, CnextTokenType actual) {
     if (expected.type == TOKEN_VAR || actual == TOKEN_EOF) return true;
     if (expected.type == actual) return true;
-    // Numeric widening: smaller types promote to larger types
-    if (IS_BUILTIN_NUMERIC(expected.type) && IS_BUILTIN_NUMERIC(actual)) return true;
+    // Numeric conversions must be provably lossless unless the source spells
+    // an explicit cast; narrowing and signedness changes are rejected.
+    if (IS_BUILTIN_NUMERIC(expected.type) && IS_BUILTIN_NUMERIC(actual)) {
+        return numeric_assignment_allowed(expected.type, actual);
+    }
 
     if (actual == TOKEN_NULL) {
         if (expected.type == TOKEN_STR_TYPE) return true;
@@ -60,6 +96,161 @@ bool assignment_types_compatible(Token expected, CnextTokenType actual) {
     return false;
 }
 
+bool sem_is_cstr_type(Token type) {
+    // Follow aliases, with a bound for malformed cyclic aliases.
+    for (int depth = 0; depth < 64 && type.type == TOKEN_IDENTIFIER; depth++) {
+        if (token_matches_name(type, "CStr")) return true;
+        Symbol* sym = resolve_symbol(type);
+        if (!sym || !sym->decl_node || sym->decl_node->type != AST_TYPE_ALIAS ||
+            !sym->decl_node->left) return false;
+        type = sym->decl_node->left->token;
+    }
+    return false;
+}
+
+static bool sem_is_text_type(CnextTokenType type) {
+    return type == TOKEN_STR_TYPE;
+}
+
+void sem_check_assignment_type(Token expected, ASTNode* value, CnextTokenType actual) {
+    if (!value) return;
+    if (expected.type == TOKEN_VAR || expected.type == TOKEN_EOF) return;
+    if (actual == TOKEN_EOF || actual == TOKEN_VAR || actual == TOKEN_NULL) return;
+    if (value->type == AST_NULL_LITERAL) return;
+    if (sem_is_cstr_type(expected) || sem_expr_is_cstr(value)) return;
+    if (expected.type == TOKEN_IDENTIFIER || actual == TOKEN_IDENTIFIER) return;
+    if (expected.type == actual) return;
+
+    bool expected_text = sem_is_text_type(expected.type);
+    bool actual_text = sem_is_text_type(actual);
+    if (expected_text && actual_text) return;
+    if (!expected_text && !actual_text) {
+        if (IS_BUILTIN_NUMERIC(expected.type) && IS_BUILTIN_NUMERIC(actual)) {
+            if (assignment_types_compatible(expected, actual)) return;
+        } else if (expected.type != TOKEN_BOOL_TYPE && actual != TOKEN_BOOL_TYPE) {
+            return;
+        }
+    }
+
+    char* expected_name = type_name_from_token(expected);
+    Token actual_token = value->token;
+    actual_token.type = actual;
+    char* actual_name = type_name_from_token(actual_token);
+    report_error_expected(
+        ERR_SEM_TYPE_MISMATCH,
+        value->token.line,
+        value->token.column > 0 ? value->token.column : 1,
+        "Type mismatch in assignment.",
+        expected_name ? expected_name : "unknown type",
+        actual_name ? actual_name : "unknown type"
+    );
+    free(expected_name);
+    free(actual_name);
+}
+
+// Only ordinary stack frames can currently acquire independently owned cells.
+// Loop-header bindings and suspended generator frames keep their existing rules.
+void sem_prepare_capture_cells(ASTNode* node, bool local) {
+    if (!node) return;
+    bool function = node->type == AST_FUNC_DECL || node->type == AST_LAMBDA;
+    if (function) local = !node->is_generator && node->return_type.type != TOKEN_ITER;
+    if (node->type == AST_MAIN || node->type == AST_TEST) local = true;
+    if (node->type == AST_VAR_DECL) node->capture_cell_candidate = local;
+    sem_prepare_capture_cells(node->left, local);
+    sem_prepare_capture_cells(node->right, local);
+    sem_prepare_capture_cells(node->condition, local);
+    sem_prepare_capture_cells(node->init,
+        node->type == AST_FOR || node->type == AST_FOR_IN ? false : local);
+    sem_prepare_capture_cells(node->increment, local);
+    for (int i = 0; i < node->child_count; i++) {
+        sem_prepare_capture_cells(node->children[i], function ? local :
+            (node->type == AST_CLASS_DECL || node->type == AST_STRUCT_DECL ? false : local));
+    }
+}
+
+static bool scalar_capture_cell(ASTNode* decl) {
+    if (!decl->capture_cell_candidate || decl->is_array || decl->is_pointer || decl->is_class) return false;
+    switch (decl->var_type.type) {
+        case TOKEN_INT_TYPE: case TOKEN_LONG_TYPE: case TOKEN_FLOAT_TYPE:
+        case TOKEN_DOUBLE_TYPE: case TOKEN_BOOL_TYPE: case TOKEN_CHAR_TYPE:
+        case TOKEN_BYTE_TYPE: case TOKEN_UINT_TYPE: case TOKEN_ULONG_TYPE:
+        case TOKEN_USHORT_TYPE: case TOKEN_UBYTE_TYPE: return true;
+        default: return false;
+    }
+}
+
+void sem_promote_capture_cells(ASTNode* node, ASTNode* lambda, bool written) {
+    if (!node) return;
+    if (node->type == AST_IDENTIFIER) {
+        ASTNode* decl = node->binding;
+        if (written && decl && decl->type == AST_VAR_DECL && decl->lambda_depth >= 0 &&
+            decl->lambda_depth < lambda->lambda_depth && scalar_capture_cell(decl)) decl->capture_cell = true;
+        return;
+    }
+    bool increment = node->token.type == TOKEN_INCREMENT || node->token.type == TOKEN_DECREMENT;
+    sem_promote_capture_cells(node->left, lambda, node->type == AST_ASSIGN || (node->type == AST_POSTFIX && increment));
+    sem_promote_capture_cells(node->right, lambda, node->type == AST_UNARY && increment);
+    sem_promote_capture_cells(node->condition, lambda, false);
+    sem_promote_capture_cells(node->init, lambda, false);
+    sem_promote_capture_cells(node->increment, lambda, false);
+    for (int i = 0; i < node->child_count; i++) sem_promote_capture_cells(node->children[i], lambda, false);
+}
+
+static bool closure_writes_capture(ASTNode* node, ASTNode* lambda, bool written) {
+    if (!node) return false;
+    if (node->type == AST_IDENTIFIER) {
+        ASTNode* decl = node->binding;
+        return written && decl && !decl->capture_cell && decl->type == AST_VAR_DECL &&
+            decl->lambda_depth >= 0 && decl->lambda_depth < lambda->lambda_depth;
+    }
+    bool increment = node->token.type == TOKEN_INCREMENT || node->token.type == TOKEN_DECREMENT;
+    if (closure_writes_capture(node->left, lambda, node->type == AST_ASSIGN ||
+                              (node->type == AST_POSTFIX && increment)) ||
+        closure_writes_capture(node->right, lambda, node->type == AST_UNARY && increment) ||
+        closure_writes_capture(node->condition, lambda, false) ||
+        closure_writes_capture(node->init, lambda, false) ||
+        closure_writes_capture(node->increment, lambda, false)) return true;
+    for (int i = 0; i < node->child_count; i++) {
+        if (closure_writes_capture(node->children[i], lambda, false)) return true;
+    }
+    return false;
+}
+
+void sem_validate_closure_escape(ASTNode* value) {
+    if (!value) return;
+    if (value->type == AST_TERNARY) {
+        sem_validate_closure_escape(value->left);
+        sem_validate_closure_escape(value->right);
+        return;
+    }
+    ASTNode* lambda = ast_closure_lambda(value);
+    if (lambda && closure_writes_capture(lambda->left, lambda, false)) {
+        report_error(ERR_SEM_RETURN_TYPE, value->token.line,
+                     "Local reference captures cannot escape; return a closure with value captures instead.", NULL);
+    }
+}
+
+bool sem_expr_is_cstr(ASTNode* expr) {
+    if (!expr || expr->expr_type != TOKEN_IDENTIFIER || !expr->type_name) return false;
+    return sem_is_cstr_type((Token){TOKEN_IDENTIFIER, expr->type_name,
+                                   (int)strlen(expr->type_name), expr->token.line});
+}
+
+void sem_report_cstr_error(Token token, const char* message) {
+    diag_emit(DIAG_ERROR, ERR_SEM_TYPE_MISMATCH, token.line, token.column, message,
+              "Use to_cstr(str), from_cstr(CStr), or cstr_free(CStr); casts do not convert string representations.", NULL);
+    has_semantic_error = true;
+}
+
+void sem_check_cstr_conversion(Token expected, ASTNode* actual) {
+    if (!actual || expected.type == TOKEN_VAR || expected.type == TOKEN_EOF) return;
+    bool wants_cstr = sem_is_cstr_type(expected);
+    if (wants_cstr && actual->type == AST_NULL_LITERAL) return;
+    if (wants_cstr != sem_expr_is_cstr(actual)) {
+        sem_report_cstr_error(actual->token, "CStr requires explicit to_cstr/from_cstr conversion.");
+    }
+}
+
 void validate_var_initializer(ASTNode* node) {
     if (node->var_type.type == TOKEN_VAR && !node->init) {
         report_error(ERR_SEM_MISSING_INIT, node->token.line, "Variables declared with 'var' must have an initializer:", NULL);
@@ -74,16 +265,26 @@ void validate_var_initializer(ASTNode* node) {
         sem_apply_expected_type(node->init, node->var_type.type);
     }
     CnextTokenType init_type = analyze_expression(node->init);
+    sem_check_cstr_conversion(node->var_type, node->init);
     if (node->init->type == AST_NULL_LITERAL) {
         node->init->expr_type = node->var_type.type;
         node->init->type_name = type_name_from_token(node->var_type);
     }
-    if (!assignment_types_compatible(node->var_type, init_type)) {
-        report_token_error(ERR_SEM_TYPE_MISMATCH, node->token, "Initializer type does not match variable type:");
+    if (!(sem_is_cstr_type(node->var_type) && node->init->type == AST_NULL_LITERAL) &&
+        !assignment_types_compatible(node->var_type, init_type)) {
+        char* expected = type_name_from_token(node->var_type);
+        Token actual_token = (Token){.type = init_type};
+        char* found = type_name_from_token(actual_token);
+        report_error_expected(ERR_SEM_TYPE_MISMATCH, node->token.line, node->token.column,
+                              "Initializer type does not match variable type:",
+                              expected ? expected : "unknown", found ? found : "unknown");
+        free(expected);
+        free(found);
     }
 }
 
 void analyze_var_declaration(ASTNode* node) {
+    node->lambda_depth = node->is_global ? -1 : sem_lambda_depth;
     validate_type_token(node->var_type);
     validate_var_initializer(node);
 
@@ -395,10 +596,12 @@ void register_import(Token module) {
     } else if (token_matches_name(module, "process")) {
         Token process_run_token = {TOKEN_IDENTIFIER, "process_run", 11, module.line};
         Token process_run_status_token = {TOKEN_IDENTIFIER, "process_run_status", 19, module.line};
+        Token process_spawn_token = {TOKEN_IDENTIFIER, "process_spawn", 13, module.line};
         Token process_kill_token = {TOKEN_IDENTIFIER, "process_kill", 12, module.line};
         Token process_exists_token = {TOKEN_IDENTIFIER, "process_exists", 14, module.line};
         define_symbol_if_missing(process_run_token, TOKEN_FUNC, true, NULL);
         define_symbol_if_missing(process_run_status_token, TOKEN_FUNC, true, NULL);
+        define_symbol_if_missing(process_spawn_token, TOKEN_FUNC, true, NULL);
         define_symbol_if_missing(process_kill_token, TOKEN_FUNC, true, NULL);
         define_symbol_if_missing(process_exists_token, TOKEN_FUNC, true, NULL);
     } else if (token_matches_name(module, "random")) {
@@ -464,7 +667,7 @@ void register_all_builtins(Token module) {
         {"typeof", 6}, {"assert", 6}, {"panic", 5}, {"exit", 4},
         {"clone", 5}, {"swap_values", 11}, {"free", 4},
         /* Typed reads: each names its own type, so it needs no destination */
-        {"input_int", 9}, {"input_uint", 10}, {"input_long", 10},
+        {"input_str", 9}, {"input_int", 9}, {"input_uint", 10}, {"input_long", 10},
         {"input_ulong", 11}, {"input_float", 11}, {"input_double", 12},
         {"input_bool", 10}, {"input_char", 10}, {"input_byte", 10},
         {"input_ushort", 12}, {"input_ubyte", 11},
@@ -479,6 +682,7 @@ void register_all_builtins(Token module) {
         {"ref_release", 11}, {"ref_count", 9},
         /* Type Conversion */
         {"to_int", 6}, {"to_float", 8}, {"to_str", 6}, {"to_bool", 7},
+        {"to_cstr", 7}, {"from_cstr", 9}, {"cstr_free", 9},
         {"to_char", 7}, {"parse_int", 9}, {"parse_float", 11},
         {"char", 4}, {"ord", 3}, {"bytes", 5},
         /* String */

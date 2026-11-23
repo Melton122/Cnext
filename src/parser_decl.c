@@ -636,40 +636,81 @@ static ASTNode* extern_declaration() {
     if (match_token(TOKEN_STRING_LITERAL)) {
         // Store optional link target name
     }
-    consume(TOKEN_LBRACE, "Expect '{' after 'extern'.");
-    while (!check(TOKEN_RBRACE) && !check(TOKEN_EOF)) {
-        if (match_token(TOKEN_FUNC)) {
-            consume(TOKEN_IDENTIFIER, "Expect function name.");
-            ASTNode* func = create_node(AST_FUNC_DECL, parser.previous);
-            consume(TOKEN_LPAREN, "Expect '(' after function name.");
-            if (!check(TOKEN_RPAREN)) {
-                do {
+    if (match_token(TOKEN_LBRACE)) {
+        while (!check(TOKEN_RBRACE) && !check(TOKEN_EOF)) {
+            if (match_token(TOKEN_FUNC)) {
+                consume(TOKEN_IDENTIFIER, "Expect function name.");
+                ASTNode* func = create_node(AST_FUNC_DECL, parser.previous);
+                consume(TOKEN_LPAREN, "Expect '(' after function name.");
+                if (!check(TOKEN_RPAREN)) {
+                    do {
+                        ASTNode* typeNode = parse_type();
+                        bool variadic = match_token(TOKEN_ELLIPSIS);
+                        if (check(TOKEN_IDENTIFIER)) {
+                            consume(TOKEN_IDENTIFIER, "Expect parameter name.");
+                            ASTNode* param = create_node(AST_VAR_DECL, parser.previous);
+                            if (typeNode) {
+                                assign_type_from_node(param, typeNode);
+                                free_ast(typeNode);
+                            }
+                            param->is_variadic = variadic;
+                            add_child(func, param);
+                        } else if (typeNode) {
+                            free_ast(typeNode);
+                        }
+                    } while (match_token(TOKEN_COMMA));
+                }
+                consume(TOKEN_RPAREN, "Expect ')' after parameters.");
+                if (match_token(TOKEN_COLON)) {
                     ASTNode* typeNode = parse_type();
-                    bool variadic = match_token(TOKEN_ELLIPSIS);
-                    consume(TOKEN_IDENTIFIER, "Expect parameter name.");
-                    ASTNode* param = create_node(AST_VAR_DECL, parser.previous);
+                    if (typeNode) {
+                        assign_return_type_from_node(func, typeNode);
+                        free_ast(typeNode);
+                    }
+                }
+                add_child(node, func);
+            }
+            optionally_consume_semicolon();
+        }
+        consume(TOKEN_RBRACE, "Expect '}' after extern block.");
+        return node;
+    } else if (match_token(TOKEN_FUNC)) {
+        consume(TOKEN_IDENTIFIER, "Expect function name.");
+        ASTNode* func = create_node(AST_FUNC_DECL, parser.previous);
+        consume(TOKEN_LPAREN, "Expect '(' after function name.");
+        if (!check(TOKEN_RPAREN)) {
+            do {
+                ASTNode* typeNode = parse_type();
+                bool variadic = match_token(TOKEN_ELLIPSIS);
+                if (check(TOKEN_IDENTIFIER)) {
+                    Token nameTok = parser.current;
+                    advance_token();
+                    ASTNode* param = create_node(AST_VAR_DECL, nameTok);
                     if (typeNode) {
                         assign_type_from_node(param, typeNode);
                         free_ast(typeNode);
                     }
                     param->is_variadic = variadic;
                     add_child(func, param);
-                } while (match_token(TOKEN_COMMA));
-            }
-            consume(TOKEN_RPAREN, "Expect ')' after parameters.");
-            if (match_token(TOKEN_COLON)) {
-                ASTNode* typeNode = parse_type();
-                if (typeNode) {
-                    assign_return_type_from_node(func, typeNode);
+                } else if (typeNode) {
                     free_ast(typeNode);
                 }
-            }
-            add_child(node, func);
+            } while (match_token(TOKEN_COMMA));
         }
-        optionally_consume_semicolon();
+        consume(TOKEN_RPAREN, "Expect ')' after parameters.");
+        if (match_token(TOKEN_COLON)) {
+            ASTNode* typeNode = parse_type();
+            if (typeNode) {
+                assign_return_type_from_node(func, typeNode);
+                free_ast(typeNode);
+            }
+        }
+        add_child(node, func);
+        return node;
+    } else {
+        error_at_current("Expect '{' or 'func' after 'extern'.");
+        return node;
     }
-    consume(TOKEN_RBRACE, "Expect '}' after extern block.");
-    return node;
 }
 
 ASTNode* bench_statement() {

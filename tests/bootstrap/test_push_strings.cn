@@ -1,0 +1,8 @@
+main {
+    str[] words = {}
+    push(words, "hello")
+    push(words, true ? "world" : "other")
+    printin(words[0])
+    printin(words[1])
+    printin(len(words))
+}

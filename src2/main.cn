@@ -1,43 +1,300 @@
 // Self-hosting bootstrap: main driver
 // Port of src/main.c
+// Supports both the legacy single-source codegen path and the bootstrap
+// bundle-based self-hosting path.
 
-extern func print(str s)
-extern func read_file(str path): str
-extern func lexer_init(str source)
-extern func lexer_next_token(): Token
-extern func parser_init()
-extern func parse_program(): ASTNode?
-extern func sem_analyze(ASTNode? program): bool
-extern func codegen_init(ASTNode? program)
-extern func generate_program(ASTNode? program)
+import process
+import os
 
-int main(int argc, char** argv) {
-    if argc < 2 {
-        print(\"Usage: cnext <file.cn> [options]\n\")
-        return 1
+str g_pkg_visited = ""
+
+func pkg_is_space(char c): bool {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r'
+}
+
+func pkg_is_std_name(str name): bool {
+    if name == "io" { return true }
+    if name == "file" { return true }
+    if name == "net" { return true }
+    if name == "json" { return true }
+    if name == "math" { return true }
+    if name == "os" { return true }
+    if name == "string_utils" { return true }
+    if name == "time" { return true }
+    if name == "regex" { return true }
+    if name == "collections" { return true }
+    if name == "crypto" { return true }
+    if name == "path" { return true }
+    if name == "encoding" { return true }
+    if name == "process" { return true }
+    if name == "random" { return true }
+    if name == "thread" { return true }
+    if name == "http" { return true }
+    if name == "log" { return true }
+    if name == "args" { return true }
+    if name == "fmt" { return true }
+    return false
+}
+
+func pkg_is_safe_name(str name): bool {
+    int n = len(name)
+    if n == 0 { return false }
+    int i = 0
+    while i < n {
+        char c = str_char_at(name, i)
+        bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                  (c >= '0' && c <= '9') || c == '_' || c == '-'
+        if !ok { return false }
+        i = i + 1
     }
-    
-    str source = read_file(argv[1])
-    if source == null {
-        print(\"Error reading file\n\")
-        return 1
+    return true
+}
+
+func pkg_is_visited(str name): bool {
+    return str_contains(g_pkg_visited, "|" + name + "|")
+}
+
+func collect_package_sources(str text): str {
+    str combined = ""
+    int n = len(text)
+    int i = 0
+    while i < n {
+        while i < n && pkg_is_space(str_char_at(text, i)) {
+            i = i + 1
+        }
+        if i + 1 < n && str_char_at(text, i) == '/' && str_char_at(text, i + 1) == '/' {
+            while i < n && str_char_at(text, i) != '\n' {
+                i = i + 1
+            }
+            continue
+        }
+        if i + 1 < n && str_char_at(text, i) == '/' && str_char_at(text, i + 1) == '*' {
+            i = i + 2
+            while i + 1 < n && !(str_char_at(text, i) == '*' && str_char_at(text, i + 1) == '/') {
+                i = i + 1
+            }
+            if i + 1 < n { i = i + 2 }
+            continue
+        }
+        if i + 6 <= n && str_substring(text, i, i + 6) == "import" &&
+           i + 6 < n && pkg_is_space(str_char_at(text, i + 6)) {
+            int j = i + 6
+            while j < n && pkg_is_space(str_char_at(text, j)) {
+                j = j + 1
+            }
+            int name_start = j
+            while j < n && !pkg_is_space(str_char_at(text, j)) &&
+                  str_char_at(text, j) != ';' {
+                j = j + 1
+            }
+            str name = str_substring(text, name_start, j)
+            if !pkg_is_std_name(name) && pkg_is_safe_name(name) && !pkg_is_visited(name) {
+                g_pkg_visited = g_pkg_visited + "|" + name + "|"
+                str pkg_source = read_file("packages/" + name + ".cn")
+                if pkg_source != null {
+                    combined = collect_package_sources(pkg_source) + pkg_source + combined
+                }
+            }
+            i = j
+        }
+        i = i + 1
     }
-    
-    lexer_init(source)
-    parser_init()
-    ASTNode? ast = parse_program()
-    if ast == null {
-        print(\"Parse failed\n\")
-        return 1
+    return combined
+}
+
+func build_source_with_packages(str source): str {
+    g_pkg_visited = ""
+    return collect_package_sources(source) + source
+}
+
+
+func driver_usage() {
+    print("Usage: cnext build <file.cn> [-o <program>] [--emit-c <output.c>]\n")
+    print("       cnext run <file.cn> [-o <program>] [options] [-- args...]\n")
+    print("       cnext <file.cn> [-o <output.c>]  (legacy C emission)\n")
+    print("Options: --cc <executable>, --runtime-dir <headers>, --include-dir <path>,\n")
+    print("         --c-source <path>, --object <path>, --library-dir <path>, --link-lib <name>\n")
+}
+
+func driver_error(str message) {
+    print(message + "\n")
+    exit(64)
+}
+
+func driver_directory(str path): str {
+    int i = len(path) - 1
+    while i >= 0 {
+        char c = str_char_at(path, i)
+        if c == '/' || c == '\\' { return str_substring(path, 0, i + 1) }
+        i = i - 1
     }
-    
-    if !sem_analyze(ast) {
-        print(\"Semantic analysis failed\n\")
-        return 1
+    return "./"
+}
+
+func driver_runtime_dir(): str {
+    str configured = getenv("CNEXT_INCLUDE")
+    if configured != null && len(configured) > 0 { return configured }
+    if file_exists("include/runtime.h") { return "include" }
+    str compiler_dir = driver_directory(sys_arg_at(0))
+    if file_exists(compiler_dir + "../include/runtime.h") { return compiler_dir + "../include" }
+    if file_exists(compiler_dir + "../../include/runtime.h") { return compiler_dir + "../../include" }
+    if file_exists(compiler_dir + "include/runtime.h") { return compiler_dir + "include" }
+    return ""
+}
+
+func driver_write(str path, str content) {
+    write_file(path, content)
+    if read_file(path) != content {
+        print("Could not write output: " + path + "\n")
+        exit(74)
     }
-    
+}
+
+func driver_network_import(ASTNode ast): bool {
+    int i = 0
+    while i < len(ast.children) {
+        var child = ast.children[i]
+        if child.kind == AST_IMPORT && (child.token.text == "net" || child.token.text == "http") { return true }
+        i = i + 1
+    }
+    return false
+}
+
+func driver_executable(str path): str {
+    if len(path) > 0 && (str_char_at(path, 0) == '/' || str_char_at(path, 0) == '\\') { return path }
+    if len(path) > 1 && str_char_at(path, 1) == ':' { return path }
+    return "./" + path
+}
+
+main {
+    int argument_count = sys_args_count()
+    if argument_count < 2 { driver_usage(); exit(2) }
+    str first = sys_arg_at(1)
+    if first == "--help" || first == "-h" { driver_usage(); exit(0) }
+    bool legacy = first != "build" && first != "run"
+    str mode = first
+    str source_path = ""
+    int i = 2
+    if legacy { mode = "emit"; source_path = first }
+    str output_path = ""
+    str emit_path = ""
+    str runtime_dir = ""
+    str compiler = "gcc"
+    str[] native_args = {}
+    str[] library_args = {}
+    str[] program_args = {}
+    while i < argument_count {
+        str arg = sys_arg_at(i)
+        if arg == "--" {
+            if mode != "run" || len(source_path) == 0 { driver_error("Program arguments require run <file.cn> -- args...") }
+            i = i + 1
+            while i < argument_count { push(program_args, sys_arg_at(i)); i = i + 1 }
+        } else if arg == "-o" || arg == "--emit-c" || arg == "--cc" || arg == "--runtime-dir" ||
+                  arg == "--include-dir" || arg == "--c-source" || arg == "--object" ||
+                  arg == "--library-dir" || arg == "--link-lib" {
+            if i + 1 >= argument_count { driver_error("Missing value after " + arg) }
+            str value = sys_arg_at(i + 1)
+            if len(value) == 0 { driver_error("Empty value after " + arg) }
+            if arg == "-o" {
+                if len(output_path) > 0 { driver_error("Duplicate -o option") }
+                output_path = value
+            } else if arg == "--emit-c" {
+                if len(emit_path) > 0 { driver_error("Duplicate --emit-c option") }
+                emit_path = value
+            } else if arg == "--cc" { compiler = value }
+            else if arg == "--runtime-dir" { runtime_dir = value }
+            else if arg == "--library-dir" { push(library_args, "-L"); push(library_args, value) }
+            else if arg == "--link-lib" { push(library_args, "-l"); push(library_args, value) }
+            else {
+                if arg == "--include-dir" { push(native_args, "-I") }
+                push(native_args, value)
+            }
+            i = i + 2
+        } else {
+            if str_char_at(arg, 0) == '-' { driver_error("Unknown option: " + arg) }
+            if len(source_path) > 0 { driver_error("Expected one input source; use --c-source for C files") }
+            source_path = arg
+            i = i + 1
+        }
+    }
+    if len(source_path) == 0 { driver_usage(); exit(64) }
+    if len(emit_path) > 0 {
+        if mode == "run" || len(output_path) > 0 { driver_error("--emit-c cannot be combined with run or -o") }
+        mode = "emit"
+        output_path = emit_path
+    }
+    if mode == "emit" && (len(native_args) > 0 || len(library_args) > 0) {
+        driver_error("C emission cannot be combined with native build options")
+    }
+    str raw_source = read_file(source_path)
+    if raw_source == null { print("Error reading file: " + source_path + "\n"); exit(74) }
+    str source = build_source_with_packages(raw_source)
+    ASTNode? ast = parse_program(source)
+    if ast == null { print("Parse failed\n"); exit(65) }
+    if !analyze_program(ast) { print("Semantic analysis failed\n"); exit(65) }
     codegen_init(ast)
     generate_program(ast)
-    
-    return 0
+    str generated = codegen_flush_output()
+    if mode == "emit" {
+        if len(output_path) > 0 {
+            if platform() == "windows" { generated = str_replace(generated, "\n", "\r\n") }
+            driver_write(output_path, generated)
+        } else { print(generated) }
+    } else {
+        if len(runtime_dir) == 0 { runtime_dir = driver_runtime_dir() }
+        if !file_exists(runtime_dir + "/runtime.h") {
+            print("Cannot find runtime.h; use --runtime-dir or CNEXT_INCLUDE\n")
+            exit(74)
+        }
+        str tag = to_str(os_pid())
+        str c_path = "./.cnext-" + tag + ".c"
+        bool temporary_program = mode == "run" && len(output_path) == 0
+        if len(output_path) == 0 {
+            if temporary_program { output_path = "./.cnext-run-" + tag }
+            else { output_path = "a.out" }
+            if platform() == "windows" {
+                if temporary_program { output_path = output_path + ".exe" }
+                else { output_path = "a.exe" }
+            }
+        }
+        if file_exists(c_path) || (temporary_program && file_exists(output_path)) {
+            print("Temporary build path already exists; refusing to overwrite it\n")
+            exit(74)
+        }
+        driver_write(c_path, generated)
+        str[] command = {compiler, "-std=gnu11", "-O0", "-w", "-iquote", runtime_dir, c_path, "-o", output_path}
+        int j = 0
+        while j < len(native_args) { push(command, native_args[j]); j = j + 1 }
+        j = 0
+        while j < len(library_args) { push(command, library_args[j]); j = j + 1 }
+        if platform() == "windows" {
+            if driver_network_import(ast) { push(command, "-lwinhttp"); push(command, "-lws2_32") }
+        } else {
+            if driver_network_import(ast) { push(command, "-lcurl") }
+            push(command, "-lpthread")
+            push(command, "-lm")
+        }
+        // The generated C already lives in this writable directory. Keep GCC's
+        // intermediate files here too, including on redirected Windows profiles.
+        str old_tmpdir = getenv("TMPDIR")
+        str old_tmp = getenv("TMP")
+        str old_temp = getenv("TEMP")
+        os_setenv("TMPDIR", ".")
+        os_setenv("TMP", ".")
+        os_setenv("TEMP", ".")
+        int status = process_spawn(command)
+        if old_tmpdir == null { os_unsetenv("TMPDIR") } else { os_setenv("TMPDIR", old_tmpdir) }
+        if old_tmp == null { os_unsetenv("TMP") } else { os_setenv("TMP", old_tmp) }
+        if old_temp == null { os_unsetenv("TEMP") } else { os_setenv("TEMP", old_temp) }
+        delete_file(c_path)
+        if status != 0 { print("C compilation failed\n"); exit(status) }
+        if mode == "run" {
+            str[] invocation = {driver_executable(output_path)}
+            j = 0
+            while j < len(program_args) { push(invocation, program_args[j]); j = j + 1 }
+            status = process_spawn(invocation)
+            if temporary_program { delete_file(output_path) }
+            exit(status)
+        }
+    }
 }

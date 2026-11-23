@@ -1,0 +1,9 @@
+class Probe {
+    int value
+}
+
+test "local object" {
+    var probe = new Probe()
+    probe.value = 42
+    assert probe.value == 42
+}

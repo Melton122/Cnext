@@ -1,13 +1,187 @@
 # Cnext Self-Hosting — Proposal & Plan
 
-Status: scoped, awaiting go-ahead on milestones. Milestone A (lexer parity) is
+## Status 2026-11-21
+
+The compiler bundle reaches a generated-C bootstrap fixed point on Windows.
+Stage 0 builds stage 1; stage 1 builds stage 2; stage 2 emits stage 3's C.
+All three generated C files are identical after normalizing line endings.
+`make self-build` now checks this and fails on a mismatch, writing a `.diff`
+file under `build/selfhost` for investigation. Executable byte identity is
+not required: build filenames and platform metadata can differ.
+
+Stage 1 and stage 2 each pass 25 bootstrap programs, covering functions,
+recursion, arrays, classes, C strings, extern declarations, test-local objects,
+defer timing/order and reference captures during normal exit, return, loop
+exits, nested defers, and exception unwinding,
+generator loops with nested locals, nested generic function calls, closure
+aliases, capture-environment cleanup across repeated loop iterations and early
+exits, returned value-capturing closures, temporary call arguments, discarded
+closure results, escaping mutable scalar captures backed by heap cells, and
+nested closure factories in block and arrow form, and string literals passed
+to array `push`.
+Both stages also reject escaping non-scalar local reference captures.
+The code generator now emits extern prototypes and defers, and it treats
+objects inside test wrappers as local values.
+
+Generator `for` counters are lifted into the saved frame in both compiler
+implementations, and assignment-based initializers/increments are emitted as
+expressions. This fixes invalid C and preserves loop state between yields.
+The self-hosted generator now collects nested-block locals and shares the
+native compiler's helper placement and variable ordering. Generic prototypes
+and specialization definitions also share the native compiler's order.
+
+The wider code-generation comparison is **100/109 byte-identical**. The 9
+remaining differences involve closure-heavy programs
+(`test_closures_full.cn`, `test_lambdas.cn`, `test_opt_closure_mutate.cn`,
+`test_opt_minimal_closure.cn`) and programs combining closures with other
+features. All 9 compile with both stages; sampled programs pass their existing
+runtime expectations with stage 2. A fixed point
+does not establish full language equivalence or complete semantic diagnostics.
+The self-hosted driver supports native build/run commands and C linking, while
+the complete development CLI remains unfinished.
+
+Closure aliases now resolve to the original lambda signature, including alias
+chains and nested lexical scopes. The native backend discards alias metadata
+when its scope ends. Both backends use shared environment ownership and defer-
+registered cleanup guards. Owners release their references on normal exit,
+return, break/continue, and exception unwinding, after user defers can run.
+Runtime probes verify allocation counts return to baseline after loop scopes,
+early exits, reassignment, returned aliases, closures capturing closures, and
+temporary arguments, including exception unwinding from the called function.
+Direct non-scalar local-reference escapes are rejected during semantic
+analysis; runtime checks cover indirect wrapper escapes and reference-capturing
+replacements. Mutable scalar captures use heap-backed cells and may escape; see
+[closure lifetime rules](closures.md#local-aliases-and-cleanup).
+
+Nested lambda helpers are emitted before their enclosing helpers rather than
+inside an expression in the outer body. Both compilers preserve the returned
+closure signature across factory calls, distinguish it from the factory's own
+signature, and retain callback values returned by arrow lambdas. Capture writes
+are matched by declaration, so a shadowing local does not change an outer
+read-only capture into a reference capture.
+
+```bash
+make self-build
+python tests/test_bootstrap_codegen.py --stage1 build/selfhost/stage1_exe
+python tests/test_bootstrap_codegen.py --stage1 build/selfhost/stage2_exe
+python tools/parity_sweep.py --out build/selfhost/parity
+```
+
+On Windows, use `mingw32-make` and append `.exe` to the two compiler paths.
+Add `--check` to the parity sweep to fail when any comparison differs.
+CI verifies the fixed point, bootstrap programs, and build/run CLI in both stages.
+
+## Building and running with the self-hosted compiler
+
+```bash
+build/selfhost/stage2_exe build program.cn -o program
+build/selfhost/stage2_exe run program.cn -- "an argument with spaces"
+build/selfhost/stage2_exe build program.cn --emit-c program.c
+# Legacy bootstrap invocation still emits C:
+build/selfhost/stage2_exe program.cn -o program.c
+```
+
+`build -o` names the executable. `run -o` keeps that executable; a run without
+`-o` cleans up its temporary executable. The program inherits stdin/stdout and
+its exit status is returned by the compiler. `build` without `-o` produces
+`a.exe` on Windows or `a.out` elsewhere.
+
+The driver supports repeatable `--c-source`, `--object`, `--include-dir`,
+`--library-dir`, and `--link-lib` options. Libraries follow the objects that
+consume them. Compiler and program arguments are passed as vectors without a
+shell. `--cc` selects one C compiler executable, defaulting to `gcc`. Native
+builds through this driver currently use `-O0`; optimization-level options
+remain part of the CLI work still to be ported.
+
+Runtime headers are located from the checkout or relative to the compiler's
+installation when launched by path. Use `--runtime-dir <directory>` or set
+`CNEXT_INCLUDE` when launching through `PATH` outside a checkout, or when the
+compiler is moved elsewhere. Generated C and GCC intermediates use the writable
+working directory; the original temporary-directory environment is restored
+before running the user's program. Generated C is removed after compilation.
+Source emission remains available without requiring an installed C compiler.
+
+## Development build memory
+
+`make self-build` compiles the generated stage-1 and stage-2 C with `-O0` by
+default to reduce GCC memory use and build time. For optimized compiler
+binaries, use `make self-build BOOTSTRAP_OPT=-O2`. This setting affects only
+bootstrap binaries; ordinary Cnext program builds retain their existing
+optimization settings.
+
+The self-hosted code generator tracks output length separately from its text
+chunks. Querying a function's insertion position no longer joins and retains
+the entire generated prefix. It still joins the chunks when actual output is
+needed, including closure and generator snapshots.
+
+The sections below retain earlier milestone snapshots. Milestone A (lexer parity) is
 **verified on Windows**: `src2/lexer.cn` compiles with the v10.0.4 compiler and
-`tests/parity_lexer.py` reports zero diff against the C lexer over all 112
+`tests/parity_lexer.py` reports zero diff against the C lexer over all 158
 corpus files (`tests/*.cn`, `examples/*.cn`, `src2/*.cn`). The port needed five
 fixes to reach parity: type-first parameter declaration, avoiding the reserved
 word `type` as an identifier, the missing `advance()` method, `str_substring`
 taking an end index (not a length), and echoing the input path like
 `tools/lexdump.c` does.
+
+## Status 2026-11-07
+
+- **Milestone D compiles.** `python tools/build_bundle.py codegen` produces a
+  6,951-line bundle; `cnext build build/selfhost/stage1_bundle.cn --emit-c ...`
+  succeeds and GCC links `stage1_exe`. The last compile blockers were in the
+  port: `Token` has no `length` field (a `str` carries `.length`), so
+  `stmt.token.length` in `src2/codegen_gen.cn` and
+  `src2/codegen_closure.cn` became `stmt.token.text.length`.
+- **`cnext build --emit-c <path>` exists.** `-o` names the final executable, so
+  the bootstrap previously could not obtain generated C at all: it passed
+  `-o stage1_src.c` and GCC was handed an MZ executable. `make self-build` now
+  uses `--emit-c` and platform-aware `stage1_exe`/`stage2_exe` names.
+- **Stage 1 runs, self-compiles, and the stage-2 C now compiles.** `make
+  self-build` (with `CC=gcc` from bash, not Cygwin `make`) produces
+  `stage1_exe.exe` (315 KB) and `stage2_exe.exe` (283 KB). The stage-2 C used
+  to fail because the port's expression codegen emitted `.` on class-typed values
+  that C types as pointers, and it emitted `(CnextArrayObj)0` for empty array
+  literals — a stage-0 string-interpolation bug that mistook `{0}` in a codegen
+  string literal for an interpolated expression. Both were fixed in the port.
+  The stage-2 binary is not yet identical to stage-1, so the bootstrap fixpoint
+  is not reached.
+- **Codegen parity across `tests/*.cn` is 0/100 byte-identical now.** The bundle
+  compiles and the stage-2 C it produces also compiles, but when the stage-1
+  binary personally rewrites each `tests/*.cn` file, none of the 100 outputs
+  match the stage-0 output byte for byte. Comparing the documents directly,
+  the failures fall into a small number of recurring patterns: `for` loops
+  written with C-style syntax that stage 0 turns into `while` and stage 1 keeps
+  as `for`; structs and enums emitted without a pre-declaration `typedef struct
+  S S;`/`typedef enum E E;` that stage 0 emits; `static const` const-decls
+  turned into bare initializer statements; trailing-wrapper lines missing a
+  return type; `#include` module headers dropped; and literal-array and
+  tuple-comprehension blocks rewritten through statement expressions that stage
+  1 expands differently. That is tracked under Milestone D.
+- **Build note (Windows):** the MSYS2 toolchain's Cygwin `make` cannot spawn
+  children in this setup (`Cannot create temporary file in C:\WINDOWS\`), so
+  use `mingw32-make` for the make targets there.
+- **Remaining codegen gaps, roughly by frequency in the diffs:** string
+  interpolation in literals, the `builtin_c_name` table (~20 of the 170+
+  builtins), aggregate definition ordering / forward declarations, default and
+  named arguments, variadics, generics, closures, generators, `defer`/`try`,
+  and class method call forms.
+
+## Status 2026-11-04
+
+- **Milestone B (parser parity) is done.** `python tools/parser_parity.py`
+  produces byte-identical AST dumps to `tools/astdump` for all 100
+  `tests/*.cn` files. The last two diffs were a self-hosted-only copy of
+  `is_pointer` in `assign_type_from_node` (the C parser leaves the nullable
+  flag to semantic analysis) and a stale reference `astdump.exe` that hung;
+  the harness now rebuilds it every run and times out each parser process.
+- **The codegen port does not compile yet.** `tools/build_bundle.py codegen`
+  reaches parse errors in `src2/codegen_closure.cn` and
+  `src2/codegen_generic.cn`: the port uses C out-parameters (`int* out_type`,
+  `CapturedVar** list`, `&cap_type`, `*list`) and the language has no raw
+  pointers or address-of operator. Those functions need to return a small
+  class or tuple instead. Several referenced classes are also still undefined
+  (`CapturedVar`, `ScopeClosureVar`, `ClosureVar`, `TokenArray`, `BoolArray`,
+  `SpecWork`). This is the next concrete blocker for Milestone D.
+- The C compiler remains canonical; no bootstrap binary is produced yet.
 
 ## 1. Goal
 
@@ -338,10 +512,10 @@ first thing to look at. `tests/parity_parser.py` becomes usable once
 | Stage | What | Verifier |
 |---|---|---|
 | 0 | Existing C compiler (unchanged) | today's green CI |
-| Milestone A | `src2/lexer.cn` Cnext lexer, token-level parity vs `src/lexer.c` — **done**, 112/112 files zero-diff | `tests/parity_lexer.py` diffs token streams to zero over the corpus; run by `make parity` and in CI |
-| Milestone B | Parser port (`src2/parser*.cn`) — **blocked on §1a**, needs object-ref + class-array support first | parity vs C parser over corpus (`tests/parity_parser.py` + `tools/astdump.c` already exist) |
+| Milestone A | `src2/lexer.cn` Cnext lexer, token-level parity vs `src/lexer.c` — **done**, 158/158 files zero-diff | `tests/parity_lexer.py` diffs token streams to zero over the corpus; run by `make parity` and in CI |
+| Milestone B | Parser port (`src2/parser*.cn`) — **done**, 100/100 files zero-diff | `python tools/parser_parity.py` (`tests/parity_parser.py` + `tools/astdump.c`) |
 | Milestone C | Semantics port | parity |
-| Milestone D | Codegen port | parity + `cnext test` = 86/86 |
+| Milestone D | Codegen port — compiles, runs, and stage-2 C now compiles (fixpoint + byte-parity not reached) — see Status | parity + `cnext test` = 100/100 |
 | 1 | Driver/registry port → complete `src2/`; `cnext1` = C compiler compiling `src2/` | full suite |
 | 2 | `cnext1` compiles `src2/*.cn` → `cnext2` | `cnext2 test` = 86/86 |
 | Fixpoint | `cnext1` vs `cnext2`: byte-identical generated C, identical binaries | CI `self-host` job |

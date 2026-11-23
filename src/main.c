@@ -1,10 +1,111 @@
 #include "main_internal.h"
+#include "diagnostics.h"
+
+#ifdef _WIN32
+#include <direct.h>
+#define CNEXT_GETCWD _getcwd
+#else
+#define CNEXT_GETCWD getcwd
+#endif
 
 #ifdef _WIN32
 #define DEV_NULL "nul"
 #else
 #define DEV_NULL "/dev/null"
 #endif
+
+// Both codegen and the C backend need a writable temporary directory. A
+// redirected or locked-down Windows profile can deny the process create
+// access to %TEMP%, in which case tmpfile() fails and GCC aborts with
+// "Cannot create temporary file". Probe once at startup; when the system
+// temp directory is unusable, point TMP/TEMP/TMPDIR at the working directory,
+// which must be writable for a build to produce its output anyway. Child
+// processes inherit the corrected environment.
+static int parsed_int_between(const char* start, const char* end) {
+    int value = 0;
+    while (start < end && *start >= '0' && *start <= '9') {
+        value = value * 10 + (*start - '0');
+        start++;
+    }
+    return value;
+}
+
+static void report_backend_output(const char* output) {
+    char* generated_c = read_file(CNEXT_TEMP_C);
+    const char* p = output && *output ? output : "C compilation failed.\n";
+    while (*p) {
+        const char* end = strchr(p, '\n');
+        size_t length = end ? (size_t)(end - p) : strlen(p);
+        char text[2048];
+        if (length >= sizeof(text)) length = sizeof(text) - 1;
+        memcpy(text, p, length);
+        text[length] = '\0';
+
+        const char* marker = strstr(text, ": error:");
+        DiagLevel level = DIAG_ERROR;
+        if (!marker) {
+            const char* warning_marker = strstr(text, ": warning:");
+            if (warning_marker) {
+                marker = warning_marker;
+                level = DIAG_WARNING;
+            }
+        }
+        if (marker) {
+            const char* col_sep = NULL;
+            for (const char* q = marker - 1; q >= text; q--) {
+                if (*q == ':') { col_sep = q; break; }
+            }
+            const char* line_sep = NULL;
+            if (col_sep) {
+                for (const char* q = col_sep - 1; q >= text; q--) {
+                    if (*q == ':') { line_sep = q; break; }
+                }
+            }
+            int line_no = line_sep ? parsed_int_between(line_sep + 1, col_sep) : 0;
+            int col = col_sep ? parsed_int_between(col_sep + 1, marker) : 0;
+            const char* message = marker + (level == DIAG_ERROR ? 8 : 10);
+            while (*message == ' ') message++;
+            diag_emit_context(level, ERR_BACKEND_FAILED, line_no, col > 0 ? col : 1,
+                              1, generated_c, message, NULL, NULL, NULL, text);
+        } else {
+            diag_emit(level, ERR_BACKEND_FAILED, 0, 0, text, NULL, NULL);
+        }
+        if (!end) break;
+        p = end + 1;
+    }
+    free(generated_c);
+}
+
+static void ensure_writable_temp_directory(void) {
+    FILE* probe = tmpfile();
+    if (probe) {
+        fclose(probe);
+        return;
+    }
+
+    char cwd[CNEXT_PATH_MAX];
+    if (!CNEXT_GETCWD(cwd, sizeof(cwd))) return;
+
+    char probe_path[CNEXT_PATH_MAX];
+    if (snprintf(probe_path, sizeof(probe_path), "%s%c_cnext_temp_probe.tmp",
+                 cwd, '/') <= 0) {
+        return;
+    }
+    probe = fopen(probe_path, "w+b");
+    if (!probe) return;
+    fclose(probe);
+    remove(probe_path);
+
+#ifdef _WIN32
+    _putenv_s("TMP", cwd);
+    _putenv_s("TEMP", cwd);
+    _putenv_s("TMPDIR", cwd);
+#else
+    setenv("TMPDIR", cwd, 1);
+    setenv("TMP", cwd, 1);
+    setenv("TEMP", cwd, 1);
+#endif
+}
 
 static int create_project(const char* project_name) {
     if (!project_name || project_name[0] == '\0') {
@@ -313,8 +414,16 @@ static void print_help(void) {
     printf("  --optimize                     Enable the (experimental) Cnext-level optimizer.\n");
     printf("  --no-optimize                  Disable the optimizer (overrides --optimize).\n");
     printf("  --verbose                      Show generated C code before compilation.\n");
+    printf("  --emit-c <path>                Write generated C to <path> and skip GCC.\n");
+    printf("  --c-source <path>              Compile an additional C source (repeatable).\n");
+    printf("  --object <path>                Link an object or archive (repeatable).\n");
+    printf("  --include-dir <path>           Add a C header search directory (repeatable).\n");
+    printf("  --library-dir <path>           Add a library search directory (repeatable).\n");
+    printf("  --link-lib <name>              Link a C library by name (repeatable).\n");
     printf("  --clean                        Remove build artifacts.\n");
 }
+
+#define MAX_NATIVE_ARGS 128
 
 typedef struct {
     const char* input_path;
@@ -324,6 +433,11 @@ typedef struct {
     bool no_optimize;
     bool enable_optimize;
     bool verbose;
+    const char* emit_c;
+    const char* native_args[MAX_NATIVE_ARGS];
+    int native_argc;
+    const char* library_args[MAX_NATIVE_ARGS];
+    int library_argc;
 } BuildOptions;
 
 static int parse_build_args(int argc, char** argv, BuildOptions* opts) {
@@ -334,6 +448,9 @@ static int parse_build_args(int argc, char** argv, BuildOptions* opts) {
     opts->no_optimize = false;
     opts->enable_optimize = false;
     opts->verbose = false;
+    opts->emit_c = NULL;
+    opts->native_argc = 0;
+    opts->library_argc = 0;
 
     if (argc < 3) return 64;
     opts->input_path = argv[2];
@@ -353,6 +470,36 @@ static int parse_build_args(int argc, char** argv, BuildOptions* opts) {
             opts->no_optimize = true;
         } else if (strcmp(argv[i], "--optimize") == 0) {
             opts->enable_optimize = true;
+        } else if (strcmp(argv[i], "--emit-c") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "Expected output path after %s.\n", argv[i]);
+                return 64;
+            }
+            opts->emit_c = argv[++i];
+        } else if (strcmp(argv[i], "--c-source") == 0 ||
+                   strcmp(argv[i], "--object") == 0 ||
+                   strcmp(argv[i], "--include-dir") == 0 ||
+                   strcmp(argv[i], "--library-dir") == 0 ||
+                   strcmp(argv[i], "--link-lib") == 0) {
+            const char* option = argv[i];
+            if (i + 1 >= argc || !argv[i + 1][0] || argv[i + 1][0] == '-') {
+                fprintf(stderr, "Expected a value after %s (use ./ for paths starting with '-').\n", option);
+                return 64;
+            }
+            const char* flag = NULL;
+            bool library = strcmp(option, "--link-lib") == 0;
+            if (library) flag = "-l";
+            else if (strcmp(option, "--library-dir") == 0) flag = "-L";
+            else if (strcmp(option, "--include-dir") == 0) flag = "-I";
+            const char** args = library ? opts->library_args : opts->native_args;
+            int* count = library ? &opts->library_argc : &opts->native_argc;
+            int needed = flag ? 2 : 1;
+            if (*count + needed > MAX_NATIVE_ARGS) {
+                fprintf(stderr, "Too many native build arguments (maximum %d per group).\n", MAX_NATIVE_ARGS);
+                return 64;
+            }
+            if (flag) args[(*count)++] = flag;
+            args[(*count)++] = argv[++i];
         } else if (strcmp(argv[i], "--verbose") == 0) {
             opts->verbose = true;
         } else if (strcmp(argv[i], "--clean") == 0) {
@@ -366,6 +513,10 @@ static int parse_build_args(int argc, char** argv, BuildOptions* opts) {
         }
     }
 
+    if (opts->emit_c && (opts->native_argc || opts->library_argc)) {
+        fprintf(stderr, "Cannot combine --emit-c with native build options; link when compiling the generated C.\n");
+        return 64;
+    }
     return 0;
 }
 
@@ -447,12 +598,16 @@ static int run_tests(int argc, char** argv) {
     printf("Running %d Cnext test file%s...\n\n", entry_count, entry_count == 1 ? "" : "s");
     int passed = 0;
     int failed = 0;
+    // A bare filename is a filter inside tests/, not a path relative to the
+    // current directory: `cnext test test_hello.cn` should find tests/test_hello.cn.
+    bool filter_is_path = filter && has_cn_extension(filter) &&
+        (strchr(filter, '/') != NULL || strchr(filter, '\\') != NULL);
     for (int i = 0; i < entry_count; i++) {
         char input_path[CNEXT_PATH_MAX];
         char output_path[CNEXT_PATH_MAX];
         char output_name[64];
         const char* test_file = entries[i].name;
-        if (filter && has_cn_extension(filter)) {
+        if (filter_is_path) {
             strncpy(input_path, filter, sizeof(input_path) - 1);
             input_path[sizeof(input_path) - 1] = '\0';
         } else {
@@ -510,6 +665,7 @@ static int run_tests(int argc, char** argv) {
 }
 
 int main(int argc, char** argv) {
+    ensure_writable_temp_directory();
     if (argc < 2) {
         print_help();
         return 0;
@@ -550,6 +706,25 @@ int main(int argc, char** argv) {
             return compile_status;
         }
 
+        if (opts.emit_c) {
+            FILE* generated = fopen(CNEXT_TEMP_C, "rb");
+            FILE* target = generated ? fopen(opts.emit_c, "wb") : NULL;
+            if (!target) {
+                if (generated) fclose(generated);
+                fprintf(stderr, "Could not write generated C to %s.\n", opts.emit_c);
+                return 74;
+            }
+            char buffer[8192];
+            size_t count;
+            while ((count = fread(buffer, 1, sizeof(buffer), generated)) > 0) {
+                fwrite(buffer, 1, count, target);
+            }
+            fclose(generated);
+            fclose(target);
+            remove(CNEXT_TEMP_C);
+            return 0;
+        }
+
         // Build GCC arguments based on options
         char opt_flags[256] = {0};
         if (opts.release) {
@@ -578,7 +753,7 @@ int main(int argc, char** argv) {
         }
 
         // Build GCC arguments array (avoids shell injection via system())
-        const char* gcc_args[32];
+        const char* gcc_args[32 + 2 * MAX_NATIVE_ARGS];
         int gcc_argc = 0;
         gcc_args[gcc_argc++] = "gcc";
         gcc_args[gcc_argc++] = "-std=gnu11";
@@ -596,6 +771,14 @@ int main(int argc, char** argv) {
         gcc_args[gcc_argc++] = CNEXT_TEMP_C;
         gcc_args[gcc_argc++] = "-o";
         gcc_args[gcc_argc++] = opts.output_exe;
+        // Place sources/objects before libraries so static archive references
+        // resolve regardless of where the user wrote --link-lib on the CLI.
+        for (int i = 0; i < opts.native_argc; i++) {
+            gcc_args[gcc_argc++] = opts.native_args[i];
+        }
+        for (int i = 0; i < opts.library_argc; i++) {
+            gcc_args[gcc_argc++] = opts.library_args[i];
+        }
 #ifdef _WIN32
         gcc_args[gcc_argc++] = "-lwinhttp";
         gcc_args[gcc_argc++] = "-lws2_32";
@@ -620,10 +803,14 @@ int main(int argc, char** argv) {
 #endif
         gcc_args[gcc_argc] = NULL;
 
-        int gcc_status = run_process("gcc", gcc_args);
+        char gcc_output[65536];
+        int gcc_status = run_process_captured("gcc", gcc_args, gcc_output, sizeof(gcc_output));
         if (gcc_status != 0) {
-            fprintf(stderr, "C compilation failed.\n");
+            report_backend_output(gcc_output);
             return 65;
+        }
+        if (gcc_output[0]) {
+            report_backend_output(gcc_output);
         }
 
         remove(CNEXT_TEMP_C);

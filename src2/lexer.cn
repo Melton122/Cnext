@@ -141,6 +141,8 @@ const int TOKEN_PIPE = 128
 const int TOKEN_RANGE_INCLUSIVE = 129
 const int TOKEN_RAW_STRING = 130
 const int TOKEN_WHEN = 131
+const int TOKEN_BIT_MATCH = 132
+const int TOKEN_BIT_EXTRACT = 133
 
 // ---------------------------------------------------------------------------
 // Lexer
@@ -205,10 +207,10 @@ class Lexer {
     }
 
     func mch(int expected): bool {
-        int c = self.char_at(self.index)
         if self.is_at_end() {
             return false
         }
+        int c = self.char_at(self.index)
         if c != expected {
             return false
         }
@@ -567,6 +569,17 @@ if ch == '/' {
                 self.set_token(TOKEN_STAR)
             }
             return
+        }
+
+        if ch == '~' {
+            if self.mch('=') {
+                self.set_token(TOKEN_BIT_MATCH)
+                return
+            }
+            if self.mch('>') {
+                self.set_token(TOKEN_BIT_EXTRACT)
+                return
+            }
         }
 
         if ch == '!' {

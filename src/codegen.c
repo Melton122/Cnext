@@ -1,4 +1,82 @@
 #include "codegen_internal.h"
+#include "diagnostics.h"
+
+#ifdef _WIN32
+#include <process.h>
+#include <io.h>
+#else
+#include <unistd.h>
+#endif
+
+// Codegen buffers its output streams in temporary files, then stitches them
+// together in a fixed order. tmpfile() is the natural choice because the
+// OS deletes the file on close, but on Windows it resolves the temp directory
+// from TMP/TEMP and fails outright when that directory denies the process
+// create access (a locked-down or redirected profile does this). A compiler
+// that cannot write a temporary file cannot compile anything, so fall back to
+// an explicitly named file in TMPDIR/TMP/TEMP, then in the working directory,
+// and remove it when the stream is closed.
+#define CODEGEN_TEMP_SLOTS 4
+static char codegen_temp_paths[CODEGEN_TEMP_SLOTS][1024];
+
+static int codegen_pid(void)
+{
+#ifdef _WIN32
+    return _getpid();
+#else
+    return (int)getpid();
+#endif
+}
+
+static FILE* codegen_open_temp_path(char* temp_path, int slot)
+{
+    temp_path[0] = '\0';
+    FILE* file = tmpfile();
+    if (file) return file;
+
+    const char* dirs[4];
+    int dir_count = 0;
+    const char* env = getenv("TMPDIR");
+    if (env && *env) dirs[dir_count++] = env;
+    env = getenv("TMP");
+    if (env && *env) dirs[dir_count++] = env;
+    env = getenv("TEMP");
+    if (env && *env) dirs[dir_count++] = env;
+    dirs[dir_count++] = ".";
+
+    for (int d = 0; d < dir_count; d++) {
+        for (int attempt = 0; attempt < 100; attempt++) {
+            char path[1024];
+            int wrote = snprintf(path, sizeof(path), "%s%c_cnext_codegen_%d_%d_%d.tmp",
+                                 dirs[d], '/', codegen_pid(), slot, attempt);
+            if (wrote <= 0 || wrote >= (int)sizeof(path)) continue;
+            file = fopen(path, "w+b");
+            if (file) {
+                snprintf(temp_path, 1024, "%s", path);
+                return file;
+            }
+        }
+    }
+    return NULL;
+}
+
+static FILE* codegen_open_temp(int slot) {
+    return codegen_open_temp_path(codegen_temp_paths[slot], slot);
+}
+
+FILE* codegen_open_lambda_temp(char* path) {
+    static int serial = CODEGEN_TEMP_SLOTS;
+    return codegen_open_temp_path(path, serial++);
+}
+
+static void codegen_close_temp(FILE* file, int slot)
+{
+    if (file) fclose(file);
+    if (slot >= 0 && slot < CODEGEN_TEMP_SLOTS && codegen_temp_paths[slot][0]) {
+        remove(codegen_temp_paths[slot]);
+        codegen_temp_paths[slot][0] = '\0';
+    }
+}
 
 // Single global codegen context (all state in one place)
 // Zero-initialized by default; gen_line starts at 1.
@@ -146,6 +224,7 @@ void reset_codegen_state(void) {
     loop_counter = 0;
     try_counter = 0;
     match_counter = 0;
+    defer_counter = 0;
 
     while (closure_list) {
         ClosureInfo* ci = closure_list;
@@ -199,18 +278,21 @@ bool generate_c_code(ASTNode* program, const char* output_filename, bool test_mo
     }
     int test_count = codegen_test_count;
 
-    // Use tmpfile() for auto-cleaning temporary storage
-    FILE* body_temp = tmpfile();
-    spec_out = tmpfile();
-    closure_defs_out = tmpfile();
-    if (!body_temp || !spec_out || !closure_defs_out) {
-        fprintf(stderr, "Could not create temporary files.\n");
-        if (body_temp) fclose(body_temp);
-        if (spec_out) fclose(spec_out);
-        if (closure_defs_out) fclose(closure_defs_out);
+    // Auto-cleaning temporary storage; codegen_open_temp falls back to a named
+    // file when tmpfile() is unavailable.
+    FILE* body_temp = codegen_open_temp(0);
+    spec_out = codegen_open_temp(1);
+    closure_defs_out = codegen_open_temp(2);
+    defer_defs_out = codegen_open_temp(3);
+    if (!body_temp || !spec_out || !closure_defs_out || !defer_defs_out) {
+        diag_emit(DIAG_ERROR, ERR_CODEGEN_IO, 0, 0, "Could not create temporary files.", NULL, NULL);
+        codegen_close_temp(body_temp, 0);
+        codegen_close_temp(spec_out, 1);
+        codegen_close_temp(closure_defs_out, 2);
+        codegen_close_temp(defer_defs_out, 3);
         return false;
     }
-    
+
     char** test_descriptions = NULL;
     if (test_count > 0) {
         test_descriptions = (char**)checked_malloc(sizeof(char*) * test_count);
@@ -223,10 +305,10 @@ bool generate_c_code(ASTNode* program, const char* output_filename, bool test_mo
             }
         }
     }
-    
+
     out = body_temp;
     indent_level = 0;
-    
+
     // Phase 1: Discover all generic specializations
     for (int i = 0; i < program->child_count; i++) {
         ASTNode* child = program->children[i];
@@ -284,7 +366,7 @@ bool generate_c_code(ASTNode* program, const char* output_filename, bool test_mo
         if (gen_specs || class_spec_queue) fprintf(out, "\n");
         out = saved_out;
     }
-    
+
     // Phase 2: Generate all nodes
     codegen_in_test = false;
     int test_idx = 0;
@@ -312,7 +394,7 @@ bool generate_c_code(ASTNode* program, const char* output_filename, bool test_mo
             generate_node(child);
         }
     }
-    
+
     if (test_count > 0) {
         bool has_main = false;
         for (int i = 0; i < program->child_count; i++) {
@@ -339,18 +421,20 @@ bool generate_c_code(ASTNode* program, const char* output_filename, bool test_mo
             fprintf(out, "}\n\n");
         }
     }
-    
+
     for (int i = 0; i < test_count; i++) {
         free(test_descriptions[i]);
     }
     free(test_descriptions);
-    
-    bool ok = !ferror(body_temp);
-    
+
+    bool ok = !ferror(body_temp) && !ferror(spec_out) &&
+              !ferror(closure_defs_out) && !ferror(defer_defs_out);
+
     // Flush streams before reading back — don't close yet
     fflush(spec_out);
     fflush(closure_defs_out);
-    
+    fflush(defer_defs_out);
+
     out = spec_out;
     indent_level = 0;
     clear_type_subst();
@@ -360,31 +444,35 @@ bool generate_c_code(ASTNode* program, const char* output_filename, bool test_mo
     clear_type_subst();
     free_gen_specs();
     out = NULL;
-    
+
     if (!ok) {
-        fprintf(stderr, "Error writing temporary files.\n");
-        fclose(body_temp);
-        fclose(spec_out);
-        fclose(closure_defs_out);
+        diag_emit(DIAG_ERROR, ERR_CODEGEN_IO, 0, 0, "Error writing temporary files.", NULL, NULL);
+        codegen_close_temp(body_temp, 0);
+        codegen_close_temp(spec_out, 1);
+        codegen_close_temp(closure_defs_out, 2);
+        codegen_close_temp(defer_defs_out, 3);
         return false;
     }
-    
+
     // Combine final output from temporary streams
     out = fopen(output_filename, "w");
     if (!out) {
-        fprintf(stderr, "Could not open output file \"%s\".\n", output_filename);
-        if (body_temp) fclose(body_temp);
-        if (spec_out) fclose(spec_out);
-        if (closure_defs_out) fclose(closure_defs_out);
+        char message[512];
+        snprintf(message, sizeof(message), "Could not open output file \"%s\".", output_filename);
+        diag_emit(DIAG_ERROR, ERR_CODEGEN_IO, 0, 0, message, NULL, NULL);
+        codegen_close_temp(body_temp, 0);
+        codegen_close_temp(spec_out, 1);
+        codegen_close_temp(closure_defs_out, 2);
+        codegen_close_temp(defer_defs_out, 3);
         return false;
     }
-    
+
     generate_runtime_preamble();
     for (int i = 0; i < test_count; i++) {
         fprintf(out, "static bool _cnext_test_%d(void);\n", i);
     }
     if (test_count > 0) fprintf(out, "\n");
-    
+
     // Copy spec temp to output
     if (spec_out) {
         rewind(spec_out);
@@ -394,7 +482,7 @@ bool generate_c_code(ASTNode* program, const char* output_filename, bool test_mo
         }
         if (test_count > 0 || program->child_count > 0) fprintf(out, "\n");
     }
-    
+
     // Copy closure temp to output
     if (closure_defs_out) {
         rewind(closure_defs_out);
@@ -404,7 +492,19 @@ bool generate_c_code(ASTNode* program, const char* output_filename, bool test_mo
         }
         if (test_count > 0 || program->child_count > 0) fprintf(out, "\n");
     }
-    
+
+    // Copy MSVC defer helpers to output. They must be at file scope because
+    // MSVC has no nested functions and __finally cannot own the deferred body.
+    if (defer_defs_out) {
+        long defer_defs_size = ftell(defer_defs_out);
+        rewind(defer_defs_out);
+        char line[4096];
+        while (fgets(line, sizeof(line), defer_defs_out)) {
+            fprintf(out, "%s", line);
+        }
+        if (defer_defs_size > 0 && (test_count > 0 || program->child_count > 0)) fprintf(out, "\n");
+    }
+
     // Copy body temp to output
     if (body_temp) {
         rewind(body_temp);
@@ -413,19 +513,23 @@ bool generate_c_code(ASTNode* program, const char* output_filename, bool test_mo
             fprintf(out, "%s", line);
         }
     }
-    
+
     ok = !ferror(out);
     if (fclose(out) != 0) ok = false;
     if (!ok) {
-        fprintf(stderr, "Could not write output file \"%s\".\n", output_filename);
+        char message[512];
+        snprintf(message, sizeof(message), "Could not write output file \"%s\".", output_filename);
+        diag_emit(DIAG_ERROR, ERR_CODEGEN_IO, 0, 0, message, NULL, NULL);
     }
-    
-    // tmpfile() handles auto-cleanup on close
-    if (body_temp) fclose(body_temp);
-    if (spec_out) fclose(spec_out);
-    if (closure_defs_out) fclose(closure_defs_out);
+
+    // Closing the stream also removes the fallback file, if one was used.
+    codegen_close_temp(body_temp, 0);
+    codegen_close_temp(spec_out, 1);
+    codegen_close_temp(closure_defs_out, 2);
+    codegen_close_temp(defer_defs_out, 3);
     out = NULL;
     spec_out = NULL;
     closure_defs_out = NULL;
+    defer_defs_out = NULL;
     return ok;
 }

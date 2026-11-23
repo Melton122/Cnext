@@ -7,9 +7,14 @@ const char* type_token_to_c(CnextTokenType type) {
         case TOKEN_FLOAT_TYPE: return "float";
         case TOKEN_DOUBLE_TYPE: return "double";
         case TOKEN_STR_TYPE: return "CnextString";
+        case TOKEN_FUNC: return "CnextClosure";
         case TOKEN_BOOL_TYPE: return "bool";
         case TOKEN_CHAR_TYPE: return "char";
-        case TOKEN_BYTE_TYPE: return "char";
+        /* byte is documented as an unsigned 8-bit integer (0..255). Emitting
+           `char` made its signedness platform-dependent and routed printing
+           through the character printer, so `byte b = 255` printed a raw byte
+           instead of "255". `unsigned char` has its own print/convert paths. */
+        case TOKEN_BYTE_TYPE: return "unsigned char";
         case TOKEN_UINT_TYPE: return "unsigned int";
         case TOKEN_ULONG_TYPE: return "unsigned long long";
         case TOKEN_USHORT_TYPE: return "unsigned short";

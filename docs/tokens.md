@@ -50,6 +50,8 @@ The Lexer breaks down a `.cn` file into the following tokens.
 ## Operators
 - Arithmetic: `+`, `-`, `*`, `/`, `%`
 - Comparison: `==`, `!=`, `<`, `>`, `<=`, `>=`
+- Bit pattern comparison uses `~=`.
+- Packed field extraction uses `~>`.
 - Logical: `&&`, `||`, `!`
 - Assignment: `=`, `+=`, `-=`, `*=`, `/=`
 - Increment/Decrement: `++`, `--`

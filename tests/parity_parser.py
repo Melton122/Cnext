@@ -24,9 +24,10 @@ from pathlib import Path
 
 
 def build_reference(binary: Path, repo_root: Path) -> None:
-    if binary.exists():
-        return
-
+    # Always rebuild: a stale checked-in or leftover astdump.exe can hang or
+    # dump an AST from an older parser, which turns a real parity run into a
+    # mysterious timeout. Building takes about a second.
+    binary.parent.mkdir(parents=True, exist_ok=True)
     sources = [
         "src/parser.c", "src/parser_core.c", "src/parser_decl.c", "src/parser_expr.c",
         "src/parser_macro.c", "src/parser_stmt.c", "src/parser_type.c",
@@ -59,9 +60,23 @@ def list_files(patterns: list[str], repo_root: Path) -> list[Path]:
     return sorted(files)
 
 
+def native_path(file_path: Path) -> str:
+    """Render a path the way this platform's child processes will echo it.
+
+    Both dumpers print the path they were handed as their first line, so the
+    two runs must receive the same spelling or every file reports a mismatch
+    (Windows: ``C:/x`` from the reference vs ``C:\\x`` from the candidate).
+    """
+    path = str(file_path)
+    return path.replace("/", "\\") if os.name == "nt" else path
+
+
 def dump_reference(binary: Path, file_path: Path) -> str:
-    result = subprocess.run([str(binary), str(file_path)], capture_output=True, text=True,
-                            encoding="utf-8", errors="replace", check=False)
+    try:
+        result = subprocess.run([str(binary), native_path(file_path)], capture_output=True, text=True,
+                                encoding="utf-8", errors="replace", check=False, timeout=30)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"Reference parser timed out on {file_path}")
     if result.returncode != 0:
         raise RuntimeError(f"Reference parser failed on {file_path}:\n{result.stderr}")
     return result.stdout.replace("\r\n", "\n")
@@ -72,10 +87,9 @@ def dump_candidate(template: str, file_path: Path) -> str:
     if not command:
         raise ValueError("Candidate command is empty.")
 
-    file_token = str(file_path)
+    file_token = native_path(file_path)
     if os.name == "nt":
         # Use the Windows command parser semantics so .\ and quoted paths work.
-        file_token = file_token.replace("/", "\\")
         command = command.replace("{file}", f'"{file_token}"')
         # shlex keeps the surrounding quotes in the token; subprocess then
         # re-escapes them and the child receives a literal-quoted argument
@@ -89,8 +103,11 @@ def dump_candidate(template: str, file_path: Path) -> str:
         command = command.replace("{file}", shlex.quote(file_token))
         args = shlex.split(command)
 
-    result = subprocess.run(args, capture_output=True, text=True, encoding="utf-8",
-                            errors="replace", check=False)
+    try:
+        result = subprocess.run(args, capture_output=True, text=True, encoding="utf-8",
+                                errors="replace", check=False, timeout=30)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"Candidate parser timed out on {file_path}")
     if result.returncode != 0:
         raise RuntimeError(f"Candidate parser failed on {file_path}:\n{result.stderr}")
     return result.stdout.replace("\r\n", "\n")
@@ -125,7 +142,9 @@ def main() -> int:
     repo_root = args.repo_root.resolve()
 
     default_ref = "astdump.exe" if os.name == "nt" else "astdump"
-    ref_binary = args.ref_binary.resolve() if args.ref_binary else (repo_root / "tools" / default_ref)
+    ref_binary = args.ref_binary.resolve() if args.ref_binary else (
+        repo_root / "build" / "selfhost" / default_ref
+    )
     if args.ref_binary is None:
         build_reference(ref_binary, repo_root)
 

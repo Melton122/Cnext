@@ -1,1 +1,255 @@
-﻿// stub
+// Self-hosting bootstrap: generic codegen.
+// Port of src/codegen_generic.c
+
+func mangle_generic_name(ASTNode? callee): str {
+    if callee == null { return "" }
+    str base = callee.token.text
+    int i = 0
+    int n = len(callee.type_args)
+    while i < n {
+        ASTNode? arg = callee.type_args[i]
+        str type_name = arg.token.text
+        str arg_str = ""
+
+        var subst = find_type_subst(type_name)
+        if subst != null {
+            arg_str = "_" + subst.concrete_type.text
+        } else {
+            arg_str = "_" + type_name
+        }
+        base = base + arg_str
+        i = i + 1
+    }
+    return base
+}
+
+func infer_generic_type_args(ASTNode? call_node, ASTNode? func_decl): bool {
+    if call_node == null || func_decl == null || len(func_decl.type_params) == 0 { return false }
+    if call_node.left != null && len(call_node.left.type_args) > 0 { return false }
+
+    ASTNode? callee = call_node.left
+    bool inferred = false
+
+    int tp = 0
+    int tpn = len(func_decl.type_params)
+    while tp < tpn {
+        ASTNode? type_param = func_decl.type_params[tp]
+        str tp_name = type_param.token.text
+
+        int pi = 0
+        int pn = len(func_decl.children)
+        while pi < pn {
+            ASTNode? param = func_decl.children[pi]
+            if param.var_type.kind == TOKEN_IDENTIFIER &&
+               param.var_type.text == tp_name {
+                if pi < len(call_node.children) {
+                    ASTNode? arg = call_node.children[pi]
+                    var concrete = make_eof_token()
+                    bool is_arr = false
+
+                    if arg.expr_type != TOKEN_EOF {
+                        concrete.kind = arg.expr_type
+                        concrete.text = type_name_from_token(concrete)
+                    }
+                    if concrete.kind == TOKEN_IDENTIFIER && len(arg.type_name) > 0 {
+                        concrete.kind = TOKEN_IDENTIFIER
+                        concrete.text = arg.type_name
+                    }
+                    if arg.is_array { is_arr = true }
+
+                    if concrete.kind != TOKEN_EOF && len(concrete.text) > 0 {
+                        var type_arg = new ASTNode(AST_IDENTIFIER, concrete)
+                        type_arg.is_array = is_arr
+                        node_add_type_arg(callee, type_arg)
+                        inferred = true
+                        break
+                    }
+                }
+            }
+            pi = pi + 1
+        }
+        tp = tp + 1
+    }
+    return inferred
+}
+
+func scan_node_for_generic_calls(ASTNode? node) {
+    if node == null { return }
+    if node.kind == AST_CALL && node.left != null && node.left.kind == AST_IDENTIFIER {
+        str fname = node.left.token.text
+        ASTNode? fdecl = find_func_decl(g_codegen_program, fname)
+        if fdecl != null && len(fdecl.type_params) > 0 {
+            if len(node.left.type_args) == 0 {
+                infer_generic_type_args(node, fdecl)
+            }
+            if len(node.left.type_args) > 0 {
+                enqueue_spec_work(fdecl, node.left)
+            }
+        }
+    }
+    scan_node_for_generic_calls(node.left)
+    scan_node_for_generic_calls(node.right)
+    scan_node_for_generic_calls(node.condition)
+    scan_node_for_generic_calls(node.init)
+    scan_node_for_generic_calls(node.increment)
+
+    int i = 0
+    int n = len(node.children)
+    while i < n {
+        scan_node_for_generic_calls(node.children[i])
+        i = i + 1
+    }
+}
+
+func enqueue_spec_work(ASTNode? func_decl, ASTNode? callee) {
+    if len(callee.type_args) != len(func_decl.type_params) {
+        printin("Wrong number of type arguments for " + func_decl.token.text + " at line " + to_str(callee.token.line))
+        exit(1)
+    }
+    str mangled = mangle_generic_name(callee)
+    if has_gen_spec(mangled) { return }
+
+    Token ret_type = func_decl.return_type
+    bool ret_array = false
+    if ret_type.kind == TOKEN_IDENTIFIER {
+        int tp_idx = -1
+        int ti = 0
+        int tpn = len(func_decl.type_params)
+        while ti < tpn {
+            ASTNode? tp = func_decl.type_params[ti]
+            if tp.token.text == ret_type.text {
+                tp_idx = ti
+                break
+            }
+            ti = ti + 1
+        }
+        if tp_idx >= 0 && tp_idx < len(callee.type_args) {
+            ASTNode? ta = callee.type_args[tp_idx]
+            var subst = find_type_subst(ta.token.text)
+            if ta.token.kind == TOKEN_IDENTIFIER && subst != null {
+                ret_type = subst.concrete_type
+                ret_array = subst.is_array
+            } else {
+                ret_type = ta.token
+                ret_array = ta.is_array
+            }
+        }
+    }
+    add_gen_spec(mangled, ret_type, ret_array)
+
+    int acount = 0
+    if callee != null {
+        acount = len(callee.type_args)
+    }
+
+    TokenBox[] res_args = {}
+    bool[] res_is_array = {}
+    int ai = 0
+    while ai < acount {
+        ASTNode? ta = callee.type_args[ai]
+        str tname = ta.token.text
+        var subst = find_type_subst(tname)
+        if ta.token.kind == TOKEN_IDENTIFIER && subst != null {
+            push(res_args, new TokenBox(subst.concrete_type))
+            push(res_is_array, subst.is_array)
+        } else {
+            push(res_args, new TokenBox(ta.token))
+            push(res_is_array, ta.is_array)
+        }
+        ai = ai + 1
+    }
+
+    var sw = new SpecWork()
+    sw.func_decl = func_decl
+    sw.mangled_name = mangled
+    sw.resolved_args = res_args
+    sw.resolved_is_array = res_is_array
+    sw.resolved_count = acount
+    sw.next = null
+
+    if g_spec_work_last != null {
+        g_spec_work_last.next = sw
+    } else {
+        g_spec_work_queue = sw
+    }
+    g_spec_work_last = sw
+}
+
+func bind_specialization(SpecWork work) {
+    int i = 0
+    while i < work.resolved_count {
+        push_type_subst(work.func_decl.type_params[i].token.text,
+                        work.resolved_args[i].value, work.resolved_is_array[i])
+        i = i + 1
+    }
+}
+
+func unbind_specialization(SpecWork work) {
+    int i = 0
+    while i < work.resolved_count {
+        pop_type_subst()
+        i = i + 1
+    }
+}
+
+func declare_generic_specializations() {
+    var work = g_spec_work_queue
+    while work != null {
+        bind_specialization(work)
+        // Scanning under the concrete bindings can append nested calls.
+        scan_node_for_generic_calls(work.func_decl.left)
+        generate_type(work.func_decl.return_type, false)
+        codegen_emit(" " + work.mangled_name + "(")
+        int i = 0
+        while i < len(work.func_decl.children) {
+            if i > 0 { codegen_emit(", ") }
+            var parameter = work.func_decl.children[i]
+            generate_node_type(parameter, parameter.is_pointer)
+            i = i + 1
+        }
+        codegen_emit(")")
+        codegen_emit(";\n")
+        unbind_specialization(work)
+        work = work.next
+    }
+}
+
+func process_spec_queue() {
+    while g_spec_work_queue != null {
+        var sw = g_spec_work_queue
+        g_spec_work_queue = sw.next
+        if g_spec_work_queue == null { g_spec_work_last = null }
+        bind_specialization(sw)
+        int start = codegen_output_len()
+        emit_specialized_signature(sw)
+        codegen_emit(" ")
+        generate_block(sw.func_decl.left)
+        flush_lambda_helpers(start)
+        codegen_emit("\n")
+        unbind_specialization(sw)
+    }
+}
+
+func emit_specialized_signature(SpecWork work) {
+    var func_decl = work.func_decl
+    generate_type(func_decl.return_type, false)
+    codegen_emit(" ")
+    codegen_emit(work.mangled_name)
+    codegen_emit("(")
+    int i = 0
+    int n = len(func_decl.children)
+    while i < n {
+        ASTNode? param = func_decl.children[i]
+        generate_node_type(param, param.is_pointer)
+        codegen_emit(" ")
+        codegen_emit(param.token.text)
+        if i < n - 1 { codegen_emit(", ") }
+        i = i + 1
+    }
+    codegen_emit(")")
+}
+
+func free_spec_work_queue() {
+    g_spec_work_queue = null
+    g_spec_work_last = null
+}

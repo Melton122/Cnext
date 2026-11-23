@@ -6,9 +6,13 @@ bool has_semantic_error = false;
 int loop_depth = 0;
 int switch_depth = 0;
 int generator_depth = 0;
+int defer_depth = 0;
+int defer_lambda_depth = 0;
 /* The return type of the function whose body is being analyzed. A `return
    input()` inside `func ask(): int` needs it to know which reader to use. */
 CnextTokenType sem_current_return_type = TOKEN_EOF;
+Token sem_current_return_token = {0};
+int sem_lambda_depth = 0;
 
 char* copy_cstring(const char* value) {
     if (!value) return NULL;
@@ -35,8 +39,15 @@ void report_error(ErrorCode code, int line, const char* message, const char* det
     } else {
         snprintf(full_msg, sizeof(full_msg), "%s", message);
     }
-    const char* hint = get_hint_for_error(code);
-    diag_emit(DIAG_ERROR, code, line, 0, full_msg, hint, NULL);
+    diag_emit_context(DIAG_ERROR, code, line, 1, 1, semantics_source,
+                      full_msg, NULL, NULL, get_hint_for_error(code), NULL);
+    has_semantic_error = true;
+}
+
+void report_error_expected(ErrorCode code, int line, int col, const char* message,
+                           const char* expected, const char* found) {
+    diag_emit_context(DIAG_ERROR, code, line, col > 0 ? col : 1, 1, semantics_source,
+                      message, expected, found, get_hint_for_error(code), NULL);
     has_semantic_error = true;
 }
 
@@ -48,8 +59,9 @@ void report_token_error(ErrorCode code, Token token, const char* message) {
     } else {
         snprintf(full_msg, sizeof(full_msg), "%s", message);
     }
-    const char* hint = get_hint_for_error(code);
-    diag_emit(DIAG_ERROR, code, token.line, token.column, full_msg, hint, NULL);
+    diag_emit_context(DIAG_ERROR, code, token.line, token.column,
+                      token.length > 0 ? token.length : 1, semantics_source,
+                      full_msg, NULL, NULL, get_hint_for_error(code), NULL);
     free(detail);
     has_semantic_error = true;
 }
@@ -165,6 +177,7 @@ bool is_named_type_symbol(CnextTokenType type) {
 }
 
 bool validate_type_token(Token token) {
+    if (token.type == TOKEN_IDENTIFIER && token_matches_name(token, "CStr")) return true;
     if (token.type == TOKEN_EOF || is_builtin_value_type(token.type) ||
         token.type == TOKEN_ITER || token.type == TOKEN_FUNC) return true;
     if (token.type != TOKEN_IDENTIFIER) {

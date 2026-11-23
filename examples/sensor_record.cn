@@ -1,0 +1,115 @@
+// Binary sensor record, 8 bytes, big-endian multi-byte fields:
+//
+//   offset 0      magic (0xA5)
+//   offset 1      status: bits 7-6 family (10), bits 5-3 channel, bit 0 ready
+//   offset 2..3   temperature in centidegrees, unsigned 16-bit big-endian
+//   offset 4..5   humidity in basis points, unsigned 16-bit big-endian
+//   offset 6      checksum of bytes 0..5
+//   offset 7      end marker (0x5A)
+//
+// A Cnext `str` is used as a byte buffer: its bytes are addressable with
+// str_char_at, and concatenation preserves embedded NUL bytes. No C code,
+// casts, or pointer arithmetic are needed.
+
+const int RECORD_SIZE = 8
+const int RECORD_MAGIC = 165
+const int RECORD_END = 90
+
+func byte_of(int value): str {
+    return to_str(to_char(value % 256))
+}
+
+func byte_at(str data, int index): int {
+    return str_char_at(data, index)
+}
+
+func u16_be(int value): str {
+    return byte_of(value / 256) + byte_of(value % 256)
+}
+
+func u16_le(int value): str {
+    return byte_of(value % 256) + byte_of(value / 256)
+}
+
+func u16_be_at(str data, int index): int {
+    return byte_at(data, index) * 256 + byte_at(data, index + 1)
+}
+
+func u16_le_at(str data, int index): int {
+    return byte_at(data, index + 1) * 256 + byte_at(data, index)
+}
+
+func record_checksum(str data): int {
+    int sum = 0
+    int i = 0
+    while i < 6 {
+        sum = sum + byte_at(data, i)
+        i++
+    }
+    return sum % 256
+}
+
+class SensorRecord {
+    int status
+    int sensor_channel
+    bool ready
+    int temperature
+    int humidity
+}
+
+func decode_record(str data): SensorRecord {
+    if len(data) != RECORD_SIZE {
+        throw "sensor record: expected 8 bytes, found " + to_str(len(data))
+    }
+    if byte_at(data, 0) != RECORD_MAGIC {
+        throw "sensor record: bad magic byte"
+    }
+    if byte_at(data, 7) != RECORD_END {
+        throw "sensor record: bad end marker"
+    }
+    if byte_at(data, 6) != record_checksum(data) {
+        throw "sensor record: checksum mismatch"
+    }
+    int status = byte_at(data, 1)
+    if !(status ~= "10??_????") {
+        throw "sensor record: unknown message family"
+    }
+    var record = new SensorRecord()
+    record.status = status
+    record.sensor_channel = status ~> "??##_#???"
+    record.ready = status ~= "1"
+    record.temperature = u16_be_at(data, 2)
+    record.humidity = u16_be_at(data, 4)
+    return record
+}
+
+func encode_record(int status, int temperature, int humidity): str {
+    str body = byte_of(RECORD_MAGIC) + byte_of(status) + u16_be(temperature) + u16_be(humidity)
+    return body + byte_of(record_checksum(body)) + byte_of(RECORD_END)
+}
+
+func set_sensor_channel(int status, int sensor_channel): int {
+    int current = status ~> "??##_#???"
+    return status - current * 8 + sensor_channel * 8
+}
+
+func read_record(str path): SensorRecord {
+    return decode_record(read_file(path))
+}
+
+main {
+    str path = "_sensor_record_demo.bin"
+    str bytes = encode_record(169, 2350, 5100)
+    write_file(path, bytes)
+
+    var first = read_record(path)
+    printin("channel=" + to_str(first.sensor_channel) + " ready=" + to_str(first.ready))
+    printin("temperature=" + to_str(first.temperature) + " humidity=" + to_str(first.humidity))
+
+    int changed = set_sensor_channel(first.status, 2)
+    write_file(path, encode_record(changed, first.temperature, first.humidity))
+    var second = read_record(path)
+    printin("channel=" + to_str(second.sensor_channel) + " ready=" + to_str(second.ready))
+
+    delete_file(path)
+}

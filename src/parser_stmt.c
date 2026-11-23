@@ -139,7 +139,7 @@ static ASTNode* for_statement() {
         if (match_token(TOKEN_IN)) {
             node->type = AST_FOR_IN;
             ASTNode* vdecl = create_node(AST_VAR_DECL, name);
-            vdecl->var_type.type = TOKEN_IDENTIFIER;
+            vdecl->var_type.type = TOKEN_VAR;
             node->init = vdecl;
             node->condition = expression();
             node->left = block();
@@ -253,9 +253,12 @@ static ASTNode* switch_statement() {
             } else {
                 c_node->left = create_node(AST_BLOCK, parser.previous);
                 while (!check(TOKEN_CASE) && !check(TOKEN_DEFAULT) && !check(TOKEN_RBRACE) && !check(TOKEN_EOF)) {
+                    const char* before = parser.current.start;
                     ASTNode* decl = declaration();
                     if (decl) add_child(c_node->left, decl);
                     if (parser.panic_mode) synchronize();
+                    if (!check(TOKEN_CASE) && !check(TOKEN_DEFAULT) && !check(TOKEN_RBRACE) &&
+                        !check(TOKEN_EOF) && parser.current.start == before) advance_token();
                 }
             }
             add_child(node, c_node);
@@ -267,9 +270,12 @@ static ASTNode* switch_statement() {
             } else {
                 d_node->left = create_node(AST_BLOCK, parser.previous);
                 while (!check(TOKEN_CASE) && !check(TOKEN_DEFAULT) && !check(TOKEN_RBRACE) && !check(TOKEN_EOF)) {
+                    const char* before = parser.current.start;
                     ASTNode* decl = declaration();
                     if (decl) add_child(d_node->left, decl);
                     if (parser.panic_mode) synchronize();
+                    if (!check(TOKEN_CASE) && !check(TOKEN_DEFAULT) && !check(TOKEN_RBRACE) &&
+                        !check(TOKEN_EOF) && parser.current.start == before) advance_token();
                 }
             }
             add_child(node, d_node);
@@ -330,6 +336,7 @@ static ASTNode* match_statement() {
     consume(TOKEN_LBRACE, "Expect '{' before match body.");
     
     while (!check(TOKEN_RBRACE) && !check(TOKEN_EOF)) {
+        const char* arm_start = parser.current.start;
         ASTNode* arm = create_node(AST_MATCH_ARM, parser.current);
         
         // Parse pattern(s)
@@ -363,6 +370,7 @@ static ASTNode* match_statement() {
         }
         
         add_child(node, arm);
+        if (!check(TOKEN_RBRACE) && !check(TOKEN_EOF) && parser.current.start == arm_start) advance_token();
     }
     consume(TOKEN_RBRACE, "Expect '}' after match body.");
     return node;

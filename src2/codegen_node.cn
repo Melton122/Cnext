@@ -1,9 +1,35 @@
 // Self-hosting bootstrap: codegen node dispatch.
 // Port of src/codegen_node.c (simplified)
 
-extern func print(str s)
+ASTNode? g_codegen_program = null
+bool g_codegen_top_level = false
+bool g_codegen_in_function = false
+int g_codegen_match_counter = 0
+int g_codegen_defer_counter = 0
+int g_try_counter = 0
+bool g_codegen_func_returns_void = false
 
 func codegen_init(ASTNode? program) {
+    codegen_output_set("#include \"runtime.h\"\n\n")
+    g_codegen_current_class = ""
+    g_codegen_class_names = "|"
+    g_codegen_struct_names = "|"
+    g_loop_counter = 0
+    g_codegen_test_count = 0
+    g_codegen_defer_counter = 0
+    g_try_counter = 0
+    g_codegen_program = program
+    g_lambda_counter = 0
+    g_lambda_helpers = ""
+    g_generator_helper_chunks = {}
+    g_active_captures = null
+    g_capture_cell_params = null
+    g_closure_cleanup_scope = null
+    g_codegen_top_level = true
+    g_class_vars = null
+    g_global_class_vars = null
+    free_gen_specs()
+    free_spec_work_queue()
 }
 
 func generate_program(ASTNode? program) {
@@ -12,9 +38,232 @@ func generate_program(ASTNode? program) {
     }
     int i = 0
     int n = len(program.children)
+    int test_count = 0
+    i = 0
     while i < n {
-        generate_node(program.children[i])
+        if program.children[i] != null && program.children[i].kind == AST_TEST {
+            test_count = test_count + 1
+        }
         i = i + 1
+    }
+    int test_pi = 0
+    while test_pi < test_count {
+        codegen_emit("static bool _cnext_test_")
+        codegen_emit(to_str(test_pi))
+        codegen_emit("(void);\n")
+        test_pi = test_pi + 1
+    }
+    g_codegen_test_count = test_count
+    if test_count > 0 { codegen_emit("\n") }
+    i = 0
+    while i < n {
+        ASTNode? node = program.children[i]
+        if node != null && node.kind == AST_CLASS_DECL {
+            g_codegen_class_names = g_codegen_class_names + node.token.text + "|"
+        } else if node != null && node.kind == AST_STRUCT_DECL {
+            g_codegen_struct_names = g_codegen_struct_names + node.token.text + "|"
+        }
+        i = i + 1
+    }
+    track_global_class_vars()
+
+    // Discover generic class uses first so their forward declarations share
+    // stage 0's aggregate-declaration preamble.
+    i = 0
+    while i < n {
+        scan_node_for_new_exprs(program.children[i])
+        i = i + 1
+    }
+    i = 0
+    while i < n {
+        var decl = program.children[i]
+        if decl != null && len(decl.type_params) == 0 {
+            scan_node_for_generic_calls(decl)
+        }
+        i = i + 1
+    }
+    declare_generic_specializations()
+    bool has_class_specs = g_class_spec_queue != null
+    var class_spec = g_class_spec_queue
+    while class_spec != null {
+        codegen_emit("typedef struct ")
+        codegen_emit(class_spec.mangled_name)
+        codegen_emit(" ")
+        codegen_emit(class_spec.mangled_name)
+        codegen_emit(";\n")
+        class_spec = class_spec.next
+    }
+
+    // Forward declarations: typedef struct X X; / typedef enum X X;
+    bool wrote_typedef = false
+    i = 0
+    while i < n {
+        ASTNode? node = program.children[i]
+        if node != null && (node.kind == AST_CLASS_DECL || node.kind == AST_STRUCT_DECL) {
+            codegen_emit("typedef struct ")
+            codegen_emit(node.token.text)
+            codegen_emit(" ")
+            codegen_emit(node.token.text)
+            codegen_emit(";\n")
+            wrote_typedef = true
+        } else if node != null && node.kind == AST_ENUM_DECL {
+            bool has_variants = false
+            int j = 0
+            while j < len(node.children) {
+                if node.children[j].kind == AST_VARIANT {
+                    has_variants = true
+                    break
+                }
+                j = j + 1
+            }
+            if has_variants {
+                codegen_emit("typedef struct ")
+            } else {
+                codegen_emit("typedef enum ")
+            }
+            codegen_emit(node.token.text)
+            codegen_emit(" ")
+            codegen_emit(node.token.text)
+            codegen_emit(";\n")
+            wrote_typedef = true
+        } else if node != null && node.kind == AST_TYPE_ALIAS && node.left != null {
+            codegen_emit("typedef ")
+            generate_type(node.left.token, false)
+            codegen_emit(" ")
+            codegen_emit(node.token.text)
+            codegen_emit(";\n")
+            wrote_typedef = true
+        }
+        i = i + 1
+    }
+    if wrote_typedef {
+        codegen_emit("\n")
+    }
+
+    // Prototypes for top-level functions only (stage 0 does not prototype
+    // class methods or constructors).
+    bool wrote_proto = false
+    i = 0
+    while i < n {
+        ASTNode? node = program.children[i]
+        if node != null && (node.kind == AST_FUNC_DECL ||
+           node.kind == AST_COROUTINE_DECL || node.kind == AST_ASYNC_FUNC_DECL) &&
+           !node.is_generator && node.left != null && len(node.type_params) == 0 {
+            generate_prototype(node, "")
+            wrote_proto = true
+        }
+        i = i + 1
+    }
+    if wrote_proto { codegen_emit("\n") }
+    if has_class_specs || g_spec_work_queue != null { codegen_emit("\n") }
+    int generic_section_start = codegen_output_len()
+
+    // Discover concrete generic classes before emitting declarations. Their
+    // unspecialized templates are not valid C and must not reach the output.
+    i = 0
+    while i < n {
+        scan_node_for_new_exprs(program.children[i])
+        i = i + 1
+    }
+    process_class_spec_queue()
+
+    // Generator frames belong to the shared helper section before function bodies.
+    if n > 0 { codegen_emit("\n") }
+    int generator_section_start = codegen_output_len()
+    if n > 0 { codegen_emit("\n") }
+
+    // Body: every top-level child in source order. Test blocks become
+    // `_cnext_test_N` wrappers, exactly as stage 0 emits them.
+    i = 0
+    int test_idx = 0
+    while i < n {
+        var child = program.children[i]
+        if child != null && child.kind == AST_TEST {
+            int start = codegen_output_len()
+            bool old_test_top_level = g_codegen_top_level
+            g_codegen_top_level = false
+            g_codegen_in_test = true
+            codegen_emit("static bool _cnext_test_")
+            codegen_emit(to_str(test_idx))
+            codegen_emit("(void) {\n")
+            g_indent_level = g_indent_level + 1
+            write_indent()
+            codegen_emit("bool _cnext_test_ok = true;\n")
+            codegen_push_closure_scope()
+            if child.left != null {
+                int tj = 0
+                while tj < len(child.left.children) {
+                    generate_statement(child.left.children[tj])
+                    tj = tj + 1
+                }
+            }
+            codegen_pop_closure_scope()
+            write_indent()
+            codegen_emit("return _cnext_test_ok;\n")
+            g_indent_level = g_indent_level - 1
+            codegen_emit("}\n\n")
+            g_codegen_in_test = false
+            g_codegen_top_level = old_test_top_level
+            flush_lambda_helpers(start)
+            test_idx = test_idx + 1
+        } else {
+            generate_node(child)
+        }
+        i = i + 1
+    }
+
+    str outer_output = codegen_flush_output()
+    int outer_indent = g_indent_level
+    codegen_output_set("")
+    g_indent_level = 0
+    process_spec_queue()
+    str generic_output = codegen_flush_output()
+    codegen_output_set(outer_output)
+    g_indent_level = outer_indent
+    if len(g_generator_helper_chunks) > 0 {
+        codegen_output_insert(generator_section_start, cnext_join_strings(g_generator_helper_chunks))
+    }
+    if len(generic_output) > 0 {
+        codegen_output_insert(generic_section_start, generic_output)
+    }
+    if test_count > 0 {
+        bool has_main = false
+        i = 0
+        while i < n {
+            if program.children[i] != null && program.children[i].kind == AST_MAIN {
+                has_main = true
+                break
+            }
+            i = i + 1
+        }
+        if !has_main {
+            codegen_emit("int main(int argc, char** argv) {\n")
+            g_indent_level = g_indent_level + 1
+            write_indent()
+            codegen_emit("cnext_init_args(argc, argv);\n")
+            write_indent()
+            codegen_emit("int _cnext_tp = 0, _cnext_tf = 0;\n")
+            int tj = 0
+            while tj < test_count {
+                write_indent()
+                codegen_emit("if (_cnext_test_")
+                codegen_emit(to_str(tj))
+                codegen_emit("()) ")
+                codegen_emit("{")
+                codegen_emit(" _cnext_tp++; } else ")
+                codegen_emit("{")
+                codegen_emit(" _cnext_tf++; }\n")
+                tj = tj + 1
+            }
+            write_indent()
+            codegen_emit("printf(\"Tests: %d passed, %d failed\\n\", _cnext_tp, _cnext_tf);\n")
+            write_indent()
+            codegen_emit("_cnext_free_all();\n")
+            write_indent()
+            codegen_emit("return _cnext_tf > 0 ? 1 : 0;\n")
+            g_indent_level = g_indent_level - 1
+            codegen_emit("}\n\n")
+        }
     }
 }
 
@@ -23,20 +272,51 @@ func generate_node(ASTNode? node) {
         return
     }
     
-    if node.kind == AST_FUNC_DECL {
-        generate_function(node, null)
+    if node.kind == AST_MAIN {
+        generate_function(node, "")
+    } else if node.kind == AST_FUNC_DECL {
+        if len(node.type_params) == 0 { generate_function(node, "") }
+    } else if node.kind == AST_COROUTINE_DECL {
+        if len(node.type_params) == 0 { generate_function(node, "") }
+    } else if node.kind == AST_ASYNC_FUNC_DECL {
+        if len(node.type_params) == 0 { generate_function(node, "") }
+    } else if node.kind == AST_EXTEND_DECL {
+        int ei = 0
+        while ei < len(node.children) {
+            var child = node.children[ei]
+            if child != null && child.kind == AST_FUNC_DECL {
+                generate_function(child, node.token.text)
+            }
+            ei = ei + 1
+        }
     } else if node.kind == AST_CLASS_DECL {
         generate_class_declaration(node)
     } else if node.kind == AST_STRUCT_DECL {
         generate_struct_declaration(node)
+    } else if node.kind == AST_CONSTEXPR_DECL {
+        codegen_emit("static const ")
+        generate_type(node.var_type, false)
+        codegen_emit(" ")
+        codegen_emit(node.token.text)
+        if node.left != null {
+            codegen_emit(" = ")
+            generate_expression(node.left)
+        }
+        codegen_emit(";\n")
     } else if node.kind == AST_VAR_DECL {
-        generate_var_declaration(node)
+        if node.capture_cell {
+            emit_capture_cell(node, false)
+        } else {
+            generate_var_declaration(node)
+        }
     } else if node.kind == AST_IMPORT {
         generate_import(node)
     } else if node.kind == AST_ENUM_DECL {
         generate_enum_declaration(node)
     } else if node.kind == AST_TRAIT_DECL {
         generate_trait_declaration(node)
+    } else if node.kind == AST_INTERFACE_DECL {
+        // Interfaces emit nothing in stage 0.
     } else if node.kind == AST_EXTERN_DECL {
         generate_extern_declaration(node)
     } else {
@@ -46,126 +326,1139 @@ func generate_node(ASTNode? node) {
 
 func generate_class_declaration(ASTNode? node) {
     if node == null { return }
-    print(\"typedef struct \")
-    print(node.token.text)
-    print(\" {\n\")
-    print(\"} \")
-    print(node.token.text)
-    print(\";\n\n\")
+    if len(node.type_params) > 0 { return }
+    str old_class = g_codegen_current_class
+    g_codegen_current_class = node.token.text
+    str old_parent = g_codegen_current_parent_class
+    g_codegen_current_parent_class = node.parent_name
+    // Forward declaration + layout, exactly as stage 0 emits it.
+    codegen_emit("typedef struct ")
+    codegen_emit(node.token.text)
+    codegen_emit(" ")
+    codegen_emit(node.token.text)
+    codegen_emit(";\n")
+    codegen_emit("typedef struct ")
+    codegen_emit(node.token.text)
+    codegen_emit(" {\n")
+    g_indent_level = g_indent_level + 1
+    int i = 0
+    while i < len(node.children) {
+        ASTNode? field = node.children[i]
+        if field != null && field.kind == AST_VAR_DECL {
+            write_indent()
+            codegen_emit_c_type(field.var_type, field.is_array, field.is_pointer || field.is_class)
+            codegen_emit(" ")
+            codegen_emit(field.token.text)
+            codegen_emit(";\n")
+        }
+        i = i + 1
+    }
+    g_indent_level = g_indent_level - 1
+    codegen_emit("} ")
+    codegen_emit(node.token.text)
+    codegen_emit(";\n\n")
+    // Constructors (and the implicit empty one) come before the methods.
+    if !node.is_abstract {
+        bool has_constructor = false
+        i = 0
+        while i < len(node.children) {
+            ASTNode? method = node.children[i]
+            if method != null && method.kind == AST_CONSTRUCTOR {
+                has_constructor = true
+                generate_constructor(node.token.text, method)
+            }
+            i = i + 1
+        }
+        if !has_constructor {
+            codegen_emit("void ")
+            codegen_emit(node.token.text)
+            codegen_emit("_new(")
+            codegen_emit(node.token.text)
+            codegen_emit("* self) { ")
+            codegen_emit("(void)self;")
+            codegen_emit(" }\n\n")
+        }
+    }
+    i = 0
+    while i < len(node.children) {
+        ASTNode? method = node.children[i]
+        if method != null && method.kind == AST_FUNC_DECL &&
+           !method.is_abstract {
+            if !method.is_static && len(method.children) > 0 &&
+               method.children[0] != null {
+                Token saved_self_type = method.children[0].var_type
+                method.children[0].var_type = node.token
+                generate_function(method, node.token.text)
+                method.children[0].var_type = saved_self_type
+            } else {
+                generate_function(method, node.token.text)
+            }
+        }
+        i = i + 1
+    }
+    i = 0
+    while i < len(node.children) {
+        ASTNode? method = node.children[i]
+        if method != null && method.kind == AST_OPERATOR_DECL {
+            str suffix = operator_suffix(method.operator_token.kind)
+            if len(suffix) > 0 {
+                generate_type(method.return_type, method.return_type.kind == TOKEN_IDENTIFIER)
+                codegen_emit(" ")
+                codegen_emit(node.token.text)
+                codegen_emit("_operator_")
+                codegen_emit(suffix)
+                codegen_emit("(")
+                int j = 0
+                while j < len(method.children) {
+                    var param = method.children[j]
+                    if j > 0 { codegen_emit(", ") }
+                    if j == 0 {
+                        codegen_emit(node.token.text)
+                        codegen_emit("* self")
+                    } else {
+                        generate_type(param.var_type, param.var_type.kind == TOKEN_IDENTIFIER)
+                        codegen_emit(" ")
+                        codegen_emit(param.token.text)
+                    }
+                    j = j + 1
+                }
+                codegen_emit(") ")
+                str saved_pointer_params = g_codegen_pointer_params
+                g_codegen_pointer_params = "|self|"
+                int pj = 1
+                while pj < len(method.children) {
+                    var pparam = method.children[pj]
+                    if pparam.var_type.kind == TOKEN_IDENTIFIER {
+                        g_codegen_pointer_params = g_codegen_pointer_params + "|" + pparam.token.text + "|"
+                    }
+                    pj = pj + 1
+                }
+                generate_block(method.left)
+                g_codegen_pointer_params = saved_pointer_params
+                codegen_emit("\n")
+            }
+        }
+        i = i + 1
+    }
+    g_codegen_current_class = old_class
+    g_codegen_current_parent_class = old_parent
 }
 
 func generate_struct_declaration(ASTNode? node) {
     if node == null { return }
-    print(\"typedef struct \")
-    print(node.token.text)
-    print(\" {\n\")
-    print(\"} \")
-    print(node.token.text)
-    print(\";\n\n\")
+    // Stage 0 emits a struct layout without a forward typedef and without a
+    // trailing blank line.
+    codegen_emit("typedef struct ")
+    codegen_emit(node.token.text)
+    codegen_emit(" {\n")
+    g_indent_level = g_indent_level + 1
+    int i = 0
+    while i < len(node.children) {
+        ASTNode? field = node.children[i]
+        if field != null && field.kind == AST_VAR_DECL {
+            write_indent()
+            generate_type(field.var_type, false)
+            codegen_emit(" ")
+            codegen_emit(field.token.text)
+            codegen_emit(";\n")
+        }
+        i = i + 1
+    }
+    g_indent_level = g_indent_level - 1
+    codegen_emit("} ")
+    codegen_emit(node.token.text)
+    codegen_emit(";\n")
+}
+
+func codegen_find_func_decl(str name): ASTNode? {
+    if g_codegen_program == null { return null }
+    int i = 0
+    while i < len(g_codegen_program.children) {
+        var child = g_codegen_program.children[i]
+        if child != null &&
+           (child.kind == AST_FUNC_DECL || child.kind == AST_COROUTINE_DECL ||
+            child.kind == AST_ASYNC_FUNC_DECL) &&
+           child.token.text == name {
+            return child
+        }
+        i = i + 1
+    }
+    return null
+}
+
+func generate_prototypes(ASTNode? node) {
+    if node == null { return }
+    if node.kind == AST_FUNC_DECL {
+        generate_prototype(node, "")
+    }
+}
+
+func generate_prototype(ASTNode? node, str prefix) {
+    if node == null || node.kind == AST_MAIN || node.is_generator { return }
+    codegen_emit_c_type(node.return_type, node.is_array, node.is_pointer)
+    codegen_emit(" ")
+    if len(prefix) > 0 {
+        codegen_emit(prefix)
+        codegen_emit("_")
+    }
+    codegen_emit(node.token.text)
+    codegen_emit("(")
+    emit_prototype_params(node)
+    codegen_emit(");\n")
+}
+
+func emit_prototype_params(ASTNode? node) {
+    if node == null { return }
+    int i = 0
+    while i < len(node.children) {
+        if i > 0 { codegen_emit(", ") }
+        codegen_emit_c_type(
+            node.children[i].var_type,
+            node.children[i].is_array,
+            node.children[i].is_pointer || node.children[i].is_class)
+        codegen_emit(" ")
+        codegen_emit(node.children[i].token.text)
+        if node.children[i].is_variadic {
+            codegen_emit(", ...")
+        }
+        i = i + 1
+    }
 }
 
 func generate_enum_declaration(ASTNode? node) {
     if node == null { return }
-    print(\"typedef enum {\n\")
-    print(\"} \")
-    print(node.token.text)
-    print(\";\n\n\")
+    // Plain enums are a real C enum. Variant-carrying enums (tagged unions)
+    // are not ported yet.
+    bool has_variants = false
+    int i = 0
+    while i < len(node.children) {
+        if node.children[i].kind == AST_VARIANT {
+            has_variants = true
+            break
+        }
+        i = i + 1
+    }
+    if has_variants {
+        return
+    }
+    codegen_emit("typedef enum ")
+    codegen_emit(node.token.text)
+    codegen_emit(" {\n")
+    g_indent_level = g_indent_level + 1
+    i = 0
+    int n = len(node.children)
+    while i < n {
+        write_indent()
+        codegen_emit(node.children[i].token.text)
+        if node.children[i].left != null {
+            codegen_emit(" = ")
+            generate_expression(node.children[i].left)
+        }
+        if i < n - 1 {
+            codegen_emit(",")
+        }
+        codegen_emit("\n")
+        i = i + 1
+    }
+    g_indent_level = g_indent_level - 1
+    codegen_emit("} ")
+    codegen_emit(node.token.text)
+    codegen_emit(";\n\n")
 }
 
 func generate_trait_declaration(ASTNode? node) {
     if node == null { return }
 }
 
+func generate_constructor(str class_name, ASTNode? node) {
+    if node == null { return }
+    g_class_vars = null
+    track_class_var("self", class_name)
+    int param_i = 0
+    while param_i < len(node.children) {
+        if node.children[param_i].is_pointer ||
+           node.children[param_i].is_class ||
+           codegen_is_class_name(node.children[param_i].var_type.text) {
+            track_class_var(node.children[param_i].token.text,
+                            node.children[param_i].var_type.text)
+        }
+        param_i = param_i + 1
+    }
+    codegen_emit("void ")
+    codegen_emit(class_name)
+    codegen_emit("_new(")
+    codegen_emit(class_name)
+    codegen_emit("* self")
+    int i = 0
+    while i < len(node.children) {
+        codegen_emit(", ")
+        codegen_emit_c_type(
+            node.children[i].var_type,
+            node.children[i].is_array,
+            node.children[i].is_pointer || node.children[i].is_class)
+        codegen_emit(" ")
+        codegen_emit(node.children[i].token.text)
+        i = i + 1
+    }
+    codegen_emit(") ")
+    if node.left != null {
+        generate_block(node.left)
+    } else {
+        codegen_emit("{")
+        codegen_emit("}\n")
+    }
+    codegen_emit("\n")
+}
+
 func generate_function(ASTNode? node, str prefix) {
     if node == null { return }
-    if node.token.text == \"main\" {
-        print(\"int main(int argc, char** argv) {\n\")
-        if node.left != null {
-            generate_block(node.left)
-        }
-        print(\"    return 0;\n\")
-        print(\"}\n\n\")
-    } else {
-        print(\"void \")
-        print(node.token.text)
-        print(\"()\n\")
-        if node.left != null {
-            generate_block(node.left)
-        }
-        print(\"\n\n\")
+    bool was_in_function = g_codegen_in_function
+    g_codegen_in_function = true
+    bool outer_returns_void = g_codegen_func_returns_void
+    int start = codegen_output_len()
+    if node.is_generator {
+        str gen_name = node.token.text
+        if len(prefix) > 0 { gen_name = prefix + "_" + gen_name }
+        bool gen_old_top_level = g_codegen_top_level
+        g_codegen_top_level = false
+        generate_generator_code(node, gen_name)
+        g_codegen_top_level = gen_old_top_level
+        g_codegen_in_function = was_in_function
+        g_codegen_func_returns_void = outer_returns_void
+        if !was_in_function { flush_lambda_helpers(start) }
+        return
     }
+    ASTNode? saved_capture_params = g_capture_cell_params
+    g_capture_cell_params = node
+    bool is_main = node.kind == AST_MAIN
+    g_codegen_func_returns_void = !is_main && node.return_type.kind == TOKEN_EOF
+    // generate_program marks the declaration currently being emitted as
+    // top-level. Its body is not file scope: without clearing this flag a
+    // local `new Klass()` emits a GCC constructor function inside `main`.
+    bool old_top_level = g_codegen_top_level
+    g_codegen_top_level = false
+    g_class_vars = null
+    if is_main {
+        codegen_emit("int main(int argc, char** argv) ")
+    } else {
+        codegen_emit_c_type(node.return_type, node.is_array, node.is_pointer)
+        codegen_emit(" ")
+        if len(prefix) > 0 {
+            codegen_emit(prefix)
+            codegen_emit("_")
+        }
+        codegen_emit(node.token.text)        codegen_emit("(")
+        int i = 0
+        int n = len(node.children)
+        while i < n {
+            if i > 0 { codegen_emit(", ") }
+            codegen_emit_c_type(
+                node.children[i].var_type,
+                node.children[i].is_array,
+                node.children[i].is_pointer || node.children[i].is_class)
+            codegen_emit(" ")
+            codegen_emit(node.children[i].token.text)
+            if node.children[i].is_variadic {
+                codegen_emit(", ...")
+            }
+            i = i + 1
+        }
+        // Match stage 0's function definition delimiter. generate_block
+        // writes the opening brace immediately after this.
+        codegen_emit(") ")
+        i = 0
+        while i < n {
+            if node.children[i].var_type.kind == TOKEN_IDENTIFIER &&
+               (node.children[i].is_pointer || node.children[i].is_class ||
+                codegen_is_class_name(node.children[i].var_type.text)) {
+                track_class_var(node.children[i].token.text, node.children[i].var_type.text)
+            }
+            i = i + 1
+        }
+    }
+    if node.left != null {
+        if is_main {
+            codegen_emit("{\n    cnext_init_args(argc, argv);\n")
+            g_indent_level = 1
+            codegen_push_closure_scope()
+            if g_codegen_test_count > 0 {
+                write_indent()
+                codegen_emit("int _cnext_tp = 0, _cnext_tf = 0;\n")
+                int ti = 0
+                while ti < g_codegen_test_count {
+                    write_indent()
+                    codegen_emit("if (_cnext_test_")
+                    codegen_emit(to_str(ti))
+                    codegen_emit("()) ")
+                    codegen_emit("{")
+                    codegen_emit(" _cnext_tp++; } else ")
+                    codegen_emit("{")
+                    codegen_emit(" _cnext_tf++; }\n")
+                    ti = ti + 1
+                }
+                write_indent()
+                codegen_emit("printf(\"Tests: %d passed, %d failed\\n\", _cnext_tp, _cnext_tf);\n")
+                write_indent()
+                codegen_emit("if (_cnext_tf > 0) ")
+                codegen_emit("{")
+                codegen_emit(" _cnext_free_all(); return 1; }\n")
+            }
+            int i = 0
+            int n = len(node.left.children)
+            while i < n {
+                generate_statement(node.left.children[i])
+                i = i + 1
+            }
+            codegen_pop_closure_scope()
+            codegen_emit("    _cnext_free_all();\n    return 0;\n}\n\n")
+            g_indent_level = 0
+        } else {
+            generate_block(node.left)
+            codegen_emit("\n")
+        }
+    } else {
+        codegen_emit("{}\n")    }
+    g_codegen_top_level = old_top_level
+    g_codegen_in_function = was_in_function
+    g_codegen_func_returns_void = outer_returns_void
+    g_capture_cell_params = saved_capture_params
+    if !was_in_function { flush_lambda_helpers(start) }
 }
 
 func generate_block(ASTNode? node) {
-    if node == null { return }
+    if node == null {
+        codegen_emit("{}\n")
+        return
+    }
+    codegen_emit("{\n")
+    g_indent_level = g_indent_level + 1
+    codegen_push_closure_scope()
+    if g_capture_cell_params != null && same_declaration(g_capture_cell_params.left, node) {
+        int pi = 0
+        while pi < len(g_capture_cell_params.children) {
+            ASTNode? param = g_capture_cell_params.children[pi]
+            if param.capture_cell {
+                write_indent()
+                emit_capture_cell(param, true)
+            }
+            pi = pi + 1
+        }
+    }
     int i = 0
     int n = len(node.children)
     while i < n {
         generate_statement(node.children[i])
         i = i + 1
     }
+    codegen_pop_closure_scope()
+    g_indent_level = g_indent_level - 1
+    write_indent()
+    codegen_emit("}\n")
 }
 
 func generate_var_declaration(ASTNode? node) {
     if node == null { return }
+    // Top-level `const` declarations reached here are constexprs in stage 0;
+    // nested consts keep the `const ` prefix on the declaration.
+    if node.is_const { codegen_emit("const ") }
+    if node.is_array {
+        generate_node_type(node, false)
+        codegen_emit(" ")
+        codegen_emit(node.token.text)
+        if node.init != null && node.init.kind == AST_LITERAL_ARRAY {
+            codegen_emit(" = ")
+            generate_array_value(node, node.init)
+        } else if node.init != null && node.init.kind == AST_SLICE {
+            codegen_emit(";\n")
+            write_indent()
+            codegen_emit("CNEXT_SLICE_TO(")
+            codegen_emit(node.token.text)
+            codegen_emit(", ")
+            generate_expression(node.init.left)
+            codegen_emit(", ")
+            if node.init.init != null {
+                generate_expression(node.init.init)
+            } else {
+                codegen_emit("0")
+            }
+            codegen_emit(", ")
+            if node.init.right != null {
+                generate_expression(node.init.right)
+            } else {
+                generate_expression(node.init.left)
+                codegen_emit(".length")
+            }
+            codegen_emit(")")
+        }
+        codegen_emit(";\n")
+        return
+    }
+    if node.init != null && node.init.kind == AST_NEW_EXPR {
+        if len(node.init.type_args) > 0 {
+            codegen_emit(class_mangled_name(node.init))
+            codegen_emit("* ")
+        } else {
+            generate_node_type(node, true)
+            codegen_emit(" ")
+        }
+    } else {
+        generate_node_type(node, node.is_pointer || node.is_class)
+        codegen_emit(" ")
+    }
+    codegen_emit(node.token.text)
+    if node.init != null {
+        // Propagate the declared type to the initializer so null literals
+        // emit (CnextString){NULL, 0} instead of bare NULL.
+        if node.init.kind == AST_NULL_LITERAL {
+            if node.var_type.kind == TOKEN_STR_TYPE {
+                node.init.expr_type = TOKEN_STR_TYPE
+            }
+        }
+        if g_codegen_top_level && node.init.kind == AST_NEW_EXPR {
+            // `new` expands to a GCC statement expression, which is not a
+            // constant expression and is not even legal at file scope. Declare
+            // the global uninitialized and fill it in from a constructor
+            // function, which runs before main.
+            codegen_emit(";\n")
+            codegen_emit("static void __attribute__((constructor)) _cnext_init_")
+            codegen_emit(node.token.text)
+            codegen_emit("(void) {\n")
+            codegen_emit(node.token.text)
+            codegen_emit(" = ")
+            generate_expression(node.init)
+            codegen_emit(";\n}\n")
+            return
+        }
+        codegen_emit(" = ")
+        if node.var_type.kind == TOKEN_FUNC { emit_owned_closure(node.init) }
+        else { generate_expression(node.init) }
+    }
+    codegen_emit(";\n")
+    if node.init != null && node.var_type.kind == TOKEN_FUNC {
+        codegen_register_closure(node.token.text)
+    }
+    // Record class-typed locals so member accesses on them use `->`.
+    if !g_codegen_top_level && !node.is_array &&
+       node.var_type.kind == TOKEN_IDENTIFIER &&
+       codegen_is_class_name(node.var_type.text) {
+        track_class_var(node.token.text, node.var_type.text)
+    }
+    if node.init != null && node.init.kind == AST_NEW_EXPR {
+        track_class_var(node.token.text, class_mangled_name(node.init))
+    }
+}
+
+func track_global_class_vars() {
+    if g_codegen_program == null { return }
+    int i = 0
+    while i < len(g_codegen_program.children) {
+        ASTNode? node = g_codegen_program.children[i]
+        if node != null && node.kind == AST_VAR_DECL {
+            if node.var_type.kind == TOKEN_IDENTIFIER &&
+               codegen_is_class_name(node.var_type.text) {
+                var cv = new ClassVar(node.token.text, node.var_type.text)
+                cv.next = g_global_class_vars
+                g_global_class_vars = cv
+            } else if node.is_pointer || node.is_class {
+                var cv = new ClassVar(node.token.text, node.var_type.text)
+                cv.next = g_global_class_vars
+                g_global_class_vars = cv
+            } else if node.init != null && node.init.kind == AST_NEW_EXPR {
+                var cv = new ClassVar(node.token.text, node.init.token.text)
+                cv.next = g_global_class_vars
+                g_global_class_vars = cv
+            } else {
+                str inferred_class = codegen_inferred_class(node.init)
+                if len(inferred_class) > 0 {
+                    var cv = new ClassVar(node.token.text, inferred_class)
+                    cv.next = g_global_class_vars
+                    g_global_class_vars = cv
+                }
+            }
+        }
+        i = i + 1
+    }
+}
+
+
+func codegen_inferred_class(ASTNode? init): str {
+
+    if init == null { return "" }
+    if g_codegen_program == null { return "" }
+    if init.kind == AST_NEW_EXPR { return init.token.text }
+    if init.kind == AST_IDENTIFIER {
+        return lookup_class_var(init.token.text)
+    }
+    if init.kind == AST_MEMBER_ACCESS {
+        str member_type = codegen_pointer_member_type(init)
+        if len(member_type) > 0 { return member_type }
+    }
+    if init.kind == AST_INDEX && init.left != null {
+        if init.left.var_type.kind == TOKEN_IDENTIFIER {
+            return init.left.var_type.text
+        }
+    }
+    if init.var_type.kind == TOKEN_IDENTIFIER &&
+       (init.is_pointer || init.is_class) {
+        return init.var_type.text
+    }
+    if init.kind == AST_CALL && init.left != null &&
+       init.left.kind == AST_IDENTIFIER {
+        int i = 0
+        while i < len(g_codegen_program.children) {
+            ASTNode? declaration = g_codegen_program.children[i]
+            if declaration != null && declaration.kind == AST_FUNC_DECL &&
+               declaration.token.text == init.left.token.text &&
+               declaration.return_type.kind == TOKEN_IDENTIFIER &&
+               (declaration.is_pointer || declaration.is_class) {
+                return declaration.return_type.text
+            }
+            i = i + 1
+        }
+    }
+    return ""
+}
+
+func import_is_std_module(str name): bool {
+    if name == "io" { return true }
+    if name == "file" { return true }
+    if name == "net" { return true }
+    if name == "json" { return true }
+    if name == "math" { return true }
+    if name == "os" { return true }
+    if name == "string_utils" { return true }
+    if name == "time" { return true }
+    if name == "regex" { return true }
+    if name == "collections" { return true }
+    if name == "crypto" { return true }
+    if name == "path" { return true }
+    if name == "encoding" { return true }
+    if name == "process" { return true }
+    if name == "random" { return true }
+    if name == "thread" { return true }
+    if name == "http" { return true }
+    if name == "log" { return true }
+    if name == "args" { return true }
+    if name == "fmt" { return true }
+    return false
 }
 
 func generate_import(ASTNode? node) {
     if node == null { return }
+    str module_name = node.token.text
+    if !import_is_std_module(module_name) {
+        // Stage 0 emits no include for user modules.
+        return
+    }
+    str header_name = module_name + ".h"
+    if module_name == "io" { header_name = "cnext_io.h" }
+    if module_name == "time" { header_name = "cnext_time.h" }
+    if module_name == "process" { header_name = "cnext_process.h" }
+    if module_name == "http" { header_name = "http.h" }
+    codegen_emit("#include \"")
+    codegen_emit(header_name)
+    codegen_emit("\"\n")
 }
 
 func generate_extern_declaration(ASTNode? node) {
     if node == null { return }
+    int i = 0
+    while i < len(node.children) {
+        var declaration = node.children[i]
+        if declaration.kind == AST_FUNC_DECL {
+            generate_type(declaration.return_type, false)
+            codegen_emit(" " + declaration.token.text + "(")
+            int j = 0
+            while j < len(declaration.children) {
+                if j > 0 { codegen_emit(", ") }
+                var parameter = declaration.children[j]
+                generate_node_type(parameter, parameter.is_variadic)
+                codegen_emit(" " + parameter.token.text)
+                if parameter.is_variadic { codegen_emit("...") }
+                j = j + 1
+            }
+            codegen_emit(");\n")
+        }
+        i = i + 1
+    }
+}
+
+// Emits an if / else-if chain without the leading indent (stage 0's AST_IF
+// does not write one; the caller does).
+func emit_if_chain(ASTNode? node) {
+    codegen_emit("if (")
+    generate_expression(node.condition)
+    codegen_emit(") ")
+    generate_block(node.left)
+    if node.right != null {
+        write_indent()
+        codegen_emit("else ")
+        if node.right.kind == AST_IF {
+            emit_if_chain(node.right)
+        } else {
+            generate_block(node.right)
+        }
+    }
 }
 
 func generate_statement(ASTNode? node) {
     if node == null { return }
     if node.kind == AST_EXPR_STMT {
-        print(\"    \")
+        write_indent()
         generate_expression_stmt(node.left)
     } else if node.kind == AST_BLOCK {
+        write_indent()
         generate_block(node)
+    } else if node.kind == AST_CLASS_DECL {
+        write_indent()
+        generate_class_declaration(node)
+    } else if node.kind == AST_STRUCT_DECL {
+        write_indent()
+        generate_struct_declaration(node)
+    } else if node.kind == AST_ENUM_DECL {
+        write_indent()
+        generate_enum_declaration(node)
+    } else if node.kind == AST_FUNC_DECL {
+        // Nested function definitions are legal in GNU C and stage 0 emits
+        // them inline.
+        write_indent()
+        generate_function(node, "")
     } else if node.kind == AST_RETURN {
-        print(\"    return \")
+        write_indent()
+        codegen_emit("return")
         if node.left != null {
-            generate_expression(node.left)
+            codegen_emit(" ")
+            if node.left.expr_type == TOKEN_FUNC {
+                codegen_emit("cnext_closure_escape(")
+                emit_owned_closure(node.left)
+                codegen_emit(")")
+            }
+            else { generate_expression(node.left) }
         }
-        print(\";\n\")
+        codegen_emit(";\n")
+    } else if node.kind == AST_THROW {
+        write_indent()
+        codegen_emit("cnext_throw(")
+        generate_expression(node.left)
+        codegen_emit(");\n")
+    } else if node.kind == AST_DEFER {
+        str id = to_str(g_codegen_defer_counter)
+        g_codegen_defer_counter = g_codegen_defer_counter + 1
+        write_indent()
+        write_indent()
+        codegen_emit("void _cnext_defer_fn_" + id + "(void* _d) ")
+        codegen_emit("{")
+        codegen_emit(" unsigned int* _f_" + id + " = (unsigned int*)_d; if (*_f_" + id + " & 1) ")
+        codegen_emit("{")
+        codegen_emit(" return; } ")
+        if node.left != null {
+            if node.left.kind == AST_BLOCK {
+                generate_block(node.left)
+            } else {
+                generate_expression(node.left)
+                codegen_emit(";")
+            }
+        }
+        codegen_emit(" *_f_" + id + " |= 1; if (!_cnext_unwinding) ")
+        codegen_emit("{")
+        codegen_emit(" _cnext_defer_release((int)(*_f_" + id + " >> 1)); } }\n")
+        write_indent()
+        codegen_emit("unsigned int _cnext_defer_flag_" + id + " __attribute__((cleanup(_cnext_defer_fn_" + id + "))) = (_cnext_defer_count << 1);\n")
+        write_indent()
+        codegen_emit("_cnext_defer_push(_cnext_defer_fn_" + id + ", &_cnext_defer_flag_" + id + ");\n")
+    } else if node.kind == AST_TRY {
+        write_indent()
+        codegen_emit("{\n")
+        g_indent_level = g_indent_level + 1
+        write_indent()
+        codegen_emit("int _try_mark __attribute__((cleanup(_cnext_restore_try_depth))) = _cnext_try_depth;\n")
+        write_indent()
+        codegen_emit("_cnext_push_try();\n")
+        write_indent()
+        codegen_emit("if (setjmp(_cnext_try_stack[_cnext_try_depth - 1].buf) == 0) ")
+        generate_block(node.left)
+        if node.right != null {
+            write_indent()
+            codegen_emit("else {\n")
+            g_indent_level = g_indent_level + 1
+            if len(node.right.token.text) > 0 {
+                write_indent()
+                codegen_emit("CnextString " + node.right.token.text + " = _cnext_error_message;\n")
+            }
+            if node.right.left != null {
+                int ci = 0
+                while ci < len(node.right.left.children) {
+                    generate_statement(node.right.left.children[ci])
+                    ci = ci + 1
+                }
+            }
+            g_indent_level = g_indent_level - 1
+            write_indent()
+            codegen_emit("}\n")
+        }
+        write_indent()
+        codegen_emit("_cnext_restore_try_depth(&_try_mark);\n")
+        if node.condition != null {
+            int fi = 0
+            while fi < len(node.condition.children) {
+                generate_statement(node.condition.children[fi])
+                fi = fi + 1
+            }
+        }
+        g_indent_level = g_indent_level - 1
+        write_indent()
+        codegen_emit("}\n")
+    } else if node.kind == AST_MATCH {
+        int current_match = g_codegen_match_counter
+        g_codegen_match_counter = g_codegen_match_counter + 1
+        str match_var = "_match_" + to_str(current_match)
+        write_indent()
+        codegen_emit("{\n")
+        g_indent_level = g_indent_level + 1
+        write_indent()
+        codegen_emit("__auto_type " + match_var + " = ")
+        generate_expression(node.condition)
+        codegen_emit(";\n")
+        bool first = true
+        int ai = 0
+        while ai < len(node.children) {
+            var arm = node.children[ai]
+            write_indent()
+            if arm.is_const {
+                if arm.condition != null {
+                    if !first { codegen_emit("else ") }
+                    codegen_emit("if (")
+                    generate_expression(arm.condition)
+                    codegen_emit(") ")
+                } else {
+                    if !first { codegen_emit("else ") }
+                }
+            } else if len(arm.children) > 0 {
+                if !first { codegen_emit("else ") }
+                codegen_emit("if (")
+                int ji = 0
+                while ji < len(arm.children) {
+                    if ji > 0 { codegen_emit(" || ") }
+                    codegen_emit(match_var + " == ")
+                    generate_expression(arm.children[ji])
+                    ji = ji + 1
+                }
+                if arm.condition != null {
+                    codegen_emit(" && (")
+                    generate_expression(arm.condition)
+                    codegen_emit(")")
+                }
+                codegen_emit(") ")
+            }
+            if arm.left != null && len(arm.left.children) > 0 {
+                ASTNode? last_stmt = arm.left.children[len(arm.left.children) - 1]
+                if last_stmt != null && last_stmt.kind == AST_EXPR_STMT {
+                    codegen_emit("{\n")
+                    g_indent_level = g_indent_level + 1
+                    int ki = 0
+                    while ki < len(arm.left.children) - 1 {
+                        generate_statement(arm.left.children[ki])
+                        ki = ki + 1
+                    }
+                    write_indent()
+                    if g_codegen_func_returns_void {
+                        generate_expression(last_stmt.left)
+                        codegen_emit(";\n")
+                    } else {
+                        codegen_emit("return ")
+                        generate_expression(last_stmt.left)
+                        codegen_emit(";\n")
+                    }
+                    g_indent_level = g_indent_level - 1
+                    write_indent()
+                    codegen_emit("}\n")
+                } else {
+                    generate_block(arm.left)
+                }
+            } else {
+                if arm.left != null { generate_block(arm.left) }
+            }
+            first = false
+            ai = ai + 1
+        }
+        g_indent_level = g_indent_level - 1
+        write_indent()
+        codegen_emit("}\n")
     } else if node.kind == AST_IF {
-        print(\"    if (\")
-        generate_expression(node.condition)
-        print(\") \")
-        generate_statement(node.left)
-        if node.right != null {
-            print(\" else \")
-            generate_statement(node.right)
-        }
+        write_indent()
+        emit_if_chain(node)
     } else if node.kind == AST_WHILE {
-        print(\"    while (\")
+        write_indent()
+        codegen_emit("while (")
         generate_expression(node.condition)
-        print(\") \")
-        generate_statement(node.left)
+        codegen_emit(") ")
+        generate_block(node.left)
     } else if node.kind == AST_FOR {
-        print(\"    for (\")
-        if node.init != null { generate_statement(node.init) } else { print(\";\") }
-        if node.condition != null { generate_expression(node.condition) } print(\"; \")
-        if node.right != null { generate_expression(node.right) }
-        print(\") \")
-        generate_statement(node.left)
-    } else if node.kind == AST_VAR_DECL {
-        print(\"    \")
-        print(\"auto \")
-        print(node.token.text)
-        print(\" = \")
-        if node.right != null {
-            generate_expression(node.right)
-        } else {
-            print(\"0\")
+        write_indent()
+        codegen_emit("for (")
+        if node.init != null && node.init.kind == AST_VAR_DECL {
+            generate_type(node.init.var_type, false)
+            codegen_emit(" ")
+            codegen_emit(node.init.token.text)
+            if node.init.init != null {
+                codegen_emit(" = ")
+                generate_expression(node.init.init)
+            }
+        } else if node.init != null && node.init.kind == AST_ASSIGN {
+            generate_expression(node.init.left)
+            codegen_emit(" ")
+            codegen_emit(node.init.token.text)
+            codegen_emit(" ")
+            generate_expression(node.init.right)
+        } else if node.init != null && node.init.kind == AST_EXPR_STMT {
+            generate_expression(node.init.left)
         }
-        print(\";\n\")
+        codegen_emit("; ")
+        if node.condition != null { generate_expression(node.condition) }
+        codegen_emit("; ")
+        if node.increment != null && node.increment.kind == AST_ASSIGN {
+            generate_expression(node.increment.left)
+            codegen_emit(" ")
+            codegen_emit(node.increment.token.text)
+            codegen_emit(" ")
+            generate_expression(node.increment.right)
+        } else if node.increment != null && node.increment.kind == AST_EXPR_STMT {
+            generate_expression(node.increment.left)
+        } else if node.increment != null {
+            generate_expression(node.increment)
+        }
+        codegen_emit(") ")
+        generate_block(node.left)
+    } else if node.kind == AST_FOR_IN {
+        write_indent()
+        int current_loop = g_loop_counter
+        g_loop_counter = g_loop_counter + 1
+        bool is_generator_call = false
+        str gen_func_name = ""
+        if node.condition != null && node.condition.kind == AST_CALL &&
+           node.condition.left != null &&
+           node.condition.left.kind == AST_IDENTIFIER {
+            var fdecl = codegen_find_func_decl(node.condition.left.token.text)
+            if fdecl != null && fdecl.is_generator {
+                is_generator_call = true
+                gen_func_name = node.condition.left.token.text
+            }
+        }
+        if is_generator_call {
+            codegen_emit("{\n")
+            g_indent_level = g_indent_level + 1
+            write_indent()
+            codegen_emit("_gen_")
+            codegen_emit(gen_func_name)
+            codegen_emit("_frame* _iter")
+            codegen_emit(to_str(current_loop))
+            codegen_emit(" = ")
+            generate_expression(node.condition)
+            codegen_emit(";\n")
+            write_indent()
+            codegen_emit("while (_gen_")
+            codegen_emit(gen_func_name)
+            codegen_emit("_next(_iter")
+            codegen_emit(to_str(current_loop))
+            codegen_emit(")) {\n")
+            g_indent_level = g_indent_level + 1
+            write_indent()
+            codegen_emit("__auto_type ")
+            codegen_emit(node.init.token.text)
+            codegen_emit(" = _iter")
+            codegen_emit(to_str(current_loop))
+            codegen_emit("->current;\n")
+            int bi = 0
+            while bi < len(node.left.children) {
+                generate_statement(node.left.children[bi])
+                bi = bi + 1
+            }
+            g_indent_level = g_indent_level - 1
+            write_indent()
+            codegen_emit("}\n")
+            g_indent_level = g_indent_level - 1
+            write_indent()
+            codegen_emit("}\n")
+        } else if node.condition.kind == AST_RANGE ||
+                  node.condition.kind == AST_RANGE_INCLUSIVE {
+            codegen_emit("for (int ")
+            codegen_emit(node.init.token.text)
+            codegen_emit(" = ")
+            generate_expression(node.condition.left)
+            codegen_emit("; ")
+            codegen_emit(node.init.token.text)
+            if node.condition.kind == AST_RANGE_INCLUSIVE {
+                codegen_emit(" <= ")
+            } else {
+                codegen_emit(" < ")
+            }
+            generate_expression(node.condition.right)
+            codegen_emit("; ")
+            codegen_emit(node.init.token.text)
+            codegen_emit(" = ")
+            codegen_emit(node.init.token.text)
+            codegen_emit(" + 1) ")
+            generate_block(node.left)
+        } else {
+            codegen_emit("{ __auto_type _src")
+            codegen_emit(to_str(current_loop))
+            codegen_emit(" = (")
+            generate_expression(node.condition)
+            codegen_emit("); for (size_t _i")
+            codegen_emit(to_str(current_loop))
+            codegen_emit(" = 0; _i")
+            codegen_emit(to_str(current_loop))
+            codegen_emit(" < _src")
+            codegen_emit(to_str(current_loop))
+            codegen_emit(".length; _i")
+            codegen_emit(to_str(current_loop))
+            codegen_emit("++) {\n")
+            g_indent_level = g_indent_level + 1
+            write_indent()
+            codegen_emit("__auto_type ")
+            codegen_emit(node.init.token.text)
+            codegen_emit(" = _src")
+            codegen_emit(to_str(current_loop))
+            codegen_emit(".data[_i")
+            codegen_emit(to_str(current_loop))
+            codegen_emit("];\n")
+            int bi = 0
+            while bi < len(node.left.children) {
+                generate_statement(node.left.children[bi])
+                bi = bi + 1
+            }
+            g_indent_level = g_indent_level - 1
+            write_indent()
+            codegen_emit("}\n")
+            write_indent()
+            codegen_emit("}\n")
+        }
+    } else if node.kind == AST_BREAK {
+        write_indent()
+        codegen_emit("break;\n")
+    } else if node.kind == AST_CONTINUE {
+        write_indent()
+        codegen_emit("continue;\n")
+    } else if node.kind == AST_SWITCH {
+        write_indent()
+        codegen_emit("switch (")
+        generate_expression(node.condition)
+        codegen_emit(") {\n")
+        g_indent_level = g_indent_level + 1
+        int i = 0
+        while i < len(node.children) {
+            generate_statement(node.children[i])
+            i = i + 1
+        }
+        g_indent_level = g_indent_level - 1
+        write_indent()
+        codegen_emit("}\n")
+    } else if node.kind == AST_CASE {
+        write_indent()
+        codegen_emit("case ")
+        generate_expression(node.condition)
+        codegen_emit(":\n")
+        g_indent_level = g_indent_level + 1
+        if node.left != null {
+            int i = 0
+            while i < len(node.left.children) {
+                generate_statement(node.left.children[i])
+                i = i + 1
+            }
+        }
+        write_indent()
+        codegen_emit("break;\n")
+        g_indent_level = g_indent_level - 1
+    } else if node.kind == AST_DEFAULT {
+        write_indent()
+        codegen_emit("default:\n")
+        g_indent_level = g_indent_level + 1
+        if node.left != null {
+            int i = 0
+            while i < len(node.left.children) {
+                generate_statement(node.left.children[i])
+                i = i + 1
+            }
+        }
+        write_indent()
+        codegen_emit("break;\n")
+        g_indent_level = g_indent_level - 1
+    } else if node.kind == AST_ASSERT {
+        write_indent()
+        codegen_emit("if (!(")
+        generate_expression(node.left)
+        codegen_emit(")) {\n")
+        g_indent_level = g_indent_level + 1
+        if g_codegen_in_test {
+            write_indent()
+            codegen_emit("_cnext_test_ok = false;\n")
+            write_indent()
+            codegen_emit("fprintf(stderr, \"  FAIL [line %d]\\n\", ")
+            codegen_emit(to_str(node.token.line))
+            codegen_emit(");\n")
+        } else {
+            // Stage 0 writes the indent twice before the FAIL line.
+            write_indent()
+            write_indent()
+            codegen_emit("fprintf(stderr, \"  FAIL [line %d]\\n\", ")
+            codegen_emit(to_str(node.token.line))
+            codegen_emit(");\n")
+            write_indent()
+            codegen_emit("_cnext_free_all();\n")
+            write_indent()
+            codegen_emit("exit(1);\n")
+        }
+        g_indent_level = g_indent_level - 1
+        write_indent()
+        codegen_emit("}\n")
+    } else if node.kind == AST_VAR_DECL {
+        // Track class-typed locals so member accesses use `->`.
+        if !node.is_array && node.var_type.kind == TOKEN_IDENTIFIER &&
+           (node.is_pointer || node.is_class ||
+            codegen_is_class_name(node.var_type.text)) {
+            track_class_var(node.token.text, node.var_type.text)
+        } else if node.init != null && node.init.kind == AST_NEW_EXPR {
+            track_class_var(node.token.text, class_mangled_name(node.init))
+        } else {
+            str inferred_class = codegen_inferred_class(node.init)
+            if len(inferred_class) > 0 {
+                track_class_var(node.token.text, inferred_class)
+            }
+        }
+        write_indent()
+        if node.capture_cell {
+            emit_capture_cell(node, false)
+        } else {
+            generate_var_declaration(node)
+        }
+    } else if node.kind == AST_ASSIGN {
+        write_indent()
+        if node.right != null && node.right.kind == AST_SLICE {
+            codegen_emit("CNEXT_SLICE_TO(")
+            generate_expression(node.left)
+            codegen_emit(", ")
+            generate_expression(node.right.left)
+            codegen_emit(", ")
+            if node.right.init != null {
+                generate_expression(node.right.init)
+            } else {
+                codegen_emit("0")
+            }
+            codegen_emit(", ")
+            if node.right.right != null {
+                generate_expression(node.right.right)
+            } else {
+                generate_expression(node.right.left)
+                codegen_emit(".length")
+            }
+            codegen_emit(")")
+        } else {
+            generate_expression(node)
+        }
+        codegen_emit(";\n")
     } else {
-        print(\"    \")
+        write_indent()
         generate_expression(node)
-        print(\";\n\")
+        codegen_emit(";\n")
     }
 }

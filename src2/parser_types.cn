@@ -77,21 +77,22 @@ const int AST_RUN_ASYNC        = 68
 const int AST_ATTRIBUTE        = 69
 const int AST_CONSTEXPR_DECL   = 70
 const int AST_MACRO_INVOCATION = 71
-const int AST_GUARD            = 72
-const int AST_EXTERN_DECL      = 73
-const int AST_BENCH_DECL       = 74
-const int AST_OWN_EXPR         = 75
-const int AST_TYPE_ALIAS       = 76
-const int AST_DEFER            = 77
-const int AST_RANGE            = 78
-const int AST_UNION_TYPE       = 79
-const int AST_STATIC_METHOD    = 80
-const int AST_ABSTRACT_METHOD  = 81
-const int AST_VARIANT          = 82
-const int AST_TRY_EXPR         = 83
-const int AST_RANGE_INCLUSIVE  = 84
-const int AST_WHEN             = 85
-const int AST_WHEN_ARM         = 86
+const int AST_EXTERN_DECL      = 72
+const int AST_BENCH_DECL       = 73
+const int AST_OWN_EXPR         = 74
+const int AST_TYPE_ALIAS       = 75
+const int AST_DEFER            = 76
+const int AST_RANGE            = 77
+const int AST_UNION_TYPE       = 78
+const int AST_STATIC_METHOD    = 79
+const int AST_ABSTRACT_METHOD  = 80
+const int AST_VARIANT          = 81
+const int AST_TRY_EXPR         = 82
+const int AST_RANGE_INCLUSIVE  = 83
+const int AST_WHEN             = 84
+const int AST_WHEN_ARM         = 85
+const int AST_BIT_MATCH        = 86
+const int AST_BIT_EXTRACT      = 87
 
 // Kind-name table (index == AST_xxx constant, matches tools/astdump.c)
 func ast_kind_name(int kind): str {
@@ -108,10 +109,10 @@ func ast_kind_name(int kind): str {
         "DESTRUCTURE", "OPTION_SOME", "OPTION_NONE", "RESULT_OK", "RESULT_ERR",
         "NULL_COALESCE", "TERNARY", "SAFE_ACCESS", "YIELD", "COROUTINE_DECL",
         "RESUME_EXPR", "ASYNC_FUNC_DECL", "AWAIT_EXPR", "RUN_ASYNC", "ATTRIBUTE",
-        "CONSTEXPR_DECL", "MACRO_INVOCATION", "GUARD", "EXTERN_DECL", "BENCH_DECL",
+        "CONSTEXPR_DECL", "MACRO_INVOCATION", "EXTERN_DECL", "BENCH_DECL",
         "OWN_EXPR", "TYPE_ALIAS", "DEFER", "RANGE", "UNION_TYPE", "STATIC_METHOD",
         "ABSTRACT_METHOD", "VARIANT", "TRY_EXPR", "RANGE_INCLUSIVE", "WHEN",
-        "WHEN_ARM"
+        "WHEN_ARM", "BIT_MATCH", "BIT_EXTRACT"
     }
     if kind >= 0 && kind < len(names) {
         return names[kind]
@@ -172,6 +173,11 @@ class ASTNode {
     Token return_type
     // Resolved expression type
     int expr_type
+    ASTNode? binding         // declaration resolved for an identifier
+    ASTNode? closure_signature // borrowed lambda signature for function results
+    int lambda_depth        // -1 for globals, 0 in a named function
+    bool capture_cell_candidate
+    bool capture_cell
 
     // Boolean flags
     bool is_const

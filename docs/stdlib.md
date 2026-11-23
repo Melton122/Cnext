@@ -17,7 +17,51 @@ var copy = clone(x)         // Deep copy
 swap(a, b)                  // Swap two variables
 ```
 
+## Input
+
+`input()` reads one line. Its type comes from the destination it is assigned
+to, so the same call reads text, a number, or a boolean depending on context:
+
+```cnext
+str name = input("Name: ")     // text
+int age = input("Age: ")       // integer reader
+float ratio = input()          // float reader
+bool ok = input("Continue? ")  // accepts true/false, yes/no, on/off, 1/0
+
+var raw = input()              // no declared type: text
+```
+
+When a whole expression names its type, use an explicit reader. It works
+anywhere, without a destination:
+
+```cnext
+var n = input_int("Count: ")
+var f = input_float()
+var d = input_double()
+var l = input_long()
+var u = input_uint()
+var ul = input_ulong()
+var s = input_ushort()
+var b = input_bool()
+var c = input_char()
+var by = input_byte()
+var ub = input_ubyte()
+var text = input_str()
+```
+
+Typed reads are strict: leading and trailing whitespace is ignored, but a line
+with trailing text (`42abc`), a value outside the destination range, or an
+empty line reads as the type's zero value instead of aborting the program.
+Boolean reads accept `true`, `false`, `t`, `f`, `yes`, `no`, `y`, `n`, `on`,
+`off`, `1`, and `0` in any capitalization. `input_key()` reads a single key
+without waiting for Enter.
+
 ## Type Conversion
+
+For C interoperability, `to_cstr(str)` creates an owned `CStr` copy,
+`from_cstr(CStr)` creates a `str` copy, and `cstr_free(CStr)` releases an owned
+conversion. See [C string conversion](syntax.md#explicit-c-string-conversion)
+for lifetime rules and handling of nulls and embedded zero bytes.
 
 ```cnext
 int n = to_int(3.14)            // 3
@@ -142,6 +186,20 @@ str output = sys_shell("ls")    // Execute and capture output
 shell. They are intentionally powerful and must never receive untrusted or
 partially trusted input. Prefer dedicated file, HTTP, and process APIs when
 possible; Cnext does not escape or validate shell syntax for you.
+
+To run a program with untrusted arguments, use `process_spawn` instead: it
+takes an argv-style array and starts no shell, so no argument can turn into
+command syntax.
+
+```cnext
+import process
+
+str[] args = {"git", "log", "--oneline", "-n", "5"}
+int status = process_spawn(args)   // 0 on success, 127 if not started
+```
+
+See [process-safety.md](process-safety.md) for the full comparison and the
+quoting rules that apply on Windows.
 
 ## JSON Functions
 

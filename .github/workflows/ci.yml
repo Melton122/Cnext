@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_call:
   push:
     branches: [ main, master ]
   pull_request:
@@ -20,6 +21,9 @@ jobs:
     
     steps:
     - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
     
     - name: Install Dependencies (Linux)
       if: runner.os == 'Linux'
@@ -27,7 +31,13 @@ jobs:
       
     - name: Install Dependencies (macOS)
       if: runner.os == 'macOS'
-      run: brew install gcc make curl
+      run: |
+        brew install gcc make curl
+        gcc_path=$(find "$(brew --prefix gcc)/bin" -name 'gcc-[0-9]*' | head -n 1)
+        mkdir -p "$RUNNER_TEMP/cnext-toolchain"
+        ln -s "$gcc_path" "$RUNNER_TEMP/cnext-toolchain/gcc"
+        echo "$RUNNER_TEMP/cnext-toolchain" >> "$GITHUB_PATH"
+        echo "CC=gcc" >> "$GITHUB_ENV"
       
     - name: Install Make (Windows)
       if: runner.os == 'Windows'
@@ -43,16 +53,34 @@ jobs:
       run: make test
       
     - name: Run Python Tests
-      if: runner.os != 'Windows'
-      continue-on-error: ${{ runner.os == 'macOS' }}
-      run: python3 tests/run_tests.py || python tests/run_tests.py
+      run: python tests/run_tests.py
+
+    - name: Run C interoperability build tests
+      run: python tests/test_native_linking.py
 
     - name: Run LSP Tests
-      if: runner.os != 'Windows'
-      run: python3 tests/test_lsp.py || python tests/test_lsp.py
+      run: python tests/test_lsp.py
 
     - name: Self-hosting lexer parity
       run: make parity
+
+    - name: Self-hosted compiler
+      run: make self-build
+
+    - name: Stage 1 bootstrap programs
+      run: python tests/test_bootstrap_codegen.py --stage1 build/selfhost/stage1_exe${{ runner.os == 'Windows' && '.exe' || '' }}
+
+    - name: Stage 2 bootstrap programs
+      run: python tests/test_bootstrap_codegen.py --stage1 build/selfhost/stage2_exe${{ runner.os == 'Windows' && '.exe' || '' }}
+
+    - name: Stage 1 build and run CLI
+      run: python tests/test_selfhost_cli.py --compiler build/selfhost/stage1_exe${{ runner.os == 'Windows' && '.exe' || '' }}
+
+    - name: Stage 2 build and run CLI
+      run: python tests/test_selfhost_cli.py --compiler build/selfhost/stage2_exe${{ runner.os == 'Windows' && '.exe' || '' }}
+
+    - name: MSVC defer lowering and captures
+      run: make msvc-defer-test
 
     - name: Performance Benchmark
       run: make bench

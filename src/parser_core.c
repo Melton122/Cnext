@@ -25,7 +25,43 @@ void print_caret(Token* token) {
     print_caret_at(parser_source, token->line, col, token->length);
 }
 
-void error_at(Token* token, const char* message) {
+static int token_column(Token* token) {
+    if (token->column > 0) return token->column;
+    if (!parser_source || !token->start) return 1;
+    int col = 1;
+    const char* p = parser_source;
+    int current_line = 1;
+    while (*p && current_line < token->line) {
+        if (*p == '\n') current_line++;
+        p++;
+    }
+    while (*p && *p != '\n' && p < token->start) {
+        col++;
+        p++;
+    }
+    return col;
+}
+
+static char* token_found_text(Token* token) {
+    char* text = NULL;
+    if (token->type == TOKEN_EOF) {
+        text = (char*)checked_malloc(16);
+        snprintf(text, 16, "end of file");
+    } else if (token->type == TOKEN_ERROR) {
+        text = (char*)checked_malloc(2);
+        text[0] = '\0';
+    } else {
+        int length = token->length > 0 ? token->length : 0;
+        text = (char*)checked_malloc((size_t)length + 3);
+        text[0] = '\'';
+        if (length > 0 && token->start) memcpy(text + 1, token->start, (size_t)length);
+        text[length + 1] = '\'';
+        text[length + 2] = '\0';
+    }
+    return text;
+}
+
+void error_at_expected(Token* token, const char* message, const char* expected) {
     if (parser.panic_mode) return;
     parser.panic_mode = true;
     parser.had_error = true;
@@ -56,11 +92,16 @@ void error_at(Token* token, const char* message) {
         snprintf(full_msg, sizeof(full_msg), "%s at '%.*s'", message, token->length, token->start);
     }
 
-    diag_emit(DIAG_ERROR, code, token->line, 0, full_msg, hint, NULL);
-    print_source_line(token->line);
-    if (token->type != TOKEN_EOF && token->type != TOKEN_ERROR) {
-        print_caret(token);
-    }
+    char* found = token_found_text(token);
+    int col = token_column(token);
+    int length = (token->type == TOKEN_EOF || token->type == TOKEN_ERROR) ? 1 : token->length;
+    diag_emit_context(DIAG_ERROR, code, token->line, col, length,
+                      parser_source, full_msg, expected, found, hint, NULL);
+    free(found);
+}
+
+void error_at(Token* token, const char* message) {
+    error_at_expected(token, message, NULL);
 }
 
 void error_at_current(const char* message) {
@@ -85,7 +126,7 @@ void consume(CnextTokenType type, const char* message) {
         advance_token();
         return;
     }
-    error_at_current(message);
+    error_at_expected(&parser.current, message, message);
 }
 
 bool check(CnextTokenType type) {

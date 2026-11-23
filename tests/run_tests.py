@@ -217,6 +217,24 @@ def main():
         print(f"[{status}] examples/{example}: {msg}")
 
     negative_tests = [
+        ("return_type", 'func ready(): bool { return "yes" }\nmain { printin(ready()) }', "Return type mismatch"),
+        ("return_integer_as_text", 'func name(): str { return 123 }\nmain {}', "Return type mismatch"),
+        ("return_null_as_int", 'func n(): int { return null }\nmain {}', "Return type mismatch"),
+        ("field_layout_variable", 'main { str p = "#"\nprintin(1 ~> p) }', "quoted field layout"),
+        ("field_layout_empty", 'main { printin(1 ~> "") }', "1 to 64 bits"),
+        ("field_layout_wide", 'main { printin(1 ~> "' + "#" * 65 + '") }', "1 to 64 bits"),
+        ("field_layout_unselected", 'main { printin(1 ~> "?_?") }', "select at least one bit"),
+        ("field_layout_split", 'main { printin(1 ~> "#_?_#") }', "one contiguous field"),
+        ("field_layout_digit", 'main { printin(1 ~> "#1") }', "only #, ? and _"),
+        ("field_layout_float", 'main { printin(0.5 ~> "#") }', "integer operand"),
+        ("field_layout_array", 'main { int[] a = {1}\nprintin(a ~> "#") }', "integer operand"),
+        ("bit_pattern_digit", 'main { printin(1 ~= "12") }', "only 0, 1, ? and _"),
+        ("bit_pattern_empty", 'main { printin(1 ~= "_") }', "1 to 64 bits"),
+        ("bit_pattern_width", 'main { printin(1 ~= "' + "?" * 65 + '") }', "1 to 64 bits"),
+        ("bit_pattern_variable", 'main { str p = "1"\nprintin(1 ~= p) }', "quoted bit pattern"),
+        ("bit_pattern_float", 'main { printin(1.5 ~= "?") }', "integer operand"),
+        ("bit_pattern_array", 'main { int[] a = {1}\nprintin(a ~= "?") }', "integer operand"),
+        ("bit_pattern_text", 'main { str[] a = {"1"}\nprintin(a[0] ~= "?") }', "integer operand"),
         ("missing_main", "func helper() {\n}\n", "main"),
         ("undeclared_identifier", "main {\n    printin(missing)\n}\n", "Undeclared identifier"),
         ("const_postfix", "main {\n    const int x = 1\n    x++\n}\n", "Cannot mutate const variable"),
@@ -224,7 +242,17 @@ def main():
         ("duplicate_decl", "main {\n    var x = 1\n    var x = 2\n}\n", "already declared"),
         ("break_outside_loop", "main {\n    break\n}\n", "break"),
         ("continue_outside_loop", "main {\n    continue\n}\n", "continue"),
+        ("top_level_defer", "defer printin(\"no\")\nmain {}\n", "Statements cannot appear at the top level"),
+        ("top_level_when", 'when { true => printin("no") }\nmain {}\n', "Statements cannot appear at the top level"),
+        ("top_level_yield", "yield 1\nmain {}\n", "Statements cannot appear at the top level"),
+        ("defer_return", "func f() { defer { return } }\nmain { f() }\n", "Cannot use 'return' inside a deferred body"),
+        ("defer_break", "func f() { while true { defer { break } } }\nmain { f() }\n", "Cannot use 'break' inside a deferred body"),
+        ("defer_continue", "func f() { while true { defer { continue } } }\nmain { f() }\n", "Cannot use 'continue' inside a deferred body"),
+        ("defer_throw", "func f() { defer { throw \"no\" } }\nmain { f() }\n", "Cannot use 'throw' inside a deferred body"),
         ("assign_to_literal", "main {\n    42 = 5\n}\n", "Invalid assignment"),
+        ("assign_type_mismatch", "main {\n    int x = 1\n    x = \"hello\"\n}\n", "Type mismatch in assignment"),
+        ("try_propagation_non_void", "func maybe(): int { return 1 }\nfunc f(): int {\n    maybe()?;\n    return 1\n}\nmain { printin(f()) }\n", "Try expression requires a void function"),
+        ("option_operand_undeclared", "main {\n    var opt = option(missing)\n}\n", "Undeclared identifier"),
         ("missing_brace", "main {\n    var x = 1\n", "}"),
         ("type_mismatch_init", "main {\n    int x = \"hello\"\n}\n", "type"),
     ]
@@ -374,6 +402,10 @@ static pthread_t threads[8];
 static void* worker(void* arg) {
 #endif
     long id = (long)(intptr_t)arg;
+    if (_cnext_try_depth || _cnext_defer_count || _cnext_error_message.data) exit(4);
+    _cnext_push_try();
+    if (setjmp(_cnext_try_stack[0].buf) == 0) cnext_throw_cstr("worker");
+    if (_cnext_try_depth || _cnext_error_message.length != 6) exit(4);
     for (int i = 0; i < 20000; i++) {
         char* buf = (char*)malloc(64 + (i % 256));
         _cnext_track(buf);
@@ -394,6 +426,8 @@ static void* worker(void* arg) {
     return 0;
 }
 int main(void) {
+    _cnext_push_try();
+    _cnext_error_message = (CnextString){"main", 4};
     for (long i = 0; i < 8; i++) {
 #ifdef _WIN32
         threads[i] = CreateThread(NULL, 0, worker, (LPVOID)i, 0, NULL);
@@ -408,6 +442,8 @@ int main(void) {
         pthread_join(threads[i], NULL);
 #endif
     }
+    if (_cnext_try_depth != 1 || _cnext_error_message.length != 4) return 4;
+    _cnext_pop_try();
     printf("THREAD STRESS OK\n");
     return 0;
 }

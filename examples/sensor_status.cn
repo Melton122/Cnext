@@ -1,0 +1,14 @@
+// A sensor sends a status byte. Bits 7 and 6 select the message family.
+// In the 10 family, bits 5 through 3 identify the channel. Bit 0 means ready.
+func describe_status(ubyte status): str {
+    if !(status ~= "10??_????") { return "unknown message" }
+    var channel_id = status ~> "??##_#???"
+    if status ~= "1" { return "sample ready on channel " + to_str(channel_id) }
+    return "waiting for sample on channel " + to_str(channel_id)
+}
+
+main {
+    printin(describe_status(165))
+    printin(describe_status(152))
+    printin(describe_status(37))
+}

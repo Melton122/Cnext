@@ -2,37 +2,33 @@
 
 // Generator support: collect local variables from a block
 
+static void collect_gen_local(ASTNode* stmt, GenLocal** list) {
+    if (!stmt || stmt->type != AST_VAR_DECL) return;
+    for (GenLocal* existing = *list; existing; existing = existing->next) {
+        if (existing->name_len == stmt->token.length &&
+            strncmp(existing->name, stmt->token.start, stmt->token.length) == 0) return;
+    }
+    GenLocal* gl = (GenLocal*)checked_malloc(sizeof(GenLocal));
+    gl->name = checked_strndup(stmt->token.start, stmt->token.length);
+    gl->name_len = stmt->token.length;
+    gl->type = stmt->var_type.type;
+    gl->is_pointer = stmt->is_pointer;
+    gl->is_class = stmt->is_class;
+    gl->next = *list;
+    *list = gl;
+}
+
 void collect_locals_from_block(ASTNode* block, GenLocal** list) {
     if (!block) return;
     for (int i = 0; i < block->child_count; i++) {
         ASTNode* stmt = block->children[i];
-        if (stmt->type == AST_VAR_DECL) {
-            GenLocal* existing = *list;
-            bool found = false;
-            while (existing) {
-                if (existing->name_len == stmt->token.length &&
-                    strncmp(existing->name, stmt->token.start, stmt->token.length) == 0) {
-                    found = true;
-                    break;
-                }
-                existing = existing->next;
-            }
-            if (!found) {
-                GenLocal* gl = (GenLocal*)checked_malloc(sizeof(GenLocal));
-                gl->name = checked_strndup(stmt->token.start, stmt->token.length);
-                gl->name_len = stmt->token.length;
-                gl->type = stmt->var_type.type;
-                gl->is_pointer = stmt->is_pointer;
-                gl->is_class = stmt->is_class;
-                gl->next = *list;
-                *list = gl;
-            }
-        }
+        collect_gen_local(stmt, list);
         if (stmt->type == AST_BLOCK) collect_locals_from_block(stmt, list);
         else if (stmt->type == AST_IF) {
             collect_locals_from_block(stmt->left, list);
             collect_locals_from_block(stmt->right, list);
         } else if (stmt->type == AST_FOR || stmt->type == AST_WHILE || stmt->type == AST_FOR_IN) {
+            if (stmt->type == AST_FOR) collect_gen_local(stmt->init, list);
             collect_locals_from_block(stmt->left, list);
         }
     }
@@ -122,6 +118,8 @@ static void generate_gen_body_node(ASTNode* node, GenLocal* all_vars) {
                         }
                     }
                     if (!lifted) generate_node(node->init);
+                } else if (node->init->type == AST_ASSIGN) {
+                    generate_expression(node->init);
                 } else {
                     generate_node(node->init);
                 }
@@ -132,6 +130,8 @@ static void generate_gen_body_node(ASTNode* node, GenLocal* all_vars) {
             if (node->increment) {
                 if (node->increment->type == AST_EXPR_STMT && node->increment->left) {
                     generate_expression(node->increment->left);
+                } else if (node->increment->type == AST_ASSIGN) {
+                    generate_expression(node->increment);
                 } else {
                     generate_node(node->increment);
                 }

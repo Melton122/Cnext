@@ -1,0 +1,17 @@
+// EXPECT: 42
+// EXPECT: 0
+// EXPECT: 1
+
+// Single declarations and declaration blocks must both call linked C symbols.
+extern "C" func abs(int value): int
+
+extern "C" {
+    func rand(): int
+}
+
+main {
+    printin(abs(-42))
+    printin(abs(0))
+    // C rand() returns a nonnegative int; no particular sequence is assumed.
+    printin(rand() >= 0)
+}

@@ -14,6 +14,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -32,18 +33,23 @@ def main() -> int:
     parser.add_argument("--no-build", action="store_true", help="Skip the rebuild step.")
     args = parser.parse_args()
 
+    candidate = ROOT / "build" / "selfhost" / (
+        "parser_selfhost.exe" if os.name == "nt" else "parser_selfhost"
+    )
     if not args.no_build:
         run([sys.executable, str(ROOT / "tools" / "bundle_src2.py")], check=True)
-        build = run([str(ROOT / "cnext.exe"), "build", "src2/parser_bundle.cn",
-                     "-o", "build/selfhost/parser_selfhost.exe"], capture_output=True, text=True)
+        build = run([str(ROOT / "cnext.exe"), "build", str(ROOT / "src2" / "parser_bundle.cn"),
+                     "-o", str(candidate)], capture_output=True, text=True)
         if build.returncode != 0:
             print(build.stdout)
             print(build.stderr, file=sys.stderr)
             return 2
 
+    # parity_parser.py invokes the candidate through subprocess, so pass an
+    # absolute path: Windows does not accept the forward-slashed relative path
+    # this script used to hand it (CreateProcess reports "file not found").
     cmd = [sys.executable, "-u", str(ROOT / "tests" / "parity_parser.py"),
-           "--ref-binary", "build/selfhost/astdump.exe",
-           "--cand-cmd", "build/selfhost/parser_selfhost.exe {file}",
+           "--cand-cmd", f'"{candidate}" {{file}}',
            "--paths", *args.paths]
     result = run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
 

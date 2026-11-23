@@ -32,12 +32,21 @@ extern bool has_semantic_error;
 extern int loop_depth;
 extern int switch_depth;
 extern int generator_depth;
+extern int defer_depth;
+extern int defer_lambda_depth;
 extern CnextTokenType sem_current_return_type;
+extern Token sem_current_return_token;
+extern int sem_lambda_depth;
+void sem_validate_closure_escape(ASTNode* value);
+void sem_prepare_capture_cells(ASTNode* node, bool local);
+void sem_promote_capture_cells(ASTNode* node, ASTNode* lambda, bool written);
 
 /* --- Core Functions (semantics_scope.c) --- */
 char* copy_cstring(const char* value);
 char* sem_copy_token_text(Token token);
 void report_error(ErrorCode code, int line, const char* message, const char* detail);
+void report_error_expected(ErrorCode code, int line, int col, const char* message,
+                           const char* expected, const char* found);
 void report_token_error(ErrorCode code, Token token, const char* message);
 void sem_push_scope(void);
 void sem_pop_scope(void);
@@ -55,6 +64,11 @@ bool validate_type_token(Token token);
 /* --- Type Helpers (semantics_types.c) --- */
 char* type_name_from_token(Token token);
 bool assignment_types_compatible(Token expected, CnextTokenType actual);
+bool sem_is_cstr_type(Token type);
+bool sem_expr_is_cstr(ASTNode* expr);
+void sem_check_assignment_type(Token expected, ASTNode* value, CnextTokenType actual);
+void sem_check_cstr_conversion(Token expected, ASTNode* actual);
+void sem_report_cstr_error(Token token, const char* message);
 void validate_var_initializer(ASTNode* node);
 void analyze_var_declaration(ASTNode* node);
 void analyze_field_declaration(ASTNode* node);

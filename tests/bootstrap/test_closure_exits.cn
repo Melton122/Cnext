@@ -1,0 +1,32 @@
+extern "C" func bootstrap_tracked_allocations(): int
+
+func early(int base): int {
+    var callback = (int value) => base + value
+    defer printin(callback(2))
+    return callback(1)
+}
+
+func failing() {
+    int base = 3
+    var callback = (int value) => base + value
+    defer printin(callback(2))
+    throw "expected"
+}
+
+main {
+    int before = bootstrap_tracked_allocations()
+    printin(early(10))
+    printin(bootstrap_tracked_allocations() == before)
+    int i = 0
+    while i < 3 {
+        int base = i
+        var callback = (int value) => base + value
+        i++
+        if i < 3 { continue }
+        break
+    }
+    printin(bootstrap_tracked_allocations() == before)
+    try { failing() }
+    catch (str error) { printin("caught") }
+    printin(bootstrap_tracked_allocations() == before)
+}

@@ -1,0 +1,12 @@
+func identity<T>(T value): T {
+    return value
+}
+
+func twice<T>(T value): T {
+    return identity<T>(value) + identity<T>(value)
+}
+
+main {
+    printin(twice<int>(21))
+    printin(identity<str>("selfhost"))
+}

@@ -1,0 +1,9 @@
+// Bootstrap test: conditionals
+main {
+    int x = 5
+    if x > 3 {
+        printin("yes")
+    } else {
+        printin("no")
+    }
+}

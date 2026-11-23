@@ -1,0 +1,51 @@
+extern "C" func bootstrap_tracked_allocations(): int
+
+func make(int base): func {
+    var callback = (int value) => base + value
+    var alias = callback
+    return alias
+}
+
+func direct(int base): func {
+    return (int value) => base + value
+}
+
+func wrap(func callback): func {
+    return (int value) => callback(value) + 1
+}
+
+main {
+    int before = bootstrap_tracked_allocations()
+    {
+        var callback = make(40)
+        var alias = callback
+        {
+            var other = direct(1)
+            callback = other
+        }
+        printin(callback(1))
+        printin(alias(2))
+        callback = callback
+        printin(callback(1))
+        callback = wrap(alias)
+        printin(callback(1))
+        int counter = 0
+        var mutable = (int value) => {
+            counter = counter + value
+            return counter
+        }
+        var escaped = wrap(mutable)
+        printin(escaped(1))
+        str text = "a"
+        var unsafe = (int value) => {
+            text = "b"
+            return len(text)
+        }
+        try { var wrapped = wrap(unsafe) }
+        catch (str error) { printin("indirect reference escape rejected") }
+        try { callback = unsafe }
+        catch (str error) { printin("reference replacement rejected") }
+        printin(callback(1))
+    }
+    printin(bootstrap_tracked_allocations() == before)
+}

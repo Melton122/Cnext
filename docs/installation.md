@@ -50,16 +50,22 @@ sudo cp -r include/* /usr/local/include/
 
 - GCC or Clang (C11 support)
 - Make
-- libcurl (Linux/macOS, for networking)
+
+The compiler itself has no third-party library dependency. libcurl is only
+needed when you build a Cnext program that imports `net` or `http`: that
+program's generated C links `-lcurl` on Linux/macOS, or `winhttp`/`ws2_32` on
+Windows. The package registry shells out to the `curl` command, not libcurl.
 
 ### Linux
 
 ```bash
 git clone https://github.com/Melton122/cnext.git
 cd cnext
-sudo apt-get install libcurl4-openssl-dev  # for networking
 make
 sudo make install
+
+# Optional, only for programs that use net/http
+sudo apt-get install libcurl4-openssl-dev
 ```
 
 ### macOS
@@ -67,9 +73,11 @@ sudo make install
 ```bash
 git clone https://github.com/Melton122/cnext.git
 cd cnext
-brew install curl  # for networking
 make
 make install
+
+# Optional, only for programs that use net/http
+brew install curl
 ```
 
 ### Windows (MSYS2)

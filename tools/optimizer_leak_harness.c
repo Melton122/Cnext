@@ -18,14 +18,18 @@
  * The harness runs both pipelines (opt and control) in interleaved batches so
  * allocator caches / bin provisioning affect both equally. A leak shows up as
  * a slope difference: optimizer batches keep growing, control batches stay
- * flat.
+ * flat. After each optimized cycle it also checks the ownership invariant:
+ * every owned token buffer must be the token's active text, and no other AST
+ * node may borrow that buffer.
  *
  * Usage:
  *     make leaktest
  *     ./leaktest [cycles] [batch]
+ *     LEAK_PROGRAM=<index> ./leaktest [cycles] [batch]
  *
- * Exit code 0: no leaks detected within the slope margin. Non-zero: the
- * optimizer batches grew beyond the control baseline.
+ * Exit code 0: no leaks detected within the slope margin and all ownership
+ * checks passed. Non-zero: an ownership check failed or optimizer batches grew
+ * beyond the control baseline.
  */
 
 #include <stdio.h>
@@ -63,6 +67,50 @@ static size_t heap_bytes(void) {
 #endif
 }
 
+#define OWNED_TEXT_MAX 4096
+
+static bool visit_ownership(ASTNode* node, void** owned, int* count, bool collect) {
+    if (!node) return true;
+    if (collect) {
+        if (node->owned_token_text) {
+            for (int i = 0; i < *count; i++) {
+                if (owned[i] == node->owned_token_text) return false;
+            }
+            if (*count >= OWNED_TEXT_MAX) return false;
+            owned[(*count)++] = node->owned_token_text;
+        }
+    } else {
+        if (node->owned_token_text && node->token.start != node->owned_token_text) return false;
+        if (node->token.start) {
+            for (int i = 0; i < *count; i++) {
+                if (owned[i] == node->token.start && node->owned_token_text != node->token.start) return false;
+            }
+        }
+    }
+    for (int i = 0; i < node->child_count; i++) {
+        if (!visit_ownership(node->children[i], owned, count, collect)) return false;
+    }
+    for (int i = 0; i < node->type_param_count; i++) {
+        if (!visit_ownership(node->type_params[i], owned, count, collect)) return false;
+    }
+    for (int i = 0; i < node->type_arg_count; i++) {
+        if (!visit_ownership(node->type_args[i], owned, count, collect)) return false;
+    }
+    return visit_ownership(node->left, owned, count, collect) &&
+           visit_ownership(node->right, owned, count, collect) &&
+           visit_ownership(node->condition, owned, count, collect) &&
+           visit_ownership(node->init, owned, count, collect) &&
+           visit_ownership(node->increment, owned, count, collect) &&
+           visit_ownership(node->default_value, owned, count, collect);
+}
+
+static bool check_ast_ownership(ASTNode* program) {
+    void* owned[OWNED_TEXT_MAX];
+    int count = 0;
+    if (!visit_ownership(program, owned, &count, true)) return false;
+    return visit_ownership(program, owned, &count, false);
+}
+
 /* --- compile-cycle driver (mirrors compile_file's pipeline) --- */
 
 static void run_cycle(const char* source, bool with_optimizer) {
@@ -80,6 +128,10 @@ static void run_cycle(const char* source, bool with_optimizer) {
     if (getenv("LEAK_DEBUG")) { fprintf(stderr, "[diag] analyzed\n"); fflush(stderr); }
     if (with_optimizer) {
         optimize_ast(program);
+        if (!check_ast_ownership(program)) {
+            fprintf(stderr, "leaktest: optimizer token ownership invariant violated\n");
+            exit(3);
+        }
         if (getenv("LEAK_DEBUG")) { fprintf(stderr, "[diag] optimized\n"); fflush(stderr); }
     }
     free_ast(program);
@@ -127,6 +179,17 @@ static const char* PROGRAMS[] = {
     "    }\n"
     "}\n",
 
+    /* strength reduction in a while condition, where the discarded literal is
+     * owned by the condition node rather than a statement expression */
+    "main {\n"
+    "    var i = 1\n"
+    "    while i * 2 {\n"
+    "        i = i - 1\n"
+    "        if i == 0 { break }\n"
+    "    }\n"
+    "    printin(i)\n"
+    "}\n",
+
     /* functions + call folding */
     "func add(int a, int b): int {\n"
     "    return a + b\n"
@@ -169,6 +232,7 @@ int main(int argc, char** argv) {
     long batch = (argc > 2) ? strtol(argv[2], NULL, 10) : 200;
     if (cycles < 1) cycles = 1;
     if (batch < 1) batch = 1;
+    int only_program = getenv("LEAK_PROGRAM") ? (int)strtol(getenv("LEAK_PROGRAM"), NULL, 10) : -1;
 
     printf("optimizer leak harness\n");
     printf("programs: %llu  total cycles: %ld  batch: %ld\n\n",
@@ -183,6 +247,7 @@ int main(int argc, char** argv) {
      * provisioning settle before we start measuring. */
     for (long i = 0; i < 2; i++) {
         for (size_t p = 0; p < PROG_COUNT; p++) {
+            if (only_program >= 0 && (int)p != only_program) continue;
             if (getenv("LEAK_DEBUG")) { fprintf(stderr, "[diag] warmup prog %llu\n", (unsigned long long)p); fflush(stderr); }
             run_cycle(PROGRAMS[p], true);
         }
@@ -202,14 +267,20 @@ int main(int argc, char** argv) {
         /* control batch */
         size_t cb = heap_bytes();
         for (long i = 0; i < batch; i++)
-            for (size_t p = 0; p < PROG_COUNT; p++) run_cycle(PROGRAMS[p], false);
+            for (size_t p = 0; p < PROG_COUNT; p++) {
+                if (only_program >= 0 && (int)p != only_program) continue;
+                run_cycle(PROGRAMS[p], false);
+            }
         long long cd = (long long)heap_bytes() - (long long)cb;
         ctrl_total += cd;
 
         /* optimizer batch */
         size_t ob = heap_bytes();
         for (long i = 0; i < batch; i++)
-            for (size_t p = 0; p < PROG_COUNT; p++) run_cycle(PROGRAMS[p], true);
+            for (size_t p = 0; p < PROG_COUNT; p++) {
+                if (only_program >= 0 && (int)p != only_program) continue;
+                run_cycle(PROGRAMS[p], true);
+            }
         long long od = (long long)heap_bytes() - (long long)ob;
         opt_total += od;
 

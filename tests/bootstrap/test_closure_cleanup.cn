@@ -1,0 +1,21 @@
+// The runner supplies a C probe that counts currently tracked allocations.
+extern "C" func bootstrap_tracked_allocations(): int
+
+main {
+    int before = bootstrap_tracked_allocations()
+    int total = 0
+    for int i = 0; i < 100; i++ {
+        int captured = i
+        var add = (int value) => captured + value
+        total = total + add(1)
+    }
+    printin(total)
+    printin(bootstrap_tracked_allocations() == before)
+    {
+        int captured = 10
+        var callback = (int value) => captured + value
+        defer printin(callback(2))
+        printin("before deferred call")
+    }
+    printin(bootstrap_tracked_allocations() == before)
+}

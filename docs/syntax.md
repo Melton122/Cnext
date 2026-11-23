@@ -237,6 +237,40 @@ switch x {
 }
 ```
 
+### Testing bits with `~=`
+
+Use `~=` to test selected bits of an integer. The pattern reads from most to
+least significant bit, with its rightmost bit aligned to bit 0. Each `0` or
+`1` tests that position, `?` accepts either bit, and `_` is a visual separator.
+Higher bits outside the pattern are ignored. Signed values are interpreted
+modulo 2^64.
+
+```cnext
+ubyte status = 165
+bool ready = status ~= "10??_???1"
+```
+
+Here 165 is binary `1010_0101`, so `ready` is true. The compiler checks the
+quoted pattern (1 to 64 bits) and emits a mask comparison. The left operand
+is evaluated once. The operator has the same precedence as `==`.
+
+### Reading a packed field with `~>`
+
+```cnext
+ubyte status = 165
+ulong channel_id = status ~> "??##_#???"
+```
+
+In binary, 165 is `1010_0101`. The three `#` marks select bits 5 through 3,
+which read `100`, so `channel_id` is 4. Use one continuous group of `#`
+marks to select a field. Each `?` skips a bit and `_` adds spacing. Layouts
+contain 1 to 64 bits, with bit 0 at the right edge.
+
+The result is a `ulong` with the field shifted down to bit 0. For signed
+inputs the operator reads the low 64 bits. It evaluates its input once and
+binds more tightly than multiplication, so `status ~> "##" * 2` doubles
+the value of the low two bits.
+
 ### Match
 
 ```cnext
@@ -455,8 +489,114 @@ str type_name = typeof(42)  // "int"
 ### `extern` — C FFI
 
 ```cnext
-extern "C" func printf(str fmt, ...)
+extern "C" func abs(int value): int
+
+main {
+    printin(abs(-42))  // 42, calculated by the C standard library
+}
 ```
+
+You can also group declarations in a block:
+
+```cnext
+extern "C" {
+    func abs(int value): int
+    func rand(): int
+}
+```
+
+An `extern` declaration describes an existing C function; it does not implement
+the function or automatically link an external library. The declarations above
+use the C standard library, which the normal `cnext build` workflow already links.
+See [the runnable example](../examples/c_interop.cn).
+
+The declaration must match the C function's actual signature and target ABI.
+Cnext `str` is a pointer-and-length value, not C's `char*`; declaring
+`printf(str fmt, ...)` does not convert it into a C string. Arrays and class
+instances also require an explicit, verified representation at a C boundary.
+Use `printin` for ordinary Cnext output.
+
+#### Explicit C string conversion
+
+`CStr` represents a read-only, zero-terminated C string (`const char*`). Use
+explicit conversion when a C function expects text:
+
+```cnext
+extern "C" func strcmp(CStr left, CStr right): int
+
+main {
+    CStr first = to_cstr("hello")
+    var second = to_cstr("hello")
+    printin(strcmp(first, second))  // 0
+    str copied = from_cstr(first)
+    cstr_free(first)
+    cstr_free(second)
+    printin(copied)                // hello
+}
+```
+
+- `to_cstr(str)` allocates an independent copy and appends a zero byte. Empty
+  strings are supported. Null strings and strings containing embedded zero
+  bytes throw an error instead of silently losing text.
+- `from_cstr(CStr)` copies bytes up to the first zero into an ordinary `str`.
+  It does not free or take ownership of the C pointer. Null pointers throw.
+- `cstr_free(CStr)` releases a live `to_cstr` allocation. It accepts null as a
+  no-op and rejects borrowed pointers or already released allocations.
+
+Conversions preserve bytes without changing the encoding. A C function may
+return borrowed `CStr` text; copy it with `from_cstr` while the pointer is still
+valid. Follow that C library's rules for the borrowed pointer's lifetime and
+release. `CStr` does not represent a writable C buffer or a binary buffer.
+Use an API that carries a separate length for binary data.
+
+Owned conversions are tracked until `cstr_free`, `gc()`, or process cleanup.
+Every alias becomes invalid when its allocation is released. A C function must
+not write to, free, or retain an owned conversion beyond that lifetime.
+The compiler does not check pointer lifetimes. For repeated calls, release or
+reuse the converted string rather than accumulating allocations.
+
+See [the runnable example](../examples/c_strings.cn) and
+[memory rules](memory.md#c-string-interoperability).
+
+For custom C sources, use `--c-source` with `build` or `run`. From the repository
+root, run the [mixed Cnext/C example](../examples/c_interop/main.cn):
+
+```bash
+cnext run examples/c_interop/main.cn --c-source examples/c_interop/calibration.c --include-dir examples/c_interop/include
+```
+
+This prints `Calibrated reading: 42`. Cnext generates C, compiles both sources,
+and links the executable in one command. The C code includes `calibration.h`;
+the Cnext declaration must be kept consistent with that header.
+
+| Build option | Purpose |
+|---|---|
+| `--c-source <path>` | Compile an additional C source file |
+| `--object <path>` | Link an existing compatible object file or static archive |
+| `--include-dir <path>` | Add a directory to the C header search path |
+| `--library-dir <path>` | Add a directory to the library search path |
+| `--link-lib <name>` | Link a library by name, such as `calibration` for `libcalibration.a` |
+
+All five options are repeatable. Paths are relative to the working directory;
+quote paths that contain spaces. Native sources and objects are passed before
+named libraries. Named libraries retain their supplied order, so list a library
+before other libraries it depends on. Objects and libraries must be built for
+the same target and a compatible C ABI. Shared libraries also need to be
+available to the operating system when the executable runs.
+
+For example, a prebuilt library can be used with:
+
+```bash
+cnext build program.cn --library-dir native/lib --link-lib calibration
+```
+
+The CLI currently invokes GCC. For a manual build,
+`cnext build program.cn --emit-c program.c` generates C without invoking GCC.
+Compile that file with your C sources, the Cnext runtime include directory
+(`-iquote include` in this repository), and the required platform libraries.
+`--emit-c` cannot be combined with native build options because it does not
+compile or link. Cnext does not yet generate a public C header for calling
+Cnext functions from C.
 
 ### `macro` — Compile-Time Code Generation
 

@@ -2,6 +2,183 @@
 
 All notable changes to Cnext will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **`process_spawn(str[] argv)`:** the `process` module can now start a program
+  from an argv vector with no shell in between, so each element reaches the
+  child as exactly one argument and untrusted values cannot become command
+  syntax. It returns the exit status, `127` when the program cannot be started,
+  and `-1` for an unusable vector. The shell-string APIs (`process_run*`,
+  `sys_exec`, `os_exec*`) are unchanged; `docs/process-safety.md` explains which
+  one to use
+- **`cnext build --emit-c <path>`:** writes the generated C to a file and skips
+  GCC. `-o` names the final executable, so the self-hosting bootstrap had no
+  way to capture generated C (`make self-build` passed `-o stage1_src.c` and
+  then handed GCC an MZ executable). `make self-build` now uses `--emit-c` and
+  platform-aware stage executable names
+- **Defer matrix tests:** `tests/test_defer_matrix.cn` and its bootstrap copy
+  cover LIFO cleanup, nested block scopes, per-iteration loop cleanup, and
+  throw unwinding; negative cases cover top-level `defer` and `return`,
+  `break`, `continue`, and `throw` inside deferred bodies
+- **`make msvc-defer-test`:** builds the compiler with `CNEXT_FORCE_MSVC_DEFER`,
+  checks that deferred bodies become file-scope helpers with `__try`/`__finally`
+  scope marks, then compiles and runs the generated defer matrix with `cl` when
+  Visual Studio Build Tools are installed
+- **Actionable diagnostics:** parser, semantic, codegen, and GCC backend failures
+  use stable `E001`–`E202` IDs, `CN-Exxx` rule metadata, source excerpts with
+  carets, `= expected:`/`= found:` pairs, per-code help text, and normalized
+  backend notes. `tests/test_diagnostics.py` checks the format and is wired into
+  `make check`
+- **Type-consistency checks:** assignments now reject text/non-text mismatches
+  with stable `E101` diagnostics in both the native and self-hosted compilers.
+  Numeric assignment, initializer, and return checks use a widen-only matrix;
+  narrowing, signedness changes, and floating-point/integer crossings require an
+  explicit `as` cast. `for-in` bindings infer element types from arrays, strings,
+  ranges, `str_split`, and generator calls. Try-expression propagation from a
+  typed function is diagnosed before codegen can emit an invalid valueless
+  `return`
+
+### Fixed
+- **Diagnostic output is bounded:** source excerpts and caret padding are
+  capped, so an error on a very long line no longer floods the terminal or
+  exhausts memory. `tests/test_diagnostics.py` covers the long-line case
+- **Malformed `when`, `switch`, and `match` arms no longer hang the parser:**
+  `else` is recognized as a keyword and every arm guarantees token progress,
+  so a bad arm fails with a diagnostic instead of looping forever. The
+  generated C for `when` now uses a nested ternary chain, fixing `else`
+  emitted without a separating semicolon. Self-hosted source excerpts are
+  capped as well
+- **Statement `expr?` checks are type-aware:** non-nullable results no longer
+  generate a `== NULL` comparison against an integer or the wrong callee node,
+  and string results check `.data` instead of comparing a struct to `NULL`
+- **Newer expression nodes are semantically analyzed:** `option(...)`,
+  `ok(...)`, `err(...)`, `expr?`, and `when { ... }` operands now feed semantic
+  analysis instead of bypassing it. `when` infers a common arm type rather than
+  always reporting `str`, and self-hosted semantics mirrors these traversals.
+  The self-hosted code generator now emits `when` expressions and statement-form
+  `expr?` early-return propagation
+- **Windows process arguments are quoted instead of joined:** `run_process`
+  passed its vector to `_spawnvp`, which concatenates argv with spaces, so an
+  argument containing a space or quote split into extra arguments. It now
+  serializes each token with `CommandLineToArgvW` rules (quote, double
+  backslash runs, escape a preceding quote), matching `run_process_captured` and
+  the new `process_spawn`. Package downloads also validate the name and URL,
+  and pass `--` before the URL so a dash-leading URL cannot be read as a curl
+  option
+- **Typed input is strict and covers every type:** `input()` assigned to a
+  typed destination, and the explicit `input_int()` / `input_float()` /
+  `input_bool()` / … readers, now consume the whole line. Trailing text
+  (`42abc`), overflow, and out-of-range values read as the type's zero value
+  instead of being silently truncated. `input_byte()` reads a number instead of
+  the first character, boolean reads accept `yes/no`, `on/off`, `y/n`, `t/f` in
+  any capitalization, and `input_str()` names the string reader explicitly
+- **`byte` is an unsigned 8-bit integer:** it was emitted as `char`, so
+  `byte b = 255` printed a raw 0xFF byte (and `input()` read the character
+  `'2'` from `200`). It now emits `unsigned char`, prints as a number, and
+  matches the documented 0–255 range
+- **Optimizer no longer leaks or aliases AST token text:** constant folding,
+  identity elimination, peephole rewrites, branch folding, and loop strength
+  reduction now transfer ownership with `move_ast_node()` and duplicate any
+  allocated identifier text. The previously orphaned loop-literal and the
+  leaked source-node shell are released. `make leaktest` now runs interleaved
+  optimized/control compile cycles and enforces the owned-token invariant
+- **Compiler builds without a third-party library:** the Makefile linked
+  `libcurl` even though the compiler shells out to the `curl` command; only
+  programs that import `net`/`http` need libcurl. A source build now needs just
+  a C compiler and make
+- **`cnext test <file.cn>` resolves bare filenames:** a filename with no
+  directory component was used as a path relative to the current directory, so
+  `cnext test test_hello.cn` failed even though `tests/test_hello.cn` existed.
+  It now searches `tests/`, while a filename that contains a separator is still
+  treated as an explicit path
+- **Compiling works when `%TEMP%` is not writable:** codegen and the GCC child
+  process need a writable temp directory. The compiler now falls back to a
+  named file in TMPDIR/TMP/TEMP or the working directory, and points
+  TMP/TEMP/TMPDIR at the working directory when the system temp directory
+  denies access (`tmpfile()` previously failed with `Permission denied`, which
+  surfaced as "Could not create temporary files" or a GCC error)
+
+- **Closure scope teardown no longer double-releases captures:** scope exit
+  records the first defer mark in the scope and runs every registered closure
+  and capture-cell guard once before freeing tracked memory. The previous
+  explicit decref after running closure guards corrupted the heap on programs
+  that used mutable closure captures, causing intermittent Windows heap errors
+- **Mutable scalar closure captures can escape safely:** captured integers,
+  floats, booleans, and characters now live in reference-counted heap cells, so
+  a closure that mutates them can outlive its creating scope. Non-scalar
+  reference captures remain rejected, and the self-hosted backend now matches
+  the native backend's capture-cell emission and identifier resolution
+- **Invalid defer use is rejected before code generation:** top-level `defer`,
+  `when`, and `yield` now fail parsing, and `return`/`break`/`continue`/`throw`
+  inside a deferred body now produce `ERR_SEM_DEFER_CONTROL` in both the native
+  and self-hosted compilers instead of emitting invalid C
+- **MSVC defer lowering no longer duplicates cleanup bodies:** deferred bodies
+  are emitted as file-scope helpers, registered at runtime, and blocks with
+  direct defers are wrapped in `__try`/`__finally` so both normal and
+  exceptional exit run `_cnext_defer_run_to()`. `defer_counter` is also reset
+  per compilation, and the self-hosted backend's defer flag indentation now
+  matches stage 0. `main` now gets the same `__try`/`__finally` defer scope, and
+  generated C avoids GNU-only `max_align_t`, `__auto_type`, `popen`, and try
+  cleanup attributes under MSVC
+- **Bootstrap codegen output stays byte-identical:** an empty MSVC defer-helper
+  stream no longer adds a stray blank line, preserving the stage 0/1/2 fixed
+  point after adding the fourth codegen temp stream
+- **Dead AST node and test artifacts removed:** the unused `AST_GUARD` entry was
+  deleted from the native and self-hosted AST node tables, and committed
+  `_test_list.txt`/`_test_methods_temp.c` scratch files are gone. `clean` and
+  `.gitignore` now cover those files, `_p*.c`, `_probe*`, and `out_parity/`
+- **Backend failures are no longer raw compiler output:** GCC stdout/stderr is
+  captured and re-emitted through the common diagnostic emitter, so link and C
+  compile failures carry `E202`, line/column data where available, a source
+  excerpt from the generated C, help text, and rule metadata
+
+### Self-hosting
+- The self-hosted lexer matches the C lexer on all 158 corpus files, and the
+  self-hosted parser now produces byte-identical AST dumps to `tools/astdump`
+  on all 100 `tests/*.cn` files
+- The parity harness rebuilds `astdump` instead of trusting a stale binary
+  (an old dumper hung, which made the whole run look like a parser timeout),
+  gives each parser invocation a timeout, and uses absolute paths for the
+  candidate executable on Windows
+- `src2/` parser fixes: pointer/nullable flags are no longer copied by
+  `assign_type_from_node` (the C parser leaves that to semantic analysis),
+  stale `.type` field accesses were corrected to `.kind`, and the three
+  C-style `for` loops in the codegen port were rewritten as `while`
+- The codegen bundle compiles and stage 1 now runs: the self-hosted compiler
+  parses, analyzes and generates C for its own 6,951-line bundle
+- Codegen parity with the C compiler rose from 6 to 8 of the 100 `tests/*.cn`
+  files; `typeof`, `as` casts, `clone`, and string-literal emission now match
+  the reference byte for byte (`tests/test_core_builtins.cn` is identical)
+- `Token` has no `length` field in the port (a `str` carries `.length`), which
+  was the last compile blocker in `src2/codegen_gen.cn` and
+  `src2/codegen_closure.cn`
+- The stage-2 C pulled out of the bundle also compiles with GCC: both stage
+  executables link under `make self-build` (run as `make CC=gcc -j8 self-build`
+  from bash, not from Cygwin `make`), and a self-hosted stage-1 binary can now be
+  built from the bundle
+- Fixed the two remaining stage-2 compile blockers in the port: (1) expression
+  codegen emitted `.` where a class-typed value is a pointer — fixed by back-
+  porting type resolution for identifiers, fields, method calls, object-array
+  elements, `new`/`cast` results, and a struct-vs-class distinction so struct
+  `Token` stays a value while class-typed values use `->`; (2) empty-array
+  literals emitted `(CnextArrayObj)0` instead of a compound literal — fixed by
+  pulling braces out of a codegen string literal that stage 0 mis-parsed as
+  interpolation
+- Added forward declarations of structs and enums in the port's codegen (`typedef
+  struct S S;` / `typedef enum E E;`) so references before the layout definition
+  compile; the bundle still compiles and stage-2 C still compiles
+- Ran a byte-identity parity run across all 100 `tests/*.cn` files (stage-1 vs
+  stage-0 output): 0/100 match byte for byte. The recurring gaps are C-style
+  `for` loops not rewritten as `while`; missing struct/enum pre-declarations;
+  `static const` const-decls emitted as bare initializers; wrapper prototypes
+  missing a return type; dropped module `#include` headers; and literal-array /
+  tuple-comprehension blocks expanded through statement expressions differently
+- `make self-build` now runs as a complete pipeline (stage 0, stage 1, and
+  stage-2 C emission) and stops only when GCC rejects stage 2's C: the port's
+  expression codegen still emits `.` where a class-typed value is a pointer,
+  among other gaps listed in `docs/self_hosting.md`
+
 ## [10.0.4] - 2026
 
 ### Added

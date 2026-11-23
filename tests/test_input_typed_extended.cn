@@ -1,0 +1,63 @@
+// Typed input readers cover every destination type, reject a line that is not
+// exactly one value, and accept the common boolean spellings.
+// EXPECT: 255
+// EXPECT: 200
+// EXPECT: 65535
+// EXPECT: 0
+// EXPECT: 0
+// EXPECT: 0
+// EXPECT: 2.250000
+// EXPECT: true
+// EXPECT: false
+// EXPECT: 3
+// EXPECT: Z
+main {
+    var b: byte = input()
+    printin(b)
+
+    var ub: ubyte = input()
+    printin(ub)
+
+    var us: ushort = input()
+    printin(us)
+
+    // Trailing text is not a number for the whole line.
+    var bad_int: int = input()
+    printin(bad_int)
+
+    // A value outside the destination range is rejected rather than wrapped.
+    var overflow_int: int = input()
+    printin(overflow_int)
+
+    // The same rule applies to floats.
+    var bad_float: float = input()
+    printin(bad_float)
+
+    var good_double: double = input()
+    printin(good_double)
+
+    // Boolean reads are case-insensitive and accept on/off and yes/no.
+    var yes: bool = input()
+    printin(yes)
+    var no: bool = input()
+    printin(no)
+
+    // input_str() is the explicitly string-typed reader.
+    var text = input_str()
+    printin(len(text))
+
+    var letter: char = input()
+    printin(letter)
+}
+
+// STDIN: 255
+// STDIN: 200
+// STDIN: 65535
+// STDIN: 42abc
+// STDIN: 999999999999999999999
+// STDIN: 1.5x
+// STDIN: 2.25
+// STDIN: YES
+// STDIN: off
+// STDIN: abc
+// STDIN: Z

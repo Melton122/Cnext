@@ -1,0 +1,72 @@
+extern "C" func bootstrap_tracked_allocations(): int
+
+func make_counter(int initial): func {
+    return (int step) => {
+        initial = initial + step
+        return initial
+    }
+}
+
+func local_counter(): func {
+    int count = 0
+    var next = (int step) => {
+        count++
+        return count + step
+    }
+    return next
+}
+
+func fail_with_cell() {
+    int value = 1
+    var change = (int step) => {
+        value = value + step
+        return value
+    }
+    defer printin(change(2))
+    throw "cell unwind"
+}
+
+main {
+    int before = bootstrap_tracked_allocations()
+    {
+        var counter = make_counter(10)
+        var alias = counter
+        printin(counter(1))
+        printin(alias(2))
+        counter = counter
+        printin(counter(3))
+        var other = local_counter()
+        printin(other(0))
+        printin(other(0))
+        int shared = 0
+        var first = (int step) => {
+            shared = shared + step
+            return shared
+        }
+        var second = (int step) => {
+            shared = shared + step
+            return shared
+        }
+        var snapshot = (int step) => shared + step
+        printin(first(2))
+        printin(second(3))
+        printin(shared)
+        printin(snapshot(0))
+        {
+            int shared = 100
+            printin(shared)
+        }
+        printin(shared)
+    }
+    printin(bootstrap_tracked_allocations() == before)
+    for int i = 0; i < 100; i = i + 1 {
+        var temporary = make_counter(i)
+        temporary(1)
+        if i == 50 { continue }
+        if i == 90 { break }
+    }
+    printin(bootstrap_tracked_allocations() == before)
+    try { fail_with_cell() }
+    catch (str error) { printin(error) }
+    printin(bootstrap_tracked_allocations() == before)
+}

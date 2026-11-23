@@ -1,40 +1,253 @@
 // Self-hosting bootstrap: codegen emit utilities.
 // Port of src/codegen_emit_utils.c
 
-FILE? g_codegen_out = null
+extern {
+    func cnext_join_strings(str[] parts): str
+}
+
+class CapturedVar {
+    ASTNode? declaration
+    bool by_reference
+    CapturedVar? next
+}
+
+class ClosureCleanup {
+    str name
+    ClosureCleanup? next
+}
+
+class ClosureCleanupScope {
+    ClosureCleanup? closures
+    ClosureCleanupScope? parent
+    str[] capture_cells
+    str first_mark_name
+}
+
+ClosureCleanupScope? g_closure_cleanup_scope = null
+
 int g_indent_level = 0
 int g_lambda_counter = 0
+str g_lambda_helpers = ""
+str[] g_generator_helper_chunks
+CapturedVar? g_active_captures = null
+ASTNode? g_capture_cell_params = null
+int g_loop_counter = 0
+int g_codegen_test_count = 0
 int g_generator_counter = 0
+str g_generated_c = ""
+str[] g_generated_chunks
+int g_generated_length = 0
+str g_codegen_current_class = ""
+str g_codegen_current_parent_class = ""
+str g_codegen_class_names = "|"
+str g_codegen_struct_names = "|"
 bool g_codegen_test_mode = false
 bool g_codegen_in_test = false
 bool g_codegen_profile_mode = false
 bool g_codegen_emit_lines = false
-str g_codegen_debug_source = \"\"
+str g_codegen_debug_source = ""
 int g_codegen_gen_line = 0
 int g_codegen_last_emit_line = 0
+
+func codegen_emit(str text) {
+    push(g_generated_chunks, text)
+    g_generated_length = g_generated_length + len(text)
+    g_generated_c = ""
+}
+
+func codegen_flush_output(): str {
+    if len(g_generated_c) == 0 && len(g_generated_chunks) > 0 {
+        g_generated_c = cnext_join_strings(g_generated_chunks)
+    }
+    return g_generated_c
+}
+
+func codegen_output_len(): int {
+    // A position query must not flatten and retain the entire output prefix.
+    return g_generated_length
+}
+
+func codegen_output_set(str text) {
+    g_generated_chunks = {}
+    g_generated_c = text
+    g_generated_length = len(text)
+    if len(text) > 0 {
+        push(g_generated_chunks, text)
+    }
+}
+
+func codegen_output_insert(int start, str text) {
+    str output = codegen_flush_output()
+    codegen_output_set(str_substring(output, 0, start) + text +
+                       str_substring(output, start, len(output)))
+}
 
 func write_indent() {
     int i = 0
     while i < g_indent_level {
-        print(\"    \")
+        codegen_emit("    ")
         i = i + 1
     }
 }
 
 func type_token_to_c_name(int ttype): str {
-    if ttype == 0 { return \"int\" }
-    if ttype == 1 { return \"long long\" }
-    if ttype == 2 { return \"float\" }
-    if ttype == 3 { return \"double\" }
-    if ttype == 4 { return \"CnextString\" }
-    if ttype == 5 { return \"bool\" }
-    if ttype == 6 { return \"char\" }
-    if ttype == 7 { return \"char\" }
-    if ttype == 8 { return \"unsigned int\" }
-    if ttype == 9 { return \"unsigned long long\" }
-    if ttype == 10 { return \"unsigned short\" }
-    if ttype == 11 { return \"unsigned char\" }
-    return \"\"
+    if ttype == TOKEN_INT_TYPE { return "int" }
+    if ttype == TOKEN_LONG_TYPE { return "long long" }
+    if ttype == TOKEN_FLOAT_TYPE { return "float" }
+    if ttype == TOKEN_DOUBLE_TYPE { return "double" }
+    if ttype == TOKEN_STR_TYPE { return "CnextString" }
+    if ttype == TOKEN_FUNC { return "CnextClosure" }
+    if ttype == TOKEN_BOOL_TYPE { return "bool" }
+    if ttype == TOKEN_CHAR_TYPE { return "char" }
+    if ttype == TOKEN_BYTE_TYPE { return "unsigned char" }
+    if ttype == TOKEN_UINT_TYPE { return "unsigned int" }
+    if ttype == TOKEN_ULONG_TYPE { return "unsigned long long" }
+    if ttype == TOKEN_USHORT_TYPE { return "unsigned short" }
+    if ttype == TOKEN_UBYTE_TYPE { return "unsigned char" }
+    return ""
+}
+
+func array_type_to_c_name(int ttype): str {
+    if ttype == TOKEN_INT_TYPE { return "CnextArrayInt" }
+    if ttype == TOKEN_LONG_TYPE { return "CnextArrayLong" }
+    if ttype == TOKEN_FLOAT_TYPE { return "CnextArrayFloat" }
+    if ttype == TOKEN_DOUBLE_TYPE { return "CnextArrayDouble" }
+    if ttype == TOKEN_STR_TYPE { return "CnextArrayString" }
+    if ttype == TOKEN_BOOL_TYPE { return "CnextArrayBool" }
+    return "CnextArrayInt"
+}
+
+str g_codegen_pointer_params = ""
+
+func codegen_is_class_name(str name): bool {
+    return str_contains(g_codegen_class_names, "|" + name + "|")
+}
+
+func codegen_is_pointer_param(str name): bool {
+    return str_contains(g_codegen_pointer_params, "|" + name + "|")
+}
+
+func operator_suffix(int kind): str {
+    if kind == TOKEN_PLUS { return "plus" }
+    if kind == TOKEN_MINUS { return "minus" }
+    if kind == TOKEN_STAR { return "star" }
+    if kind == TOKEN_SLASH { return "slash" }
+    if kind == TOKEN_EQ_EQ { return "eq" }
+    if kind == TOKEN_BANG_EQ { return "neq" }
+    if kind == TOKEN_LESS { return "lt" }
+    if kind == TOKEN_LESS_EQ { return "lte" }
+    if kind == TOKEN_GREATER { return "gt" }
+    if kind == TOKEN_GREATER_EQ { return "gte" }
+    if kind == TOKEN_PERCENT { return "mod" }
+    if kind == TOKEN_AND_AND { return "and" }
+    if kind == TOKEN_OR_OR { return "or" }
+    if kind == TOKEN_LBRACKET { return "idx" }
+    return ""
+}
+
+func find_func_decl(ASTNode? prog, str name): ASTNode? {
+    if prog == null { return null }
+    int i = 0
+    int n = len(prog.children)
+    while i < n {
+        ASTNode? child = prog.children[i]
+        if child != null &&
+           (child.kind == AST_FUNC_DECL ||
+            child.kind == AST_COROUTINE_DECL ||
+            child.kind == AST_ASYNC_FUNC_DECL) &&
+           child.token.text == name {
+            return child
+        }
+        i = i + 1
+    }
+    return null
+}
+
+func find_class_decl(ASTNode? prog, str name): ASTNode? {
+    if prog == null { return null }
+    int i = 0
+    int n = len(prog.children)
+    while i < n {
+        ASTNode? child = prog.children[i]
+        if child != null && child.kind == AST_CLASS_DECL && child.token.text == name {
+            return child
+        }
+        i = i + 1
+    }
+    return null
+}
+
+func generate_type(Token token, bool is_pointer) {
+    str c_type = type_token_to_c_name(token.kind)
+    if len(c_type) > 0 {
+        codegen_emit(c_type)
+    } else if token.kind == TOKEN_VAR {
+        codegen_emit("__auto_type")
+    } else if token.kind == TOKEN_FUNC {
+        codegen_emit("CnextClosure")
+    } else if token.kind == TOKEN_IDENTIFIER {
+        var subst = find_type_subst(token.text)
+        if subst != null {
+            generate_type(subst.concrete_type, subst.is_array)
+        } else {
+            codegen_emit(token.text)
+        }
+    } else {
+        codegen_emit("void")
+    }
+    if is_pointer { codegen_emit("*") }
+}
+
+func generate_node_type(ASTNode? node, bool is_pointer) {
+    if node == null {
+        codegen_emit("void")
+        if is_pointer { codegen_emit("*") }
+        return
+    }
+    if node.is_array {
+        if node.var_type.kind == TOKEN_IDENTIFIER {
+            var subst = find_type_subst(node.var_type.text)
+            if subst != null && !subst.is_array {
+                codegen_emit_c_type(subst.concrete_type, true, is_pointer)
+                return
+            }
+            codegen_emit("CnextArrayObj")
+        } else {
+            codegen_emit(array_type_to_c_name(node.var_type.kind))
+        }
+        if is_pointer { codegen_emit("*") }
+        return
+    }
+    generate_type(node.var_type, is_pointer)
+}
+
+func codegen_emit_c_type(Token type_tok, bool is_array, bool is_pointer) {
+    if is_array {
+        if type_tok.kind == TOKEN_IDENTIFIER {
+            codegen_emit("CnextArrayObj")
+        } else {
+            codegen_emit(array_type_to_c_name(type_tok.kind))
+        }
+        return
+    }
+
+    if type_tok.kind == TOKEN_IDENTIFIER {
+        var subst = find_type_subst(type_tok.text)
+        if subst != null {
+            codegen_emit_c_type(subst.concrete_type, subst.is_array, is_pointer)
+            return
+        }
+        codegen_emit(type_tok.text)
+        if is_pointer || codegen_is_class_name(type_tok.text) {
+            codegen_emit("*")
+        }
+    } else if type_tok.kind == TOKEN_VAR {
+        codegen_emit("__auto_type")
+    } else if type_tok.kind == TOKEN_EOF {
+        codegen_emit("void")
+    } else {
+        codegen_emit(type_token_to_c_name(type_tok.kind))
+    }
 }
 
 func copy_token_text(Token token): str {
@@ -49,20 +262,161 @@ func track_source_line(int src_line) {
 
 func generate_lambda_return_type(ASTNode? body): str {
     if body == null {
-        return \"void\"
+        return "void"
     }
     if body.kind != 47 {
-        return \"void\"
+        return "void"
     }
     int i = 0
     int n = len(body.children)
     while i < n {
         if body.children[i].kind == 31 {
             if body.children[i].left != null {
-                return \"void\"
+                return "void"
             }
         }
         i = i + 1
     }
-    return \"void\"
+    return "void"
+}
+
+// A `{...}` span inside a string literal is an interpolation only if it holds
+// a real expression: it must close before the end, must not contain a quote or
+// backslash, and must not be blank. Otherwise it stays literal text.
+func is_valid_interpolation(str s, int start, int end): bool {
+    int c = start
+    bool found_close = false
+    while c < end {
+        int ch = str_char_at(s, c)
+        if ch == '}' {
+            found_close = true
+            break
+        }
+        if ch == '"' || ch == '\\' {
+            return false
+        }
+        c = c + 1
+    }
+    if !found_close { return false }
+    if c == start { return false }
+    int si = start
+    while si < c {
+        int ch = str_char_at(s, si)
+        if ch != ' ' && ch != '\t' && ch != '\r' && ch != '\n' {
+            return true
+        }
+        si = si + 1
+    }
+    return false
+}
+
+func generate_interp_expression(str s, int start, int end) {
+    int expr_len = end - start
+    if expr_len > 5 && str_substring(s, start, start + 5) == "self." {
+        codegen_emit("self->")
+        codegen_emit(str_substring(s, start + 5, end))
+        return
+    }
+    int paren = -1
+    int dot = -1
+    int i = start
+    while i < end {
+        int ch = str_char_at(s, i)
+        if ch == '(' && paren < 0 { paren = i }
+        if ch == '.' && dot < 0 && (paren < 0 || i < paren) { dot = i }
+        i = i + 1
+    }
+    if dot >= 0 && paren >= 0 {
+        str class_name = lookup_class_var(str_substring(s, start, dot))
+        if len(class_name) > 0 {
+            codegen_emit(class_name)
+            codegen_emit("_")
+            codegen_emit(str_substring(s, dot + 1, paren))
+            codegen_emit("(")
+            codegen_emit(str_substring(s, start, dot))
+            int args_len = end - paren - 2
+            if args_len > 0 {
+                codegen_emit(", ")
+                codegen_emit(str_substring(s, paren + 1, end - 1))
+            }
+            codegen_emit(")")
+            return
+        }
+    }
+    if dot >= 0 && paren < 0 {
+        str class_name = lookup_class_var(str_substring(s, start, dot))
+        if len(class_name) > 0 {
+            codegen_emit(str_substring(s, start, dot))
+            codegen_emit("->")
+            codegen_emit(str_substring(s, dot + 1, end))
+            return
+        }
+    }
+    codegen_emit(str_substring(s, start, end))
+}
+
+func generate_string_interpolation(str s, int length) {
+    int p = 1
+    int end = length - 1
+    bool has_interp = false
+    int c = p
+    while c < end {
+        if str_char_at(s, c) == '{' {
+            if is_valid_interpolation(s, c + 1, end) {
+                has_interp = true
+                break
+            }
+        }
+        c = c + 1
+    }
+    if !has_interp {
+        codegen_emit("(CnextString){(char*)\"")
+        codegen_emit(str_substring(s, p, end))
+        codegen_emit("\", sizeof(\"")
+        codegen_emit(str_substring(s, p, end))
+        codegen_emit("\") - 1}")
+        return
+    }
+    int concat_calls = 0
+    int chunk_start = p
+    c = p
+    while c < end {
+        if str_char_at(s, c) == '{' && is_valid_interpolation(s, c + 1, end) {
+            if c > chunk_start {
+                codegen_emit("cnext_concat((CnextString){(char*)\"")
+                codegen_emit(str_substring(s, chunk_start, c))
+                codegen_emit("\", sizeof(\"")
+                codegen_emit(str_substring(s, chunk_start, c))
+                codegen_emit("\") - 1}, ")
+                concat_calls = concat_calls + 1
+            }
+            c = c + 1
+            int var_start = c
+            while c < end && str_char_at(s, c) != '}' {
+                c = c + 1
+            }
+            codegen_emit("cnext_concat(cnext_to_string(")
+            generate_interp_expression(s, var_start, c)
+            codegen_emit("), ")
+            concat_calls = concat_calls + 1
+            chunk_start = c + 1
+        }
+        c = c + 1
+    }
+    if chunk_start < end {
+        codegen_emit("(CnextString){(char*)\"")
+        codegen_emit(str_substring(s, chunk_start, end))
+        codegen_emit("\", sizeof(\"")
+        codegen_emit(str_substring(s, chunk_start, end))
+        codegen_emit("\") - 1}")
+    } else {
+        codegen_emit("(CnextString)")
+        codegen_emit("{")
+        codegen_emit("(char*)\"\", 0}")
+    }
+    int i = 0
+    while i < concat_calls {
+        codegen_emit(")")
+        i = i + 1
+    }
 }

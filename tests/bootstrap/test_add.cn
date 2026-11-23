@@ -1,0 +1,9 @@
+// Bootstrap test: simple function call
+func add(int a, int b): int {
+    return a + b
+}
+
+main {
+    int x = add(2, 3)
+    printin(x)
+}

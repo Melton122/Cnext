@@ -309,6 +309,10 @@ Token next_token(void) {
         case '/': return make_token(match('=') ? TOKEN_SLASH_EQUAL : TOKEN_SLASH);
         case '*': return make_token(match('=') ? TOKEN_STAR_EQUAL : TOKEN_STAR);
         case '%': return make_token(TOKEN_PERCENT);
+        case '~':
+            if (match('=')) return make_token(TOKEN_BIT_MATCH);
+            if (match('>')) return make_token(TOKEN_BIT_EXTRACT);
+            break;
         case '!': return make_token(match('=') ? TOKEN_BANG_EQ : TOKEN_BANG);
         case '=': 
             if (match('=')) return make_token(TOKEN_EQ_EQ);

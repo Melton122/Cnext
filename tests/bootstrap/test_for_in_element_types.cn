@@ -1,0 +1,28 @@
+// EXPECT: 2
+// EXPECT: 3
+// EXPECT: 4
+// EXPECT: a!
+// EXPECT: b!
+// EXPECT: 1
+// EXPECT: 2
+// EXPECT: a
+// EXPECT: b
+main {
+    int[] nums = {1, 2, 3}
+    for n in nums {
+        printin(n + 1)
+    }
+
+    str[] words = {"a", "b"}
+    for w in words {
+        printin(w + "!")
+    }
+
+    for i in 1..3 {
+        printin(i)
+    }
+
+    for p in str_split("a,b", ",") {
+        printin(p)
+    }
+}

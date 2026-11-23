@@ -1,0 +1,15 @@
+// Bootstrap test: strings, concatenation, built-ins, and equality
+main {
+    str joined = "hi" + "!"
+    printin(joined)
+    printin(len(joined))
+    printin(str_char_at(joined, 1))
+    printin("n=" + to_str(42))
+    int length = len(joined)
+    if length == 3 {
+        printin("length ok")
+    }
+    if joined == "hi!" {
+        printin("equal")
+    }
+}

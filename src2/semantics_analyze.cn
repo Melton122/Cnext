@@ -1,27 +1,146 @@
 // Self-hosting bootstrap: statement and declaration semantics.
 // Port of src/semantics_analyze.c
 
-func report_error(int code, int line, str message, str detail)
-func report_token_error(int code, Token token, str message)
-func sem_push_scope()
-func sem_pop_scope()
+func defer_body_direct_control(): bool {
+    return defer_depth > 0 && sem_lambda_depth == defer_lambda_depth
+}
+
+func report_defer_control(ASTNode? node, str keyword) {
+    if node == null { return }
+    semantic_error_at("E120", node.token.line, node.token.col,
+        "Cannot use '" + keyword + "' inside a deferred body.",
+        "Move the control transfer outside the deferred body.")
+    has_semantic_error = true
+}
+
+func sem_for_in_apply_element_type(ASTNode? init, ASTNode? iterable) {
+    if init == null || iterable == null { return }
+    if iterable.kind == AST_RANGE || iterable.kind == AST_RANGE_INCLUSIVE {
+        init.var_type = make_kind_token(TOKEN_INT_TYPE)
+        init.expr_type = TOKEN_INT_TYPE
+        return
+    }
+    if iterable.kind == AST_CALL && iterable.left != null &&
+       iterable.left.kind == AST_IDENTIFIER && iterable.left.token.text == "str_split" {
+        init.var_type = make_kind_token(TOKEN_STR_TYPE)
+        init.expr_type = TOKEN_STR_TYPE
+        return
+    }
+    if iterable.kind == AST_CALL && iterable.left != null &&
+       iterable.left.kind == AST_IDENTIFIER {
+        var callee = resolve_symbol(iterable.left.token)
+        if callee != null && callee.decl_node != null &&
+           (callee.decl_node.is_generator ||
+            callee.decl_node.return_type.kind == TOKEN_ITER) {
+            init.var_type = make_kind_token(TOKEN_INT_TYPE)
+            init.expr_type = TOKEN_INT_TYPE
+            return
+        }
+    }
+    if iterable.kind == AST_LITERAL &&
+       (iterable.token.kind == TOKEN_STRING_LITERAL || iterable.token.kind == TOKEN_RAW_STRING) {
+        init.var_type = make_kind_token(TOKEN_CHAR_TYPE)
+        init.expr_type = TOKEN_CHAR_TYPE
+        return
+    }
+    if iterable.kind == AST_SLICE {
+        sem_for_in_apply_element_type(init, iterable.left)
+        return
+    }
+
+    ASTNode? decl = null
+    if iterable.kind == AST_IDENTIFIER {
+        var sym = resolve_symbol(iterable.token)
+        if sym != null { decl = sym.decl_node }
+    } else if len(iterable.type_name) > 0 {
+        var type_tok = make_token(TOKEN_IDENTIFIER, iterable.type_name, 0, 0)
+        var sym = resolve_symbol(type_tok)
+        if sym != null { decl = sym.decl_node }
+    }
+    if decl == null { return }
+    if decl.is_array {
+        init.var_type = decl.var_type
+        init.type_name = decl.type_name
+        if len(init.type_name) == 0 && decl.var_type.kind == TOKEN_IDENTIFIER {
+            init.type_name = decl.var_type.text
+        }
+        init.is_class = decl.is_class
+        init.expr_type = decl.var_type.kind
+        return
+    }
+    if decl.var_type.kind == TOKEN_STR_TYPE {
+        init.var_type = make_kind_token(TOKEN_CHAR_TYPE)
+        init.expr_type = TOKEN_CHAR_TYPE
+    }
+}
 
 func analyze_assignment(ASTNode? node) {
     if node == null {
         return
     }
-    if node.left != null {
-        analyze_expression(node.left)
+    int left_type = analyze_expression(node.left)
+    // `input()` is context-sensitive: assigning it to a typed destination
+    // selects the corresponding runtime reader before analyzing the RHS.
+    int target_type = left_type
+    if target_type == TOKEN_EOF || target_type == TOKEN_VAR {
+        target_type = assignment_target_type(node.left)
+    }
+    // Propagate a destination array's element type to `{ ... }` on the RHS.
+    // Declarations handle this themselves; assignments to locals and fields
+    // need the same annotation for codegen to emit an array value.
+    if node.left != null && node.left.kind == AST_IDENTIFIER {
+        var target_sym = resolve_symbol(node.left.token)
+        if target_sym != null {
+            annotate_array_literal_assignment(node, target_sym.decl_node)
+        }
+    } else if node.left != null && node.left.kind == AST_MEMBER_ACCESS {
+        annotate_array_literal_assignment(node, resolve_field_decl(node.left))
     }
     if node.right != null {
-        sem_apply_expected_type(node.right, node.left != null ? node.left.expr_type : TOKEN_VAR)
+        sem_apply_expected_type(node.right, target_type)
         analyze_expression(node.right)
+    }
+    var expected_token = make_kind_token(left_type)
+    if node.left != null && len(node.left.type_name) > 0 {
+        expected_token = make_token(TOKEN_IDENTIFIER, node.left.type_name, 0, 0)
+    }
+    sem_check_assignment_type(expected_token, node.right,
+        node.right == null ? TOKEN_EOF : node.right.expr_type)
+    if node.right != null && node.right.kind == AST_NULL_LITERAL {
+        node.right.expr_type = left_type
+        if node.left != null && len(node.left.type_name) > 0 {
+            node.right.type_name = node.left.type_name
+        } else if node.left != null && node.left.kind == AST_IDENTIFIER {
+            var sym = resolve_symbol(node.left.token)
+            if sym != null && len(sym.type_name) > 0 {
+                node.right.type_name = sym.type_name
+            }
+        }
+    }
+    if node.left == null {
+        return
+    }
+    if node.left.kind == AST_IDENTIFIER {
+        var sym = resolve_symbol(node.left.token)
+        if sym != null {
+            annotate_array_literal_assignment(node, sym.decl_node)
+        } else {
+            annotate_array_literal_assignment(node, null)
+        }
+        return
+    }
+    if node.left.kind == AST_MEMBER_ACCESS {
+        annotate_array_literal_assignment(node, resolve_field_decl(node.left))
+        return
     }
 }
 
 func analyze_function(ASTNode? node, bool define_name) {
     if node == null {
         return
+    }
+    if node.return_type.kind == TOKEN_ITER {
+        node.is_generator = true
     }
     // Create scope for function
     sem_push_scope()
@@ -31,6 +150,7 @@ func analyze_function(ASTNode? node, bool define_name) {
     while i < n {
         var child = node.children[i]
         if child.kind == AST_VAR_DECL {
+            child.lambda_depth = sem_lambda_depth
             var tname = type_name_from_token(child.var_type)
             define_symbol(child.token, child.var_type.kind, false, tname, child)
         } else if child.kind == AST_BLOCK {
@@ -46,6 +166,7 @@ func analyze_function(ASTNode? node, bool define_name) {
         analyze_node(node.left)
     }
     sem_current_return_type = old_return
+    if node.return_type.kind == TOKEN_FUNC { node.closure_signature = sem_returned_closure(node.left) }
     sem_pop_scope()
 }
 
@@ -71,6 +192,8 @@ func analyze_node(ASTNode? node) {
         analyze_function(node, true)
         return
     } else if node.kind == AST_CLASS_DECL {
+        str old_class = sem_current_class
+        sem_current_class = node.token.text
         sem_push_scope()
         int i = 0
         int n = len(node.children)
@@ -84,11 +207,39 @@ func analyze_node(ASTNode? node) {
             i = i + 1
         }
         sem_pop_scope()
+        sem_current_class = old_class
         return
     } else if node.kind == AST_VAR_DECL {
+        node.lambda_depth = sem_lambda_depth
+        if sem_current_scope != null && sem_current_scope.parent == null { node.lambda_depth = -1 }
+        bool explicit_type = node.var_type.kind != TOKEN_VAR
         if node.init != null {
             sem_apply_expected_type(node.init, node.var_type.kind)
             analyze_expression(node.init)
+            if node.init.kind == AST_NULL_LITERAL {
+                node.init.expr_type = node.var_type.kind
+                node.init.type_name = type_name_from_token(node.var_type)
+            }
+            // A `var` declaration takes the type of its initializer. Without
+            // this the symbol stayed untyped and codegen lost the knowledge
+            // that `var n = make_node()` yields a class pointer, emitting
+            // `n.field` on what C types as `Node*`.
+            if !explicit_type {
+                if node.init.expr_type == TOKEN_IDENTIFIER &&
+                   node.init.var_type.kind == TOKEN_IDENTIFIER {
+                    // Classes and structs both carry a named type here; only a
+                    // class is a pointer (`is_class`).
+                    node.var_type = node.init.var_type
+                    node.is_class = node.init.is_class
+                } else if node.init.expr_type != TOKEN_VAR &&
+                          node.init.expr_type != TOKEN_EOF {
+                    node.var_type = make_kind_token(node.init.expr_type)
+                }
+            }
+        }
+        if node.var_type.kind == TOKEN_IDENTIFIER &&
+           sem_class_decl(node.var_type.text) != null {
+            node.is_class = true
         }
         analyze_var_declaration(node)
         // Define in current scope if not already
@@ -103,10 +254,59 @@ func analyze_node(ASTNode? node) {
     } else if node.kind == AST_ASSIGN {
         analyze_assignment(node)
         return
+    } else if node.kind == AST_DEFER {
+        int previous_defer_depth = defer_depth
+        int previous_lambda_depth = defer_lambda_depth
+        defer_depth = defer_depth + 1
+        defer_lambda_depth = sem_lambda_depth
+        if node.left != null && node.left.kind == AST_BLOCK {
+            analyze_node(node.left)
+        } else if node.left != null {
+            analyze_expression(node.left)
+        }
+        defer_depth = previous_defer_depth
+        defer_lambda_depth = previous_lambda_depth
+        return
+    } else if node.kind == AST_BREAK {
+        if defer_body_direct_control() {
+            report_defer_control(node, "break")
+        }
+        return
+    } else if node.kind == AST_CONTINUE {
+        if defer_body_direct_control() {
+            report_defer_control(node, "continue")
+        }
+        return
+    } else if node.kind == AST_THROW {
+        if defer_body_direct_control() {
+            report_defer_control(node, "throw")
+            return
+        }
+        if node.left != null { analyze_expression(node.left) }
+        return
     } else if node.kind == AST_RETURN {
+        if defer_body_direct_control() {
+            report_defer_control(node, "return")
+            return
+        }
         if node.left != null {
             sem_apply_expected_type(node.left, sem_current_return_type)
-            analyze_expression(node.left)
+            int actual = analyze_expression(node.left)
+            if sem_current_return_type == TOKEN_FUNC { sem_validate_closure_escape(node.left) }
+            int expected = sem_current_return_type
+            if is_builtin_value_type_kind(expected) && expected != TOKEN_VAR &&
+               actual != TOKEN_VAR && (is_builtin_value_type_kind(actual) || actual == TOKEN_NULL) {
+                var expected_token = make_kind_token(expected)
+                bool incompatible = !assignment_types_compatible(expected_token, actual)
+                if incompatible {
+                    semantic_error_at("E119", node.token.line, node.token.col,
+                        "Return type mismatch.",
+                        "Return an expression of the declared type, or change the function return type.")
+                    printin("  = expected: " + type_name_from_token(make_kind_token(expected)))
+                    printin("  = found: " + type_name_from_token(make_kind_token(actual)))
+                    has_semantic_error = true
+                }
+            }
         }
         return
     } else if node.kind == AST_BLOCK {
@@ -142,17 +342,34 @@ func analyze_node(ASTNode? node) {
         return
     } else if node.kind == AST_FOR_IN {
         sem_push_scope()
-        if node.init != null { analyze_node(node.init) }
         if node.condition != null { analyze_expression(node.condition) }
+        if node.init != null {
+            if node.init.var_type.kind == TOKEN_VAR {
+                sem_for_in_apply_element_type(node.init, node.condition)
+            }
+            analyze_node(node.init)
+        }
         if node.left != null { analyze_node(node.left) }
         sem_pop_scope()
         return
     } else if node.kind == AST_EXPR_STMT {
+        if node.left != null && node.left.kind == AST_TRY_EXPR &&
+           sem_current_return_type != TOKEN_EOF {
+            semantic_error_at("E101", node.left.token.line, node.left.token.col,
+                "Try expression requires a void function.",
+                "Use try propagation only in a function without a return type.")
+            has_semantic_error = true
+        }
         if node.left != null {
             analyze_expression(node.left)
         }
         return
-    } else if node.kind == AST_TEST_DECL {
+    } else if node.kind == AST_ASSERT {
+        if node.left != null {
+            analyze_expression(node.left)
+        }
+        return
+    } else if node.kind == AST_TEST {
         sem_push_scope()
         if node.left != null { analyze_node(node.left) }
         sem_pop_scope()
@@ -161,6 +378,10 @@ func analyze_node(ASTNode? node) {
         sem_push_scope()
         if node.left != null { analyze_node(node.left) }
         sem_pop_scope()
+        return
+    } else if node.kind == AST_OPTION_SOME || node.kind == AST_OPTION_NONE ||
+               node.kind == AST_RESULT_OK || node.kind == AST_RESULT_ERR {
+        if node.left != null { analyze_expression(node.left) }
         return
     }
     
@@ -178,8 +399,108 @@ func analyze_node(ASTNode? node) {
     }
 }
 
+// Resolve the declaration of a `self.field` / `obj.field` access so the field's
+// real type (notably whether it is an array) can be inspected.
 func resolve_field_decl(ASTNode? access): ASTNode? {
+    if access == null || access.kind != AST_MEMBER_ACCESS || access.left == null {
+        return null
+    }
+    str class_name = ""
+    if access.left.kind == AST_IDENTIFIER {
+        if access.left.token.text == "self" {
+            class_name = sem_current_class
+        } else {
+            var base_sym = resolve_symbol(access.left.token)
+            if base_sym != null {
+                class_name = base_sym.type_name
+            }
+        }
+    } else if access.left.kind == AST_MEMBER_ACCESS && len(access.left.type_name) > 0 {
+        class_name = access.left.type_name
+    }
+    if len(class_name) == 0 {
+        return null
+    }
+    var class_token = make_token(TOKEN_IDENTIFIER, class_name, 0, access.token.line)
+    var class_sym = resolve_symbol(class_token)
+    if class_sym == null || class_sym.decl_node == null {
+        return null
+    }
+    var class_node = class_sym.decl_node
+    int i = 0
+    int n = len(class_node.children)
+    while i < n {
+        var child = class_node.children[i]
+        if child.kind == AST_VAR_DECL && child.token.text == access.token.text {
+            return child
+        }
+        i = i + 1
+    }
     return null
+}
+
+// `arr = { ... }` needs the element type so codegen can build the right array
+// struct. Record it on the literal itself.
+func annotate_array_literal_assignment(ASTNode? node, ASTNode? decl) {
+    if node == null || node.right == null || node.right.kind != AST_LITERAL_ARRAY {
+        return
+    }
+    if decl == null || !decl.is_array {
+        return
+    }
+    node.right.var_type = decl.var_type
+    node.right.is_array = true
+    node.right.is_class = decl.is_class
+    if decl.var_type.kind == TOKEN_IDENTIFIER {
+        str elem = type_name_from_token(decl.var_type)
+        if len(elem) > 0 {
+            var elem_token = make_token(TOKEN_IDENTIFIER, elem, 0, node.token.line)
+            var elem_sym = resolve_symbol(elem_token)
+            if elem_sym != null && elem_sym.sym_type == TOKEN_CLASS {
+                node.right.is_class = true
+            }
+        }
+    }
+}
+
+// The type a destination expects. `input()` is context-sensitive, so the
+// destination decides which reader the read uses.
+func assignment_target_type(ASTNode? left): int {
+    if left == null {
+        return TOKEN_EOF
+    }
+    if left.kind == AST_IDENTIFIER {
+        var sym = resolve_symbol(left.token)
+        if sym != null {
+            return sym.sym_type
+        }
+        return TOKEN_EOF
+    }
+    if left.kind == AST_MEMBER_ACCESS {
+        var field = resolve_field_decl(left)
+        if field != null {
+            return field.var_type.kind
+        }
+        return TOKEN_EOF
+    }
+    if left.kind == AST_INDEX {
+        var base = left.left
+        ASTNode? base_decl = null
+        if base != null && base.kind == AST_IDENTIFIER {
+            var base_sym = resolve_symbol(base.token)
+            if base_sym != null {
+                base_decl = base_sym.decl_node
+            }
+        } else if base != null && base.kind == AST_MEMBER_ACCESS {
+            base_decl = resolve_field_decl(base)
+        }
+        // An array's declared type is its element type.
+        if base_decl != null && base_decl.is_array {
+            return base_decl.var_type.kind
+        }
+        return TOKEN_EOF
+    }
+    return TOKEN_EOF
 }
 
 func analyze_postfix(ASTNode? node) {

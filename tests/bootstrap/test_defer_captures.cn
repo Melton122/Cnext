@@ -1,0 +1,70 @@
+// EXPECT: captured
+// EXPECT: 42
+// EXPECT: 42
+// EXPECT: outer-deferred
+// EXPECT: 6
+// EXPECT: 20
+// EXPECT: 10
+// EXPECT: 7
+// EXPECT: 7
+// EXPECT: 9
+// EXPECT: caught
+// EXPECT: 0
+// EXPECT: 1
+
+func captured(int value, str label) {
+    int flag = 2
+    defer printin(value)
+    defer {
+        value = value + flag
+        printin(label)
+        printin(value)
+    }
+    value = 40
+}
+
+func nested_captures() {
+    int value = 5
+    defer {
+        defer printin(value)
+        value = value + 1
+        printin("outer-deferred")
+    }
+}
+
+func shadowed() {
+    int value = 10
+    defer printin(value)
+    defer {
+        int value = 20
+        printin(value)
+    }
+}
+
+func early(int value): int {
+    defer printin(value)
+    value = 7
+    return value
+}
+
+func fail(int value) {
+    defer printin(value)
+    value = 9
+    throw "boom"
+}
+
+main {
+    captured(1, "captured")
+    nested_captures()
+    shadowed()
+    printin(early(1))
+    try { fail(1) } catch (str error) { printin("caught") }
+    int i = 0
+    while i < 2 {
+        int value = i
+        defer printin(value)
+        i = i + 1
+        if i == 1 { continue }
+        break
+    }
+}

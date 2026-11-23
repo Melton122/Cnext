@@ -46,10 +46,13 @@ expr           ::= logic_or
 
 logic_or       ::= logic_and { "||" logic_and }
 logic_and      ::= equality { "&&" equality }
-equality       ::= comparison { ( "==" | "!=" ) comparison }
+equality       ::= comparison { ( "==" | "!=" ) comparison | "~=" bit_pattern }
+bit_pattern    ::= '"' { "0" | "1" | "?" | "_" } '"'  (* 1 to 64 bits, ignoring underscores *)
 comparison     ::= term { ( "<" | "<=" | ">" | ">=" ) term }
 term           ::= factor { ( "+" | "-" ) factor }
-factor         ::= unary { ( "*" | "/" ) unary }
+factor         ::= extraction { ( "*" | "/" | "%" ) extraction }
+extraction     ::= unary { "~>" field_layout }
+field_layout   ::= '"' { "#" | "?" | "_" } '"'  (* 1 to 64 bits with one contiguous group of #, ignoring _ *)
 
 unary          ::= ( "!" | "-" ) unary
                  | primary

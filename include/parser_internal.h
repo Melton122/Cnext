@@ -26,6 +26,7 @@ extern const char* parser_source;
 void print_source_line(int line);
 void print_caret(Token* token);
 void error_at(Token* token, const char* message);
+void error_at_expected(Token* token, const char* message, const char* expected);
 void error(const char* message);
 void error_at_current(const char* message);
 void advance_token(void);

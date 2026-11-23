@@ -1,0 +1,9 @@
+// Run from the repository root:
+// cnext run examples/c_interop/main.cn --c-source examples/c_interop/calibration.c --include-dir examples/c_interop/include
+extern "C" func native_calibrate(int reading, int offset): int
+
+main {
+    int reading = 40
+    int calibrated = native_calibrate(reading, 2)
+    printin("Calibrated reading: {calibrated}")
+}

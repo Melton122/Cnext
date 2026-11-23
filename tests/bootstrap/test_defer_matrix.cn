@@ -1,0 +1,33 @@
+func nested() {
+    printin("outer-body")
+    defer printin("outer-cleanup")
+    {
+        defer printin("inner-cleanup")
+        printin("inner-body")
+    }
+    printin("after-inner")
+}
+
+func unwind() {
+    defer printin("throw-outer")
+    {
+        defer printin("throw-inner")
+        printin("throw-body")
+        throw "boom"
+    }
+}
+
+main {
+    defer printin("first")
+    defer { printin("second") }
+    printin("main-body")
+    nested()
+    int i = 0
+    while i < 2 {
+        defer printin("loop-cleanup")
+        printin(i)
+        i = i + 1
+    }
+    printin("after-loop")
+    try { unwind() } catch (str error) { printin("caught") }
+}

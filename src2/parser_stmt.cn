@@ -183,7 +183,7 @@ func parse_for_statement(): ASTNode? {
         if match_token(TOKEN_IN) {
             node.kind = AST_FOR_IN
             var vdecl = new ASTNode(AST_VAR_DECL, name)
-            vdecl.var_type = make_kind_token(TOKEN_IDENTIFIER)
+            vdecl.var_type = make_kind_token(TOKEN_VAR)
             node.init = vdecl
             var cond = parse_expression()
             node.condition = cond
@@ -296,12 +296,18 @@ func parse_switch_statement(): ASTNode? {
                 var body = new ASTNode(AST_BLOCK, g_parser.previous)
                 while !check_token(TOKEN_CASE) && !check_token(TOKEN_DEFAULT) &&
                       !check_token(TOKEN_RBRACE) && !check_token(TOKEN_EOF) {
+                    int before = g_parser.current.start_index
                     var decl = parse_declaration()
                     if decl != null {
                         node_add_child(body, decl)
                     }
                     if g_parser.panic_mode {
                         synchronize()
+                    }
+                    if !check_token(TOKEN_CASE) && !check_token(TOKEN_DEFAULT) &&
+                       !check_token(TOKEN_RBRACE) && !check_token(TOKEN_EOF) &&
+                       g_parser.current.start_index == before {
+                        advance_token()
                     }
                 }
                 c_node.left = body
@@ -317,12 +323,18 @@ func parse_switch_statement(): ASTNode? {
                 var body = new ASTNode(AST_BLOCK, g_parser.previous)
                 while !check_token(TOKEN_CASE) && !check_token(TOKEN_DEFAULT) &&
                       !check_token(TOKEN_RBRACE) && !check_token(TOKEN_EOF) {
+                    int before = g_parser.current.start_index
                     var decl = parse_declaration()
                     if decl != null {
                         node_add_child(body, decl)
                     }
                     if g_parser.panic_mode {
                         synchronize()
+                    }
+                    if !check_token(TOKEN_CASE) && !check_token(TOKEN_DEFAULT) &&
+                       !check_token(TOKEN_RBRACE) && !check_token(TOKEN_EOF) &&
+                       g_parser.current.start_index == before {
+                        advance_token()
                     }
                 }
                 d_node.left = body
@@ -386,6 +398,7 @@ func parse_match_statement(): ASTNode? {
     node.condition = cond
     consume(TOKEN_LBRACE, "Expect '{' before match body.")
     while !check_token(TOKEN_RBRACE) && !check_token(TOKEN_EOF) {
+        int arm_start = g_parser.current.start_index
         var arm = new ASTNode(AST_MATCH_ARM, g_parser.current)
 
         if check_token(TOKEN_IDENTIFIER) && len(g_parser.current.text) == 1 &&
@@ -426,6 +439,10 @@ func parse_match_statement(): ASTNode? {
         }
 
         node_add_child(node, arm)
+        if !check_token(TOKEN_RBRACE) && !check_token(TOKEN_EOF) &&
+           g_parser.current.start_index == arm_start {
+            advance_token()
+        }
     }
     consume(TOKEN_RBRACE, "Expect '}' after match body.")
     return node

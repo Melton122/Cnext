@@ -150,7 +150,8 @@ func parse_program(str source): ASTNode? {
                k == AST_RETURN || k == AST_BREAK || k == AST_CONTINUE ||
                k == AST_ASSIGN || k == AST_BLOCK || k == AST_TRY ||
                k == AST_THROW || k == AST_MATCH || k == AST_ASSERT ||
-               k == AST_RESUME_EXPR || k == AST_AWAIT_EXPR || k == AST_RUN_ASYNC {
+               k == AST_RESUME_EXPR || k == AST_AWAIT_EXPR || k == AST_RUN_ASYNC ||
+               k == AST_DEFER || k == AST_WHEN || k == AST_YIELD {
                 error_at_tok(decl.token, "Statements cannot appear at the top level.")
             } else {
                 node_add_child(program, decl)

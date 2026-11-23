@@ -1,0 +1,10 @@
+func invalid(): func {
+    str text = "a"
+    var callback = (int amount) => {
+        text = "b"
+        return len(text)
+    }
+    return callback
+}
+
+main {}

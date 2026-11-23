@@ -570,8 +570,9 @@ func parse_primary(): ASTNode? {
         var node = new ASTNode(AST_WHEN, g_parser.previous)
         consume(TOKEN_LBRACE, "Expect '{' after 'when'.")
         while !check_token(TOKEN_RBRACE) && !check_token(TOKEN_EOF) {
+            int arm_start = g_parser.current.start_index
             var arm = new ASTNode(AST_WHEN_ARM, g_parser.current)
-            if check_identifier_text("else") {
+            if check_token(TOKEN_ELSE) || check_identifier_text("else") {
                 advance_token()
                 arm.is_const = true
             } else {
@@ -587,6 +588,9 @@ func parse_primary(): ASTNode? {
             }
             match_token(TOKEN_COMMA)
             node_add_child(node, arm)
+            if !check_token(TOKEN_EOF) && g_parser.current.start_index == arm_start {
+                advance_token()
+            }
         }
         consume(TOKEN_RBRACE, "Expect '}' after when body.")
         return node
@@ -630,12 +634,20 @@ func parse_unary(): ASTNode? {
     return parse_postfix()
 }
 
-func parse_factor(): ASTNode? {
+func parse_field_extraction(): ASTNode? {
     var expr = parse_unary()
+    while match_token(TOKEN_BIT_EXTRACT) {
+        expr = parse_bit_pattern(expr, AST_BIT_EXTRACT)
+    }
+    return expr
+}
+
+func parse_factor(): ASTNode? {
+    var expr = parse_field_extraction()
     while match_token(TOKEN_STAR) || match_token(TOKEN_SLASH) || match_token(TOKEN_PERCENT) {
         var node = new ASTNode(AST_BINARY, g_parser.previous)
         node.left = expr
-        var rhs = parse_unary()
+        var rhs = parse_field_extraction()
         if rhs != null {
             node.right = rhs
         }
@@ -673,9 +685,59 @@ func parse_comparison(): ASTNode? {
     return expr
 }
 
+func parse_bit_pattern(ASTNode? value, int kind): ASTNode? {
+    bool extract = kind == AST_BIT_EXTRACT
+    if extract {
+        consume(TOKEN_STRING_LITERAL, "Expected a quoted field layout after '~>'.")
+    } else {
+        consume(TOKEN_STRING_LITERAL, "Expected a quoted bit pattern after '~='.")
+    }
+    var pattern = g_parser.previous
+    var node = new ASTNode(kind, pattern)
+    node.left = value
+    int width = 0
+    bool saw_field = false
+    bool field_ended = false
+    int i = 1
+    while i < len(pattern.text) - 1 {
+        int bit = str_char_at(pattern.text, i)
+        if bit != '_' {
+            if extract {
+                if bit == '#' {
+                    if field_ended {
+                        parser_error("A field layout must select one contiguous field.")
+                        return node
+                    }
+                    saw_field = true
+                } else if bit == '?' {
+                    field_ended = saw_field
+                } else {
+                    parser_error("A field layout accepts only #, ? and _.")
+                    return node
+                }
+            } else if bit != '0' && bit != '1' && bit != '?' {
+                parser_error("A bit pattern accepts only 0, 1, ? and _.")
+                return node
+            }
+            width = width + 1
+        }
+        i = i + 1
+    }
+    if width < 1 || width > 64 {
+        parser_error("A bit pattern must contain 1 to 64 bits.")
+    } else if extract && !saw_field {
+        parser_error("A field layout must select at least one bit with '#'.")
+    }
+    return node
+}
+
 func parse_equality(): ASTNode? {
     var expr = parse_comparison()
-    while match_token(TOKEN_BANG_EQ) || match_token(TOKEN_EQ_EQ) {
+    while match_token(TOKEN_BANG_EQ) || match_token(TOKEN_EQ_EQ) || match_token(TOKEN_BIT_MATCH) {
+        if g_parser.previous.kind == TOKEN_BIT_MATCH {
+            expr = parse_bit_pattern(expr, AST_BIT_MATCH)
+            continue
+        }
         var node = new ASTNode(AST_BINARY, g_parser.previous)
         node.left = expr
         var rhs = parse_comparison()

@@ -81,7 +81,7 @@ printin(operations["square"](5))  // 25
 
 ## Reference Capture
 
-Closures capture variables by reference:
+Variables assigned or incremented by a closure are captured by reference:
 
 ```cnext
 var x = 10
@@ -92,6 +92,60 @@ var modify = () => {
 modify()
 printin(x)  // 20
 ```
+
+Read-only captures copy the value when the closure is created. For example,
+`var read = () => x` continues to read the copied value if the enclosing code
+later reassigns `x`.
+
+## Local Aliases and Cleanup
+
+Local aliases keep the original closure's call signature, including through
+multiple aliases and nested scopes:
+
+```cnext
+int base = 10
+var add = (int value) => base + value
+var alias = add
+printin(alias(2))  // 12
+```
+
+Closure variables share a reference-counted capture environment. Creating an
+alias retains it; releasing one variable leaves other copies valid. Returning
+a value-capturing closure keeps its environment alive after the creating
+function returns. Reassignment retains the replacement before releasing the
+previous value, including self-assignment. Captured closure values retain
+their own environments too.
+
+Local owners release their references on normal block exit, `return`, `break`,
+`continue`, and exception unwinding. Cleanup uses the defer registry, so a
+deferred callback runs while its closure is still alive. The environment is
+untracked and freed after its last owner releases it.
+
+Temporary closure arguments release their references after the call, including
+when the called function throws. Discarded closure results also release their
+environments without requiring a local variable.
+
+Mutable scalar captures (integers, floats, booleans, and characters) use
+reference-counted heap cells, so a closure that mutates such a local can escape
+its creating scope safely. The cell outlives the scope while the closure owns a
+reference to it.
+
+This applies to scalar locals and parameters in ordinary functions. Generator
+frames and variables declared in loop headers retain the previous reference
+lifetime restrictions. Read-only captures still copy a snapshot, even when
+another closure mutates the same variable through a cell.
+
+Non-scalar locals such as strings, arrays, classes, and pointers still require
+their storage to remain alive. Returning a closure that mutates one of those
+locals is rejected. Runtime checks also reject indirect reference escapes
+through wrapper closures and reference-capturing replacements in closure
+assignments. Keep those closures in their creating scope.
+
+Value captures follow the captured type's existing rules. In particular,
+copying a `str` copies its pointer and length; closure ownership does not make
+an independent copy of that string's bytes. Do not explicitly free backing
+storage while a capture still uses it. These checks do not constitute a
+general borrow checker for arbitrary object or collection storage.
 
 ## Closures in Loops
 
@@ -147,20 +201,53 @@ printin(add5(3))   // 8
 printin(add10(3))  // 13
 ```
 
-## Closure Memory
+## Nested Closure Factories
 
-Closures automatically manage captured variables:
+A closure can create and return another closure. Mutable scalar captures stay
+shared across those closures, even after the original function returns:
 
 ```cnext
-func create_counter(): func {
-    var count = 0
-    return () => {
-        count = count + 1
-        return count
+func make_builder(int total): func {
+    return (int start) => {
+        total = total + start
+        return (int step) => {
+            total = total + step
+            return total
+        }
     }
 }
 
-var counter = create_counter()
-printin(counter())  // 1
-printin(counter())  // 2
+main {
+    var builder = make_builder(10)
+    var first = builder(1)
+    var second = builder(2)
+    printin(first(3))   // 16
+    printin(second(4))  // 20
+}
 ```
+
+Arrow-form factories are also supported. Returning an existing callback retains
+its environment, allowing that callback to outlive the factory closure.
+
+## Closure Memory
+
+This counter keeps its reference capture in the variable's scope:
+
+```cnext
+main {
+    int count = 0
+    var counter = () => {
+        count = count + 1
+        return count
+    }
+    printin(counter())  // 1
+    printin(counter())  // 2
+}
+```
+
+Returning this mutable counter from a factory is supported: its `int` capture
+lives in a heap cell. Returning a closure that mutates a non-scalar local is
+still rejected. The value-capturing `make_adder` example above is also
+supported. Existing opaque `func` parameters retain their `int(int)` call
+convention; this work does not introduce a new syntax for fully typed function
+parameters.

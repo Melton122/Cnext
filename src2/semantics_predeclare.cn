@@ -1,7 +1,3 @@
-﻿func type_name_from_token(Token token): str { return "" }
-func define_symbol(Token token, int ttype, bool is_const, str type_name, ASTNode? decl_node) { }
-func define_type_symbol(ASTNode node, int ttype) { }
-
 // Self-hosting bootstrap: semantics predeclaration.
 // Port of src/semantics_predeclare.c
 
@@ -15,6 +11,8 @@ func predeclare_global(ASTNode? node) {
         define_symbol(node.token, TOKEN_FUNC, false, type_name_from_token(node.return_type), node)
     } else if node.kind == AST_CLASS_DECL {
         define_type_symbol(node, TOKEN_CLASS)
+        inherit_parent_class(node)
+        inherit_traits(node)
     } else if node.kind == AST_STRUCT_DECL {
         define_type_symbol(node, TOKEN_STRUCT)
     } else if node.kind == AST_ENUM_DECL {
@@ -33,5 +31,142 @@ func predeclare_global(ASTNode? node) {
     while i < n {
         predeclare_global(node.children[i])
         i = i + 1
+    }
+}
+
+// Copy the parent class's fields and non-overridden methods into the child.
+// That is what gives the subclass layout its inherited slots and lets
+// inherited methods be called through the subclass.
+func inherit_parent_class(ASTNode node) {
+    if len(node.parent_name) == 0 {
+        return
+    }
+    var parent_tok = make_token(TOKEN_IDENTIFIER, node.parent_name, 0, node.token.line)
+    var parent_sym = resolve_symbol(parent_tok)
+    if parent_sym == null || parent_sym.decl_node == null {
+        return
+    }
+    var parent_node = parent_sym.decl_node
+    int to_add = 0
+    int i = 0
+    while i < len(parent_node.children) {
+        var pchild = parent_node.children[i]
+        if pchild.kind == AST_VAR_DECL {
+            to_add = to_add + 1
+        } else if pchild.kind == AST_FUNC_DECL {
+            bool overridden = false
+            int j = 0
+            while j < len(node.children) {
+                if node.children[j].kind == AST_FUNC_DECL &&
+                   node.children[j].token.text == pchild.token.text {
+                    overridden = true
+                    break
+                }
+                j = j + 1
+            }
+            if !overridden {
+                to_add = to_add + 1
+            }
+        }
+        i = i + 1
+    }
+    if to_add == 0 {
+        return
+    }
+    ASTNode[] new_children = {}
+    i = 0
+    while i < len(parent_node.children) {
+        if parent_node.children[i].kind == AST_VAR_DECL {
+            var copy = deep_copy_ast(parent_node.children[i])
+            if copy != null { push(new_children, copy) }
+        }
+        i = i + 1
+    }
+    i = 0
+    while i < len(node.children) {
+        if node.children[i].kind == AST_VAR_DECL {
+            push(new_children, node.children[i])
+        }
+        i = i + 1
+    }
+    i = 0
+    while i < len(parent_node.children) {
+        var pchild = parent_node.children[i]
+        if pchild.kind == AST_FUNC_DECL {
+            bool overridden = false
+            int j = 0
+            while j < len(node.children) {
+                if node.children[j].kind == AST_FUNC_DECL &&
+                   node.children[j].token.text == pchild.token.text {
+                    overridden = true
+                    break
+                }
+                j = j + 1
+            }
+            if !overridden {
+                var copy = deep_copy_ast(pchild)
+                if copy != null { push(new_children, copy) }
+            }
+        }
+        i = i + 1
+    }
+    i = 0
+    while i < len(node.children) {
+        if node.children[i].kind != AST_VAR_DECL {
+            push(new_children, node.children[i])
+        }
+        i = i + 1
+    }
+    node.children = new_children
+}
+
+func inherit_traits(ASTNode node) {
+    str names = node.implements_names
+    if len(names) == 0 {
+        return
+    }
+    ASTNode[] additions = {}
+    int start = 0
+    int i = 0
+    while i <= len(names) {
+        if i == len(names) || str_char_at(names, i) == ',' {
+            str name = str_trim(str_substring(names, start, i))
+            if len(name) > 0 {
+                var trait_tok = make_token(TOKEN_IDENTIFIER, name, 0, node.token.line)
+                var trait_sym = resolve_symbol(trait_tok)
+                if trait_sym != null && trait_sym.decl_node != null &&
+                   trait_sym.decl_node.kind == AST_TRAIT_DECL {
+                    var trait_node = trait_sym.decl_node
+                    int ti = 0
+                    while ti < len(trait_node.children) {
+                        var tchild = trait_node.children[ti]
+                        if tchild.kind == AST_FUNC_DECL && tchild.left != null {
+                            bool overridden = false
+                            int j = 0
+                            while j < len(node.children) {
+                                if node.children[j].kind == AST_FUNC_DECL &&
+                                   node.children[j].token.text == tchild.token.text {
+                                    overridden = true
+                                    break
+                                }
+                                j = j + 1
+                            }
+                            if !overridden {
+                                var copy = deep_copy_ast(tchild)
+                                if copy != null { push(additions, copy) }
+                            }
+                        }
+                        ti = ti + 1
+                    }
+                }
+            }
+            start = i + 1
+        }
+        i = i + 1
+    }
+    int k = 0
+    while k < len(additions) {
+        push(node.children, additions[k])
+        k = k + 1
     }
 }

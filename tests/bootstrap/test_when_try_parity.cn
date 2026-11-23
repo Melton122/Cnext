@@ -1,0 +1,21 @@
+// EXPECT: 7
+// EXPECT: selected
+main {
+    int value = 7
+    int chosen = when {
+        value > 0 => 7,
+        else => 8
+    }
+    printin(chosen)
+
+    run_try()
+}
+
+func make_value(): int {
+    return 1
+}
+
+func run_try() {
+    make_value()?;
+    printin("selected")
+}

@@ -173,6 +173,8 @@ typedef enum {
     TOKEN_RANGE_INCLUSIVE, // ..= (inclusive range)
     TOKEN_RAW_STRING,      // r"..." (raw string literal)
     TOKEN_WHEN,            // when (multi-branch conditional expression)
+    TOKEN_BIT_MATCH,       // ~= (compare selected bits)
+    TOKEN_BIT_EXTRACT,     // ~> (read a packed field)
 } CnextTokenType;
 
 typedef struct {

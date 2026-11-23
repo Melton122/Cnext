@@ -1,4 +1,5 @@
 #include "main_internal.h"
+#include "semantics_internal.h"
 #include "optimizer.h"
 
 int compile_file(const char* input_path, const char* output_c_path, bool test_mode, bool run_optimizer, bool emit_debug_lines) {
@@ -16,6 +17,7 @@ int compile_file(const char* input_path, const char* output_c_path, bool test_mo
     }
     free(raw_source);
 
+    semantics_source = source;
     ASTNode* program = parse_program(source);
     if (!program) {
         free(source);

@@ -1,0 +1,8 @@
+// Bootstrap test: loops
+main {
+    int i = 0
+    while i < 3 {
+        printin(i)
+        i = i + 1
+    }
+}

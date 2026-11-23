@@ -1,0 +1,13 @@
+// Explicitly convert Cnext strings for a read-only C function.
+extern "C" func strcmp(CStr left, CStr right): int
+
+main {
+    CStr first = to_cstr("hello")
+    var second = to_cstr("hello")
+    printin(strcmp(first, second))  // 0: equal text
+
+    str copied = from_cstr(first)
+    cstr_free(first)
+    cstr_free(second)
+    printin(copied)                // hello: the copy has its own storage
+}

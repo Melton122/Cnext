@@ -9,14 +9,21 @@ void reset_semantics_state(void) {
     loop_depth = 0;
     switch_depth = 0;
     generator_depth = 0;
+    defer_depth = 0;
+    defer_lambda_depth = 0;
 }
 
 bool analyze_semantics(ASTNode* program, bool require_main) {
+    sem_prepare_capture_cells(program, false);
+    sem_current_return_token = (Token){0};
+    sem_lambda_depth = 0;
     has_semantic_error = false;
     sem_current_scope = NULL;
     loop_depth = 0;
     switch_depth = 0;
     generator_depth = 0;
+    defer_depth = 0;
+    defer_lambda_depth = 0;
     sem_push_scope();
 
     Token printin_token = {TOKEN_IDENTIFIER, "printin", 7, 0};
