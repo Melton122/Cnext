@@ -36,6 +36,7 @@ EXPECTED = {
     "test_while.cn": "0\n1\n2\n",
     "test_recursive.cn": "8\n",
     "test_array.cn": "1\n2\n3\n",
+    "test_array_builtins_contract.cn": "5\n3\n9\n1\n1\ntrue\n2\n1\n2\n3\n2\n3\n3\n2\n1\n3\n20\n10\n2\n4\n6\n1\n4\n6\n4\n5\n0\n0\n",
     "test_string_ops.cn": "hi!\n3\n105\nn=42\nlength ok\nequal\n",
     "test_class_codegen.cn": "7\n7\n",
 }

@@ -1,0 +1,26 @@
+// EXPECT: 1
+// EXPECT: Zg==
+// EXPECT: Zm8=
+// EXPECT: Zm9v
+// EXPECT: true
+// EXPECT: 1
+// EXPECT: a+b%2Fc%3Fd%3De%26f
+// EXPECT: true
+import encoding
+
+main {
+    str empty_b64 = base64_encode("")
+    printin(len(empty_b64) == 0)
+
+    printin(base64_encode("f"))
+    printin(base64_encode("fo"))
+    printin(base64_encode("foo"))
+    printin(base64_decode("Zm8=") == "fo")
+
+    printin(hex_decode("4A2F") == "J/")
+    printin(len(hex_decode("ABC")) == 0)
+
+    str encoded = url_encode("a b/c?d=e&f")
+    printin(encoded)
+    printin(url_decode(encoded) == "a b/c?d=e&f")
+}

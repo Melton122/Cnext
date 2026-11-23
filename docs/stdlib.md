@@ -15,6 +15,7 @@ panic("something went wrong")         // Exit with error
 exit(0)                     // Exit with code
 var copy = clone(x)         // Deep copy
 swap(a, b)                  // Swap two variables
+str trace = stacktrace()    // Portable placeholder; currently empty
 ```
 
 ## Input
@@ -244,9 +245,14 @@ int first = array_first(arr)    // First element
 int[] slice = array_slice(arr, 1, 3) // Slice
 int[] unique = array_unique(arr)     // Remove duplicates
 shuffle(arr)                    // Shuffle randomly
+array_shuffle(arr)              // Alias of shuffle
 ```
 
 ## Higher-Order Array Functions
+
+Callbacks currently operate on `int` values. They receive a closure environment
+pointer plus one element (or accumulator and element for `array_reduce`), and
+return an `int`-compatible result.
 
 ```cnext
 int[] nums = {1, 2, 3, 4, 5}
@@ -277,11 +283,18 @@ long us = benchmark(1000000)    // Benchmark (microseconds)
 ```cnext
 import http
 
-str response = http_get("https://api.example.com/data")
-str result = http_post("https://api.example.com/submit", "data")
-str result = http_put("https://api.example.com/update", "data")
-str result = http_delete("https://api.example.com/delete")
+var resp = http_get_full("https://api.example.com/data")
+int code = resp.status_code
+str body = resp.body
+http_free_response(&resp)
 ```
+
+Available calls: `http_request(method, url, body, headers)`, `http_get_full(url)`,
+`http_get_with_headers(url, headers)`, `http_post_full(url, body)`,
+`http_post_with_headers(url, body, headers)`, `http_put(url, body)`,
+`http_delete(url)`, `http_patch(url, body)`, and `http_status_text(code)`.
+`http_get`, `http_post`, and `download_file` are not HTTP-module builtins;
+`download_file` lives in the `net` module.
 
 ## Thread Functions (Module Required)
 

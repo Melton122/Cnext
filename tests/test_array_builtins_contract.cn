@@ -1,0 +1,92 @@
+// EXPECT: 5
+// EXPECT: 3
+// EXPECT: 9
+// EXPECT: 1
+// EXPECT: 1
+// EXPECT: true
+// EXPECT: 2
+// EXPECT: 1
+// EXPECT: 2
+// EXPECT: 3
+// EXPECT: 2
+// EXPECT: 3
+// EXPECT: 3
+// EXPECT: 2
+// EXPECT: 1
+// EXPECT: 3
+// EXPECT: 20
+// EXPECT: 10
+// EXPECT: 2
+// EXPECT: 4
+// EXPECT: 6
+// EXPECT: 1
+// EXPECT: 4
+// EXPECT: 6
+// EXPECT: 4
+// EXPECT: 5
+// EXPECT: 0
+// EXPECT: 0
+main {
+    int[] nums = {3, 1, 4, 1, 5}
+    printin(pop(nums))
+    printin(shift(nums))
+    unshift(nums, 9)
+    insert_at(nums, 2, 7)
+    printin(remove_at(nums, 0))
+
+    reverse_array(nums)
+    printin(array_first(nums))
+    printin(array_last(nums))
+    printin(contains_item(nums, 7))
+    printin(array_index(nums, 7))
+
+    int[] sorted = {3, 1, 2}
+    sort(sorted)
+    printin(sorted[0])
+    printin(sorted[1])
+    printin(sorted[2])
+
+    int[] slice = array_slice(sorted, 1, 3)
+    printin(slice[0])
+    printin(slice[1])
+
+    int[] dup = {2, 1, 2, 3, 1}
+    int[] uniq = array_unique(dup)
+    printin(len(uniq))
+    printin(uniq[0])
+    printin(uniq[1])
+    printin(uniq[2])
+
+    int a = 10
+    int b = 20
+    swap(a, b)
+    printin(a)
+    printin(b)
+
+    var dbl = (int x) => x * 2
+    int[] mapped = array_map(sorted, dbl)
+    printin(mapped[0])
+    printin(mapped[1])
+    printin(mapped[2])
+
+    var even = (int x) => x % 2 == 0
+    int[] filtered = array_filter(nums, even)
+    printin(len(filtered))
+    printin(filtered[0])
+
+    var add = (int acc, int x) => acc + x
+    printin(array_reduce(sorted, 0, add))
+
+    var gt_one = (int x) => x > 1
+    printin(array_find(nums, gt_one))
+
+    int[] shuffled = {1, 2, 3, 4, 5}
+    shuffle(shuffled)
+    printin(len(shuffled))
+
+    str trace = stacktrace()
+    printin(len(trace))
+
+    clear(nums)
+    printin(len(nums))
+}

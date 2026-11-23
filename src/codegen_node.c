@@ -503,6 +503,18 @@ void generate_node(ASTNode* node) {
                         fprintf(out, ".length");
                     }
                     fprintf(out, ")");
+                } else if (node->init) {
+                    if (node->is_global && node->init->type == AST_CALL) {
+                        fprintf(out, ";\n");
+                        fprintf(out, "static void __attribute__((constructor)) _cnext_array_init_%.*s(void) {\n",
+                            node->token.length, node->token.start);
+                        fprintf(out, "%.*s = ", node->token.length, node->token.start);
+                        generate_expression(node->init);
+                        fprintf(out, ";\n}\n");
+                        break;
+                    }
+                    fprintf(out, " = ");
+                    generate_expression(node->init);
                 }
                 fprintf(out, ";\n");
             } else {

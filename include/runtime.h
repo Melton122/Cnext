@@ -1639,6 +1639,307 @@ static inline void* _cnext_array_heap_copy(const void* src, size_t count, size_t
     _d->length = _en - _st; \
 } while(0)
 
+static inline size_t _cnext_array_index_checked(size_t length, long long index) {
+    if (index < 0 || (unsigned long long)index >= (unsigned long long)length) {
+        fprintf(stderr, "Array bounds out of range: index %lld >= length %zu\n", index, length);
+        exit(139);
+    }
+    return (size_t)index;
+}
+
+static inline size_t _cnext_array_insert_index_checked(size_t length, long long index) {
+    if (index < 0 || (unsigned long long)index > (unsigned long long)length) {
+        fprintf(stderr, "Array bounds out of range: index %lld >= length %zu\n", index, length);
+        exit(139);
+    }
+    return (size_t)index;
+}
+
+static inline void* _cnext_array_buffer_alloc(size_t count, size_t elem_size) {
+    void* p = malloc((count ? count : 1) * elem_size);
+    if (!p) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
+    _cnext_track(p);
+    return p;
+}
+
+static inline void* _cnext_array_buffer_resize(void* old, size_t count, size_t elem_size) {
+    _cnext_untrack(old);
+    void* p = realloc(old, (count ? count : 1) * elem_size);
+    if (!p) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
+    _cnext_track(p);
+    return p;
+}
+
+static inline int _cnext_item_eq_int(int a, int b) { return a == b; }
+static inline int _cnext_item_eq_ll(long long a, long long b) { return a == b; }
+static inline int _cnext_item_eq_uint(unsigned int a, unsigned int b) { return a == b; }
+static inline int _cnext_item_eq_ull(unsigned long long a, unsigned long long b) { return a == b; }
+static inline int _cnext_item_eq_short(short a, short b) { return a == b; }
+static inline int _cnext_item_eq_ushort(unsigned short a, unsigned short b) { return a == b; }
+static inline int _cnext_item_eq_char(char a, char b) { return a == b; }
+static inline int _cnext_item_eq_uchar(unsigned char a, unsigned char b) { return a == b; }
+static inline int _cnext_item_eq_float(float a, float b) { return a == b; }
+static inline int _cnext_item_eq_double(double a, double b) { return a == b; }
+static inline int _cnext_item_eq_bool(bool a, bool b) { return a == b; }
+static inline int _cnext_item_eq_str(CnextString a, CnextString b) { return cnext_str_eq(a, b) ? 1 : 0; }
+static inline int _cnext_item_eq_ptr(const void* a, const void* b) { return a == b; }
+
+#define _CNEXT_ITEM_EQ(a, b) _Generic((a), \
+    int: _cnext_item_eq_int, \
+    long long: _cnext_item_eq_ll, \
+    unsigned int: _cnext_item_eq_uint, \
+    unsigned long long: _cnext_item_eq_ull, \
+    short: _cnext_item_eq_short, \
+    unsigned short: _cnext_item_eq_ushort, \
+    char: _cnext_item_eq_char, \
+    unsigned char: _cnext_item_eq_uchar, \
+    float: _cnext_item_eq_float, \
+    double: _cnext_item_eq_double, \
+    bool: _cnext_item_eq_bool, \
+    CnextString: _cnext_item_eq_str, \
+    default: _cnext_item_eq_ptr)((a), (b))
+
+#define _CNEXT_DEFINE_ITEM_CMP(name, type) \
+    static inline int name(const void* pa, const void* pb) { \
+        type a = *(const type*)pa, b = *(const type*)pb; \
+        return (a > b) - (a < b); \
+    }
+
+_CNEXT_DEFINE_ITEM_CMP(_cnext_item_cmp_int, int)
+_CNEXT_DEFINE_ITEM_CMP(_cnext_item_cmp_ll, long long)
+_CNEXT_DEFINE_ITEM_CMP(_cnext_item_cmp_uint, unsigned int)
+_CNEXT_DEFINE_ITEM_CMP(_cnext_item_cmp_ull, unsigned long long)
+_CNEXT_DEFINE_ITEM_CMP(_cnext_item_cmp_short, short)
+_CNEXT_DEFINE_ITEM_CMP(_cnext_item_cmp_ushort, unsigned short)
+_CNEXT_DEFINE_ITEM_CMP(_cnext_item_cmp_char, char)
+_CNEXT_DEFINE_ITEM_CMP(_cnext_item_cmp_uchar, unsigned char)
+_CNEXT_DEFINE_ITEM_CMP(_cnext_item_cmp_float, float)
+_CNEXT_DEFINE_ITEM_CMP(_cnext_item_cmp_double, double)
+_CNEXT_DEFINE_ITEM_CMP(_cnext_item_cmp_bool, bool)
+
+static inline int _cnext_item_cmp_str(const void* pa, const void* pb) {
+    return cnext_str_cmp(*(const CnextString*)pa, *(const CnextString*)pb);
+}
+static inline int _cnext_item_cmp_ptr(const void* pa, const void* pb) {
+    uintptr_t a = (uintptr_t)*(const void* const*)pa;
+    uintptr_t b = (uintptr_t)*(const void* const*)pb;
+    return (a > b) - (a < b);
+}
+
+#define _CNEXT_ITEM_CMP(elem) _Generic((elem), \
+    int: _cnext_item_cmp_int, \
+    long long: _cnext_item_cmp_ll, \
+    unsigned int: _cnext_item_cmp_uint, \
+    unsigned long long: _cnext_item_cmp_ull, \
+    short: _cnext_item_cmp_short, \
+    unsigned short: _cnext_item_cmp_ushort, \
+    char: _cnext_item_cmp_char, \
+    unsigned char: _cnext_item_cmp_uchar, \
+    float: _cnext_item_cmp_float, \
+    double: _cnext_item_cmp_double, \
+    bool: _cnext_item_cmp_bool, \
+    CnextString: _cnext_item_cmp_str, \
+    default: _cnext_item_cmp_ptr)
+
+#define cnext_pop(arr) ({ \
+    __auto_type _a = &(arr); \
+    if (_a->length == 0) { \
+        fprintf(stderr, "Array bounds out of range: index 0 >= length 0\n"); \
+        exit(139); \
+    } \
+    __typeof__(_a->data[0]) _v = _a->data[_a->length - 1]; \
+    _a->length--; \
+    _a->data = (__typeof__(_a->data))_cnext_array_buffer_resize(_a->data, _a->length, sizeof(*_a->data)); \
+    _v; \
+})
+
+#define cnext_shift(arr) ({ \
+    __auto_type _a = &(arr); \
+    if (_a->length == 0) { \
+        fprintf(stderr, "Array bounds out of range: index 0 >= length 0\n"); \
+        exit(139); \
+    } \
+    __typeof__(_a->data[0]) _v = _a->data[0]; \
+    memmove(_a->data, _a->data + 1, (_a->length - 1) * sizeof(*_a->data)); \
+    _a->length--; \
+    _a->data = (__typeof__(_a->data))_cnext_array_buffer_resize(_a->data, _a->length, sizeof(*_a->data)); \
+    _v; \
+})
+
+#define cnext_unshift(arr, value) ({ \
+    __auto_type _a = &(arr); \
+    __typeof__(_a->data[0]) _v = (value); \
+    _a->data = (__typeof__(_a->data))_cnext_array_buffer_resize(_a->data, _a->length + 1, sizeof(*_a->data)); \
+    memmove(_a->data + 1, _a->data, _a->length * sizeof(*_a->data)); \
+    _a->data[0] = _v; \
+    _a->length++; \
+    (void)0; \
+})
+
+#define cnext_insert_at(arr, index, value) ({ \
+    __auto_type _a = &(arr); \
+    size_t _i = _cnext_array_insert_index_checked(_a->length, (long long)(index)); \
+    __typeof__(_a->data[0]) _v = (value); \
+    _a->data = (__typeof__(_a->data))_cnext_array_buffer_resize(_a->data, _a->length + 1, sizeof(*_a->data)); \
+    memmove(_a->data + _i + 1, _a->data + _i, (_a->length - _i) * sizeof(*_a->data)); \
+    _a->data[_i] = _v; \
+    _a->length++; \
+    (void)0; \
+})
+
+#define cnext_remove_at(arr, index) ({ \
+    __auto_type _a = &(arr); \
+    size_t _i = _cnext_array_index_checked(_a->length, (long long)(index)); \
+    __typeof__(_a->data[0]) _v = _a->data[_i]; \
+    memmove(_a->data + _i, _a->data + _i + 1, (_a->length - _i - 1) * sizeof(*_a->data)); \
+    _a->length--; \
+    _a->data = (__typeof__(_a->data))_cnext_array_buffer_resize(_a->data, _a->length, sizeof(*_a->data)); \
+    _v; \
+})
+
+#define cnext_clear(arr) ({ \
+    __auto_type _a = &(arr); \
+    _a->length = 0; \
+    (void)0; \
+})
+
+#define cnext_sort(arr) ({ \
+    __auto_type _a = &(arr); \
+    if (_a->length > 1) qsort(_a->data, _a->length, sizeof(*_a->data), _CNEXT_ITEM_CMP(_a->data[0])); \
+    (void)0; \
+})
+
+#define cnext_reverse_array(arr) ({ \
+    __auto_type _a = &(arr); \
+    for (size_t _i = 0, _j = _a->length ? _a->length - 1 : 0; _i < _j; _i++, _j--) { \
+        __typeof__(_a->data[0]) _v = _a->data[_i]; \
+        _a->data[_i] = _a->data[_j]; \
+        _a->data[_j] = _v; \
+    } \
+    (void)0; \
+})
+
+#define cnext_contains_item(arr, value) ({ \
+    __auto_type _a = (arr); \
+    __typeof__(_a.data[0]) _v = (value); \
+    bool _found = false; \
+    for (size_t _i = 0; _i < _a.length; _i++) { \
+        if (_CNEXT_ITEM_EQ(_a.data[_i], _v)) { _found = true; break; } \
+    } \
+    _found; \
+})
+
+#define cnext_array_index(arr, value) ({ \
+    __auto_type _a = (arr); \
+    __typeof__(_a.data[0]) _v = (value); \
+    int _result = -1; \
+    for (size_t _i = 0; _i < _a.length; _i++) { \
+        if (_CNEXT_ITEM_EQ(_a.data[_i], _v)) { _result = (int)_i; break; } \
+    } \
+    _result; \
+})
+
+#define cnext_array_last(arr) ({ \
+    __auto_type _a = (arr); \
+    _cnext_array_check(_a.length, _a.length ? _a.length - 1 : 0); \
+    _a.data[_a.length - 1]; \
+})
+
+#define cnext_array_first(arr) ({ \
+    __auto_type _a = (arr); \
+    _cnext_array_check(_a.length, 0); \
+    _a.data[0]; \
+})
+
+#define cnext_array_slice(arr, start, end) ({ \
+    __auto_type _a = (arr); \
+    long long _s = (long long)(start); \
+    long long _e = (long long)(end); \
+    if (_s < 0 || _e < _s || (unsigned long long)_e > (unsigned long long)_a.length) { \
+        fprintf(stderr, "Slice bounds out of range: [%lld:%lld] length %zu\n", _s, _e, _a.length); \
+        exit(139); \
+    } \
+    size_t _n = (size_t)(_e - _s); \
+    __typeof__(_a) _r; \
+    _r.data = (__typeof__(_a.data))_cnext_array_buffer_alloc(_n, sizeof(*_a.data)); \
+    if (_n) memcpy(_r.data, _a.data + _s, _n * sizeof(*_a.data)); \
+    _r.length = _n; \
+    _r; \
+})
+
+#define cnext_array_unique(arr) ({ \
+    __auto_type _a = (arr); \
+    __typeof__(_a) _r; \
+    _r.data = (__typeof__(_a.data))_cnext_array_buffer_alloc(_a.length, sizeof(*_a.data)); \
+    _r.length = 0; \
+    for (size_t _i = 0; _i < _a.length; _i++) { \
+        bool _dup = false; \
+        for (size_t _j = 0; _j < _r.length; _j++) { \
+            if (_CNEXT_ITEM_EQ(_r.data[_j], _a.data[_i])) { _dup = true; break; } \
+        } \
+        if (!_dup) _r.data[_r.length++] = _a.data[_i]; \
+    } \
+    _r; \
+})
+
+#define cnext_array_shuffle(arr) ({ \
+    __auto_type _a = &(arr); \
+    for (size_t _i = _a->length; _i > 1; _i--) { \
+        size_t _j = (size_t)(rand() % (long long)_i); \
+        __typeof__(_a->data[0]) _v = _a->data[_i - 1]; \
+        _a->data[_i - 1] = _a->data[_j]; \
+        _a->data[_j] = _v; \
+    } \
+    (void)0; \
+})
+
+#define cnext_array_map(arr, callback) ({ \
+    __auto_type _a = (arr); \
+    CnextClosure _c = (callback); \
+    __typeof__(_a) _r; \
+    _r.data = (__typeof__(_a.data))_cnext_array_buffer_alloc(_a.length, sizeof(*_a.data)); \
+    _r.length = _a.length; \
+    for (size_t _i = 0; _i < _a.length; _i++) { \
+        _r.data[_i] = (int)(((int(*)(void*, int))_c.fn)(_c.env, (int)_a.data[_i])); \
+    } \
+    _r; \
+})
+
+#define cnext_array_filter(arr, callback) ({ \
+    __auto_type _a = (arr); \
+    CnextClosure _c = (callback); \
+    __typeof__(_a) _r; \
+    _r.data = (__typeof__(_a.data))_cnext_array_buffer_alloc(_a.length, sizeof(*_a.data)); \
+    _r.length = 0; \
+    for (size_t _i = 0; _i < _a.length; _i++) { \
+        if (((int(*)(void*, int))_c.fn)(_c.env, (int)_a.data[_i])) _r.data[_r.length++] = _a.data[_i]; \
+    } \
+    _r; \
+})
+
+#define cnext_array_reduce(arr, initial, callback) ({ \
+    __auto_type _a = (arr); \
+    CnextClosure _c = (callback); \
+    int _acc = (int)(initial); \
+    for (size_t _i = 0; _i < _a.length; _i++) { \
+        _acc = ((int(*)(void*, int, int))_c.fn)(_c.env, _acc, (int)_a.data[_i]); \
+    } \
+    _acc; \
+})
+
+#define cnext_array_find(arr, callback) ({ \
+    __auto_type _a = (arr); \
+    CnextClosure _c = (callback); \
+    int _result = -1; \
+    for (size_t _i = 0; _i < _a.length; _i++) { \
+        if (((int(*)(void*, int))_c.fn)(_c.env, (int)_a.data[_i])) { \
+            _result = (int)_a.data[_i]; \
+            break; \
+        } \
+    } \
+    _result; \
+})
+
 /* --- Threading --- */
 
 #ifdef _WIN32
@@ -1982,6 +2283,8 @@ static inline CnextString cnext_bytes(CnextString s) { return s; }
 /* --- Core Builtins --- */
 
 #define cnext_swap(a, b) do { __typeof__(a) _tmp = (a); (a) = (b); (b) = _tmp; } while(0)
+
+static inline CnextString cnext_stacktrace(void) { return (CnextString){NULL, 0}; }
 
 #define cnext_clone(x) _Generic((x), \
     int: cnext_clone_int, \
@@ -2582,17 +2885,18 @@ static inline void cnext_debug_ptr(void* x) { fprintf(stderr, "[debug] %p\n", x)
 static inline void cnext_gc(void) { _cnext_free_all(); }
 
 static inline long long cnext_benchmark(int iterations) {
+    volatile long long sink = 0;
+    for (int i = 0; i < iterations; i++) sink += i;
+    (void)sink;
 #ifdef _WIN32
     LARGE_INTEGER freq, start, end;
     QueryPerformanceFrequency(&freq);
     QueryPerformanceCounter(&start);
-    (void)iterations;
     QueryPerformanceCounter(&end);
     return (end.QuadPart - start.QuadPart) * 1000000LL / freq.QuadPart;
 #else
     struct timespec ts_start, ts_end;
     clock_gettime(CLOCK_MONOTONIC, &ts_start);
-    (void)iterations;
     clock_gettime(CLOCK_MONOTONIC, &ts_end);
     return (ts_end.tv_sec - ts_start.tv_sec) * 1000000LL + (ts_end.tv_nsec - ts_start.tv_nsec) / 1000;
 #endif

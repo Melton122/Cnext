@@ -46,6 +46,7 @@ func builtin_c_name(str name): str {
     if name == "ord" { return "cnext_ord" }
     if name == "bytes" { return "cnext_bytes" }
     if name == "clone" { return "cnext_clone" }
+    if name == "swap" { return "cnext_swap" }
     if name == "is_null" { return "cnext_is_null_ptr" }
     if name == "unwrap" { return "cnext_unwrap_ptr" }
     if name == "expect" { return "cnext_expect_str" }
@@ -124,8 +125,29 @@ func builtin_c_name(str name): str {
     if name == "hash_sha256" { return "cnext_hash_sha256_str" }
     if name == "sha256" { return "cnext_hash_sha256_str" }
     if name == "uuid" { return "cnext_uuid" }
+    if name == "pop" { return "cnext_pop" }
+    if name == "shift" { return "cnext_shift" }
+    if name == "unshift" { return "cnext_unshift" }
+    if name == "insert_at" { return "cnext_insert_at" }
+    if name == "remove_at" { return "cnext_remove_at" }
+    if name == "clear" { return "cnext_clear" }
+    if name == "sort" { return "cnext_sort" }
+    if name == "reverse_array" { return "cnext_reverse_array" }
+    if name == "contains_item" { return "cnext_contains_item" }
+    if name == "array_index" { return "cnext_array_index" }
+    if name == "array_last" { return "cnext_array_last" }
+    if name == "array_first" { return "cnext_array_first" }
+    if name == "array_slice" { return "cnext_array_slice" }
+    if name == "array_unique" { return "cnext_array_unique" }
+    if name == "shuffle" { return "cnext_array_shuffle" }
+    if name == "array_shuffle" { return "cnext_array_shuffle" }
+    if name == "array_map" { return "cnext_array_map" }
+    if name == "array_filter" { return "cnext_array_filter" }
+    if name == "array_reduce" { return "cnext_array_reduce" }
+    if name == "array_find" { return "cnext_array_find" }
     if name == "debug" { return "cnext_debug" }
     if name == "gc" { return "cnext_gc" }
+    if name == "stacktrace" { return "cnext_stacktrace" }
     if name == "benchmark" { return "cnext_benchmark" }
     return ""
 }
@@ -987,7 +1009,7 @@ func generate_expression(ASTNode? node): bool {
                 return true
             }
             if node.left.token.text == "stacktrace" {
-                codegen_emit("/* stacktrace */ ")
+                codegen_emit("cnext_stacktrace(")
                 int i = 0
                 int n = len(node.children)
                 while i < n {

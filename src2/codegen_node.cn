@@ -789,6 +789,20 @@ func generate_var_declaration(ASTNode? node) {
                 codegen_emit(".length")
             }
             codegen_emit(")")
+        } else if node.init != null {
+            if g_codegen_top_level && node.init.kind == AST_CALL {
+                codegen_emit(";\n")
+                codegen_emit("static void __attribute__((constructor)) _cnext_array_init_")
+                codegen_emit(node.token.text)
+                codegen_emit("(void) {\n")
+                codegen_emit(node.token.text)
+                codegen_emit(" = ")
+                generate_expression(node.init)
+                codegen_emit(";\n}\n")
+                return
+            }
+            codegen_emit(" = ")
+            generate_expression(node.init)
         }
         codegen_emit(";\n")
         return

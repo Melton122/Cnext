@@ -1,0 +1,28 @@
+// EXPECT: 3
+// EXPECT: 1
+// EXPECT: 3
+// EXPECT: 0
+// EXPECT: 1
+// EXPECT: false
+// EXPECT: {"nums":[1,2,3],"name":"root"}
+import json
+
+main {
+    str text = "{\"nums\":[1,2,3],\"name\":\"root\"}"
+    var data = json.parse(text)
+    var nums = json.get_array(data, "nums")
+
+    printin(json.array_length(nums))
+    var first = json.array_get(nums, 0)
+    var last = json.array_get(nums, 2)
+    printin(json.stringify(first))
+    printin(json.stringify(last))
+
+    printin(json.get_int(data, "missing"))
+    str missing = json.get_string(data, "missing")
+    printin(len(missing) == 0)
+    printin(json.get_bool(data, "missing"))
+
+    printin(json.stringify(data))
+    json.free(data)
+}

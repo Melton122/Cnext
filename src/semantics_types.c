@@ -665,7 +665,7 @@ void register_all_builtins(Token module) {
         /* Core */
         {"print", 5}, {"printin", 7}, {"input", 5}, {"input_key", 9}, {"len", 3},
         {"typeof", 6}, {"assert", 6}, {"panic", 5}, {"exit", 4},
-        {"clone", 5}, {"swap_values", 11}, {"free", 4},
+        {"clone", 5}, {"swap_values", 11}, {"swap", 4}, {"free", 4},
         /* Typed reads: each names its own type, so it needs no destination */
         {"input_str", 9}, {"input_int", 9}, {"input_uint", 10}, {"input_long", 10},
         {"input_ulong", 11}, {"input_float", 11}, {"input_double", 12},
@@ -726,8 +726,7 @@ void register_all_builtins(Token module) {
         {"sys_args", 8}, {"sys_args_count", 14}, {"sys_arg_at", 10},
         {"getenv", 6}, {"setenv", 6},
         {"hostname", 8}, {"username", 8},
-        {"cpu_count", 9}, {"memory_usage", 12},
-        {"disk_usage", 10}, {"temp_dir", 8},
+        {"cpu_count", 9}, {"temp_dir", 8},
         {"home_dir", 8}, {"sys_exec", 8},
         {"sys_shell", 9},
         /* JSON */
@@ -743,9 +742,9 @@ void register_all_builtins(Token module) {
         {"contains_item", 13}, {"array_index", 11},
         {"array_last", 10}, {"array_first", 11},
         {"array_slice", 11}, {"array_unique", 12},
-        {"array_shuffle", 13},
+        {"array_shuffle", 13}, {"shuffle", 7},
         {"array_map", 9}, {"array_filter", 12},
-        {"array_reduce", 12}, {"array_find", 9},
+        {"array_reduce", 12}, {"array_find", 10},
         /* Utility */
         {"benchmark", 9}, {"debug", 5},
         {"stacktrace", 10}, {"gc", 2},
