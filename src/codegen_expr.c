@@ -284,6 +284,8 @@ static void gen_lambda_expr(ASTNode* node) {
     FILE* helper = codegen_open_lambda_temp(helper_path);
     if (!helper) { diag_emit(DIAG_ERROR, ERR_CODEGEN_IO, node->token.line, node->token.column, "Could not buffer lambda helper.", NULL, NULL); exit(70); }
     int saved_indent = indent_level;
+    bool previous_in_main = codegen_in_main;
+    codegen_in_main = false;
     indent_level = 0;
     int current_lambda = lambda_counter++;
     CapturedVar* captures = NULL;
@@ -400,6 +402,7 @@ static void gen_lambda_expr(ASTNode* node) {
     if (ferror(helper)) { diag_emit(DIAG_ERROR, ERR_CODEGEN_IO, node->token.line, node->token.column, "Could not read lambda helper.", NULL, NULL); exit(70); }
     fclose(helper);
     if (helper_path[0]) remove(helper_path);
+    codegen_in_main = previous_in_main;
 }
 
 /* --- Reads ---
@@ -550,7 +553,8 @@ static void generate_call_expr(ASTNode* node) {
                 static const struct { const char* name; int len; } prefixed[] = {
                     {"json", 4}, {"math", 4}, {"os", 2}, {"time", 4},
                     {"regex", 5}, {"crypto", 6}, {"path", 4},
-                    {"process", 7}, {"random", 6}, {NULL, 0}
+                    {"process", 7}, {"random", 6}, {"fmt", 3},
+                    {"http", 4}, {"log", 3}, {"args", 4}, {NULL, 0}
                 };
                 for (int m = 0; prefixed[m].name; m++) {
                     if (node->left->left->token.length == prefixed[m].len &&
@@ -956,6 +960,24 @@ static void generate_call_expr(ASTNode* node) {
     }
 }
 
+static void emit_raw_string_literal(const char* start, const char* end) {
+    fprintf(out, "(CnextString){(char*)\"");
+    int length = 0;
+    for (const char* p = start; p < end; p++) {
+        if (*p == '\r' && p + 1 < end && p[1] == '\n') { p++; continue; }
+        switch ((unsigned char)*p) {
+        case '"': fprintf(out, "\\\""); break;
+        case '\\': fprintf(out, "\\\\"); break;
+        case '\n': fprintf(out, "\\n"); break;
+        case '\r': fprintf(out, "\\r"); break;
+        case '\t': fprintf(out, "\\t"); break;
+        default: fputc(*p, out); break;
+        }
+        length++;
+    }
+    fprintf(out, "\", %d}", length);
+}
+
 void generate_expression(ASTNode* node) {
     if (!node) return;
     if (node->type == AST_CALL && emit_managed_closure_arguments(node)) return;
@@ -964,16 +986,8 @@ void generate_expression(ASTNode* node) {
             if (node->token.type == TOKEN_STRING_LITERAL) {
                 generate_string_interpolation(node->token.start, node->token.length);
             } else if (node->token.type == TOKEN_RAW_STRING) {
-                // Emit raw string content with C-level escaping
-                const char* start = node->token.start + 2; // skip 'r' and '"'
-                const char* end = node->token.start + node->token.length - 1; // before closing '"'
-                fprintf(out, "(CnextString){(char*)\"");
-                for (const char* p = start; p < end; p++) {
-                    if (*p == '"') fprintf(out, "\\\"");
-                    else if (*p == '\\') fprintf(out, "\\\\");
-                    else fprintf(out, "%c", *p);
-                }
-                fprintf(out, "\", %d}", (int)(end - start));
+                emit_raw_string_literal(node->token.start + 2,
+                                        node->token.start + node->token.length - 1);
             } else if (node->token.type == TOKEN_TRUE) {
                 fprintf(out, "true");
             } else if (node->token.type == TOKEN_FALSE) {

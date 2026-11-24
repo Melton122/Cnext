@@ -1,0 +1,16 @@
+// EXPECT: 55
+// EXPECT: 9f4390f8d30c2dd92ec9f095b65e2b9ae9b0a925a5258e241c9f1e910f734318
+// EXPECT: aGVsbG8=
+// EXPECT: hello
+// EXPECT: true
+import crypto
+
+main {
+    str s55 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    printin(len(s55))
+    printin(crypto.sha256(s55))
+    str e = crypto.base64_encode("hello")
+    printin(e)
+    printin(crypto.base64_decode(e))
+    printin(crypto.sha256("") == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+}

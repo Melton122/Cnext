@@ -1,0 +1,20 @@
+// EXPECT: true
+import log
+
+main {
+    str path = "cnext_phase13_log.txt"
+    delete_file(path)
+
+    log.set_file(to_cstr(path))
+    log.set_color(false)
+    log.set_timestamps(false)
+    log.set_level(2)
+
+    log.info(to_cstr("boot %d"), 1)
+    log.warn(to_cstr("warn %d"), 7)
+    log.close()
+
+    str contents = read_file(path)
+    printin(contents == "INFO  boot 1\nWARN  warn 7\n")
+    delete_file(path)
+}

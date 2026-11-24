@@ -1,0 +1,55 @@
+// EXPECT: 0
+// EXPECT: 1
+// EXPECT: 2
+// EXPECT: 99
+// EXPECT: 30
+// EXPECT: 30
+// EXPECT: 99
+// EXPECT: 2
+// EXPECT: 0
+// EXPECT: 0
+// EXPECT: 1
+// EXPECT: 200
+// EXPECT: 1
+// EXPECT: 1
+// EXPECT: 1
+// EXPECT: true
+import collections
+
+main {
+    int l = list_new()
+    printin(list_add(l, 30))
+    printin(list_add(l, 10))
+    printin(list_add(l, 30))
+    list_set(l, 1, 99)
+    printin(list_get(l, 1))
+    list_sort(l)
+    printin(list_get(l, 0))
+    printin(list_get(l, 1))
+    printin(list_get(l, 2))
+    list_remove(l, 0)
+    printin(list_size(l))
+    list_clear(l)
+    printin(list_size(l))
+    printin(list_get(l, 0))
+    int m = map_new()
+    map_set(m, 1, 100)
+    map_set(m, 1, 200)
+    printin(map_size(m))
+    printin(map_get(m, 1))
+    map_remove(m, 1)
+    printin(map_has(m, 1) == false)
+    int s = set_new()
+    set_add(s, 5)
+    set_add(s, 5)
+    printin(set_size(s))
+    set_remove(s, 5)
+    printin(set_has(s, 5) == false)
+    var hm = hashmap_new(8)
+    hashmap_put(hm, to_cstr("key"), null)
+    printin(hashmap_contains(hm, to_cstr("key")))
+    hashmap_free(hm)
+    list_free(l)
+    map_free(m)
+    set_free(s)
+}

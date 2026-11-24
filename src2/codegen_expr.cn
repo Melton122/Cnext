@@ -468,6 +468,31 @@ func emit_when_arm_chain(ASTNode node, int index) {
     emit_when_arm_chain(node, index + 1)
 }
 
+func emit_raw_string_literal(str text) {
+    codegen_emit("(CnextString){(char*)\"")
+    int n = len(text)
+    int i = 2
+    int length = 0
+    while i < n - 1 {
+        str ch = str_substring(text, i, i + 1)
+        if ch == "\r" && i + 1 < n - 1 && str_substring(text, i + 1, i + 2) == "\n" {
+            i = i + 2
+            continue
+        }
+        if ch == "\"" { codegen_emit("\\\"") }
+        else if ch == "\\" { codegen_emit("\\\\") }
+        else if ch == "\n" { codegen_emit("\\n") }
+        else if ch == "\r" { codegen_emit("\\r") }
+        else if ch == "\t" { codegen_emit("\\t") }
+        else { codegen_emit(ch) }
+        length = length + 1
+        i = i + 1
+    }
+    codegen_emit("\", ")
+    codegen_emit(to_str(length))
+    codegen_emit("}")
+}
+
 func generate_expression(ASTNode? node): bool {
     if node == null {
         return false
@@ -480,6 +505,9 @@ func generate_expression(ASTNode? node): bool {
 
         if node.token.kind == TOKEN_STRING_LITERAL {
             generate_string_interpolation(node.token.text, len(node.token.text))
+            return true
+        } else if node.token.kind == TOKEN_RAW_STRING {
+            emit_raw_string_literal(node.token.text)
             return true
         } else if node.token.kind == TOKEN_NUMBER {
             codegen_emit(node.token.text)
@@ -732,6 +760,22 @@ func generate_expression(ASTNode? node): bool {
                 is_prefixed = 1
             } else if module_name == "random" && len(module_name) == 6 {
                 codegen_emit("random_")
+                codegen_emit(func_name)
+                is_prefixed = 1
+            } else if module_name == "fmt" && len(module_name) == 3 {
+                codegen_emit("fmt_")
+                codegen_emit(func_name)
+                is_prefixed = 1
+            } else if module_name == "http" && len(module_name) == 4 {
+                codegen_emit("http_")
+                codegen_emit(func_name)
+                is_prefixed = 1
+            } else if module_name == "log" && len(module_name) == 3 {
+                codegen_emit("log_")
+                codegen_emit(func_name)
+                is_prefixed = 1
+            } else if module_name == "args" && len(module_name) == 4 {
+                codegen_emit("args_")
                 codegen_emit(func_name)
                 is_prefixed = 1
             }

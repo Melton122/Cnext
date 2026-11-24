@@ -1,0 +1,12 @@
+// EXPECT: 1
+// EXPECT: 1
+// EXPECT: false
+// EXPECT: 1
+import args
+
+main {
+    printin(args.count() == 1)
+    printin(len(args.program_name()) > 0)
+    printin(args.has("verbose"))
+    printin(len(args.value("name")) == 0)
+}

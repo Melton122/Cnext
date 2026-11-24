@@ -1,0 +1,6 @@
+main {
+    str raw = r"line one
+line two C:\temp"
+    printin(len(raw))
+}
+// EXPECT: 25

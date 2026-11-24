@@ -1,0 +1,40 @@
+// EXPECT: OK
+// EXPECT: Created
+// EXPECT: No Content
+// EXPECT: Moved Permanently
+// EXPECT: Found
+// EXPECT: Not Modified
+// EXPECT: Bad Request
+// EXPECT: Unauthorized
+// EXPECT: Forbidden
+// EXPECT: Not Found
+// EXPECT: Method Not Allowed
+// EXPECT: Conflict
+// EXPECT: Unprocessable Entity
+// EXPECT: Too Many Requests
+// EXPECT: Internal Server Error
+// EXPECT: Bad Gateway
+// EXPECT: Service Unavailable
+// EXPECT: Unknown
+import http
+
+main {
+    printin(http.status_text(200))
+    printin(http.status_text(201))
+    printin(http.status_text(204))
+    printin(http.status_text(301))
+    printin(http.status_text(302))
+    printin(http.status_text(304))
+    printin(http.status_text(400))
+    printin(http.status_text(401))
+    printin(http.status_text(403))
+    printin(http.status_text(404))
+    printin(http.status_text(405))
+    printin(http.status_text(409))
+    printin(http.status_text(422))
+    printin(http.status_text(429))
+    printin(http.status_text(500))
+    printin(http.status_text(502))
+    printin(http.status_text(503))
+    printin(http.status_text(418))
+}

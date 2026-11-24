@@ -1,0 +1,41 @@
+// EXPECT: 000hi
+// EXPECT: hi...
+// EXPECT: --hi--
+// EXPECT: a,b,c
+// EXPECT: 1
+// EXPECT: -42
+// EXPECT: 3.14
+// EXPECT: 0xff
+// EXPECT: 0xFF
+// EXPECT: 101
+// EXPECT: 1023 B
+// EXPECT: 1.0 KB
+// EXPECT: 1.5 KB
+// EXPECT: item
+// EXPECT: items
+// EXPECT: hello
+import fmt
+
+main {
+    printin(fmt.pad_left("hi", 5, '0'))
+    printin(fmt.pad_right("hi", 5, '.'))
+    printin(fmt.pad_center("hi", 6, '-'))
+
+    str[] parts = {"a", "b", "c"}
+    printin(fmt.join(parts, 3, ","))
+    printin(len(fmt.repeat("ab", 0)) == 0)
+
+    printin(fmt.int(-42))
+    printin(fmt.float(3.14159, 2))
+    printin(fmt.hex(255))
+    printin(fmt.hex_upper(255))
+    printin(fmt.binary(5))
+
+    printin(fmt.filesize(1023))
+    printin(fmt.filesize(1024))
+    printin(fmt.filesize(1536))
+
+    printin(fmt.plural(1, "item", "items"))
+    printin(fmt.plural(2, "item", "items"))
+    printin(fmt.slice("hello", -2, 99))
+}

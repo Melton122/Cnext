@@ -217,6 +217,18 @@ def main():
         "test_strict_numeric_types.cn",
         "test_try_scopes.cn",
         "test_when_try_parity.cn",
+        "test_fmt_module.cn",
+        "test_http_status_text.cn",
+        "test_log_module.cn",
+        "test_args_module.cn",
+        "test_collections_edges.cn",
+        "test_crypto_edges.cn",
+        "test_path_edges.cn",
+        "test_random_edges.cn",
+        "test_file_io_edges.cn",
+        "test_net_edges.cn",
+        "test_thread_edges.cn",
+        "test_time_edges.cn",
     ]
     
     all_passed = True

@@ -690,6 +690,9 @@ void generate_node(ASTNode* node) {
                 write_indent();
                 fprintf(out, "if (_cnext_tf > 0) { _cnext_free_all(); return 1; }\n");
             }
+            write_indent();
+            fprintf(out, "int _cnext_main_result = 0;\n");
+            codegen_main_cleanup_used = false;
 #if defined(_MSC_VER) || defined(CNEXT_FORCE_MSVC_DEFER)
             if (has_defer) {
                 scope_mark = defer_counter++;
@@ -701,10 +704,12 @@ void generate_node(ASTNode* node) {
             }
 #endif
             if (node->left) {
+                codegen_in_main = true;
                 for (int i = 0; i < node->left->child_count; i++) {
                     write_indent();
                     generate_node(node->left->children[i]);
                 }
+                codegen_in_main = false;
             }
             pop_scope();
 #if defined(_MSC_VER) || defined(CNEXT_FORCE_MSVC_DEFER)
@@ -720,6 +725,10 @@ void generate_node(ASTNode* node) {
                 fprintf(out, "}\n");
             }
 #endif
+            if (codegen_main_cleanup_used) {
+                write_indent();
+                fprintf(out, "_cnext_main_cleanup:\n");
+            }
             write_indent();
             fprintf(out, "_cnext_free_all();\n");
             if (codegen_profile_mode) {
@@ -727,7 +736,7 @@ void generate_node(ASTNode* node) {
                 fprintf(out, "_cnext_profile_report();\n");
             }
             write_indent();
-            fprintf(out, "return 0;\n");
+            fprintf(out, "return _cnext_main_result;\n");
             indent_level--;
             fprintf(out, "}\n\n");
             break;
@@ -975,17 +984,33 @@ void generate_node(ASTNode* node) {
             indent_level--;
             break;
         case AST_RETURN:
-            fprintf(out, "return");
-            if (node->left) {
-                fprintf(out, " ");
-                if (node->left->expr_type == TOKEN_FUNC) {
-                    fprintf(out, "cnext_closure_escape(");
-                    generate_owned_closure_expression(node->left);
-                    fprintf(out, ")");
+            if (codegen_in_main) {
+                codegen_main_cleanup_used = true;
+                fprintf(out, "_cnext_main_result = ");
+                if (node->left) {
+                    if (node->left->expr_type == TOKEN_FUNC) {
+                        fprintf(out, "cnext_closure_escape(");
+                        generate_owned_closure_expression(node->left);
+                        fprintf(out, ")");
+                    }
+                    else generate_expression(node->left);
+                } else {
+                    fprintf(out, "0");
                 }
-                else generate_expression(node->left);
+                fprintf(out, "; goto _cnext_main_cleanup;\n");
+            } else {
+                fprintf(out, "return");
+                if (node->left) {
+                    fprintf(out, " ");
+                    if (node->left->expr_type == TOKEN_FUNC) {
+                        fprintf(out, "cnext_closure_escape(");
+                        generate_owned_closure_expression(node->left);
+                        fprintf(out, ")");
+                    }
+                    else generate_expression(node->left);
+                }
+                fprintf(out, ";\n");
             }
-            fprintf(out, ";\n");
             break;
         case AST_BREAK:
             fprintf(out, "break;\n");

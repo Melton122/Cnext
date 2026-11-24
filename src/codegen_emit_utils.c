@@ -378,6 +378,8 @@ void generate_string_interpolation(const char* start, int length) {
 }
 
 void generate_function(ASTNode* node, const char* prefix) {
+    bool previous_in_main = codegen_in_main;
+    codegen_in_main = false;
     emit_line_directive(node->token.line);
     if (node->is_generator) {
         char func_name[256];
@@ -389,6 +391,7 @@ void generate_function(ASTNode* node, const char* prefix) {
                      node->token.length, node->token.start);
         }
         generate_generator_code(node, func_name);
+        codegen_in_main = previous_in_main;
         return;
     }
 
@@ -424,6 +427,7 @@ void generate_function(ASTNode* node, const char* prefix) {
     generate_block(node->left);
     fprintf(out, "\n");
     current_func_params = prev_func_params;
+    codegen_in_main = previous_in_main;
 }
 
 // Writes the C signature of a top-level function without its body, followed by

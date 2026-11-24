@@ -428,6 +428,7 @@ static void print_help(void) {
 typedef struct {
     const char* input_path;
     const char* output_exe;
+    bool output_explicit;
     bool release;
     bool debug;
     bool no_optimize;
@@ -443,6 +444,7 @@ typedef struct {
 static int parse_build_args(int argc, char** argv, BuildOptions* opts) {
     opts->input_path = NULL;
     opts->output_exe = CNEXT_DEFAULT_EXE;
+    opts->output_explicit = false;
     opts->release = false;
     opts->debug = false;
     opts->no_optimize = false;
@@ -462,6 +464,7 @@ static int parse_build_args(int argc, char** argv, BuildOptions* opts) {
                 return 64;
             }
             opts->output_exe = argv[++i];
+            opts->output_explicit = true;
         } else if (strcmp(argv[i], "--release") == 0) {
             opts->release = true;
         } else if (strcmp(argv[i], "--debug") == 0) {
@@ -515,6 +518,10 @@ static int parse_build_args(int argc, char** argv, BuildOptions* opts) {
 
     if (opts->emit_c && (opts->native_argc || opts->library_argc)) {
         fprintf(stderr, "Cannot combine --emit-c with native build options; link when compiling the generated C.\n");
+        return 64;
+    }
+    if (opts->emit_c && opts->output_explicit) {
+        fprintf(stderr, "Cannot combine --emit-c with -o; link the generated C separately.\n");
         return 64;
     }
     return 0;

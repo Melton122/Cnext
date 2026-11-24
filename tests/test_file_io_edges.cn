@@ -1,0 +1,28 @@
+// EXPECT: false
+// EXPECT: -1
+// EXPECT: false
+// EXPECT: true
+// EXPECT: 5
+// EXPECT: hello
+// EXPECT: hello world
+// EXPECT: true
+// EXPECT: false
+import file
+import io
+
+main {
+    str missing = "cnext_t_no_such_file_zzz"
+    printin(file.file_exists(missing))
+    printin(file.file_size(missing))
+    printin(file.delete_file(missing))
+    str p = "cnext_t_file.bin"
+    io.write_file(p, "hello")
+    printin(file.file_exists(p))
+    printin(file.file_size(p))
+    str c = io.read_file(p)
+    printin(c)
+    io.append_file(p, " world")
+    printin(io.read_file(p))
+    printin(file.delete_file(p))
+    printin(file.file_exists(p))
+}

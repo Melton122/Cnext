@@ -4,6 +4,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <errno.h>
+#include <math.h>
+#include <stdint.h>
 
 static int opt_count = 0;
 
@@ -12,12 +15,12 @@ int get_optimization_count(void) {
 }
 
 // Parse integer value from token text
-static long parse_int_value(Token token) {
+static int64_t parse_int_value(Token token) {
     char buf[64];
     int len = token.length < 63 ? token.length : 63;
     memcpy(buf, token.start, len);
     buf[len] = '\0';
-    return strtol(buf, NULL, 10);
+    return (int64_t)strtoll(buf, NULL, 10);
 }
 
 // Parse float value from token text
@@ -30,11 +33,11 @@ static double parse_float_value(Token token) {
 }
 
 // Create a literal node from a computed value
-static ASTNode* make_int_literal(long value, Token token) {
+static ASTNode* make_int_literal(int64_t value, Token token) {
     char buf[64];
-    int len = snprintf(buf, sizeof(buf), "%ld", value);
-    char* text = (char*)checked_malloc(len + 1);
-    memcpy(text, buf, len);
+    int len = snprintf(buf, sizeof(buf), "%lld", (long long)value);
+    char* text = (char*)checked_malloc((size_t)len + 3);
+    memcpy(text, buf, (size_t)len);
     text[len] = '\0';
     Token t = token;
     t.start = text;
@@ -42,14 +45,23 @@ static ASTNode* make_int_literal(long value, Token token) {
     t.type = TOKEN_NUMBER;
     ASTNode* node = create_node(AST_LITERAL, t);
     node->owned_token_text = text;
+    node->expr_type = TOKEN_INT_TYPE;
     return node;
 }
 
 static ASTNode* make_float_literal(double value, Token token) {
     char buf[64];
-    int len = snprintf(buf, sizeof(buf), "%g", value);
-    char* text = (char*)checked_malloc(len + 1);
-    memcpy(text, buf, len);
+    int len = snprintf(buf, sizeof(buf), "%.17g", value);
+    if (len < 0 || len >= (int)sizeof(buf)) len = 0;
+    bool has_point = strchr(buf, '.') != NULL;
+    bool has_exponent = strchr(buf, 'e') != NULL || strchr(buf, 'E') != NULL;
+    if (!has_point && !has_exponent && len + 2 < (int)sizeof(buf)) {
+        buf[len++] = '.';
+        buf[len++] = '0';
+        buf[len] = '\0';
+    }
+    char* text = (char*)checked_malloc((size_t)len + 1);
+    memcpy(text, buf, (size_t)len);
     text[len] = '\0';
     Token t = token;
     t.start = text;
@@ -57,6 +69,7 @@ static ASTNode* make_float_literal(double value, Token token) {
     t.type = TOKEN_FLOAT_LITERAL;
     ASTNode* node = create_node(AST_LITERAL, t);
     node->owned_token_text = text;
+    node->expr_type = TOKEN_DOUBLE_TYPE;
     return node;
 }
 
@@ -135,12 +148,19 @@ static ASTNode* make_owned_identifier(Token token) {
     return node;
 }
 
+static Token make_owned_operator(Token source, const char* text, CnextTokenType type) {
+    char* owned = checked_strdup(text);
+    Token t = source;
+    t.start = owned;
+    t.length = (int)strlen(text);
+    t.type = type;
+    return t;
+}
+
 
 // Check if a node is a compile-time constant integer literal
 static bool is_int_literal(ASTNode* node) {
-    return node && node->type == AST_LITERAL &&
-           (node->token.type == TOKEN_NUMBER ||
-            (node->token.type == TOKEN_FLOAT_LITERAL && strchr(node->token.start, '.') == NULL));
+    return node && node->type == AST_LITERAL && node->token.type == TOKEN_NUMBER;
 }
 
 // Check if a node is a compile-time constant float literal
@@ -152,6 +172,29 @@ static bool is_float_literal(ASTNode* node) {
 static bool is_literal(ASTNode* node) {
     return node && node->type == AST_LITERAL &&
            (node->token.type == TOKEN_NUMBER || node->token.type == TOKEN_FLOAT_LITERAL);
+}
+
+static bool is_plain_numeric(ASTNode* node) {
+    if (!node || node->type_name) return false;
+    switch (node->expr_type) {
+        case TOKEN_INT_TYPE:
+        case TOKEN_LONG_TYPE:
+        case TOKEN_FLOAT_TYPE:
+        case TOKEN_DOUBLE_TYPE:
+        case TOKEN_BYTE_TYPE:
+        case TOKEN_UINT_TYPE:
+        case TOKEN_ULONG_TYPE:
+        case TOKEN_USHORT_TYPE:
+        case TOKEN_UBYTE_TYPE:
+            return true;
+        default:
+            return false;
+    }
+}
+
+static bool fold_result_fits(ASTNode* node, int64_t value) {
+    if (!node || node->expr_type != TOKEN_INT_TYPE) return true;
+    return value >= INT32_MIN && value <= INT32_MAX;
 }
 
 // Check if two tokens represent the same identifier
@@ -287,6 +330,18 @@ static void const_table_push_scope(void) {
     const_table = e;
 }
 
+static void const_table_shadow_parameters(ASTNode* node) {
+    if (!node || (node->type != AST_FUNC_DECL && node->type != AST_LAMBDA &&
+                  node->type != AST_COROUTINE_DECL && node->type != AST_ASYNC_FUNC_DECL)) return;
+    for (int i = 0; i < node->child_count; i++) {
+        ASTNode* param = node->children[i];
+        if (!param || param->type != AST_VAR_DECL) continue;
+        char* name = checked_strndup(param->token.start, (size_t)param->token.length);
+        const_table_push(name, NULL);
+        free(name);
+    }
+}
+
 static void const_table_clear(void) {
     while (const_table) {
         ConstEntry* e = const_table;
@@ -307,6 +362,7 @@ static void propagate_constants(ASTNode* node, ASTNode* scope) {
         node->type == AST_FOR_IN || node->type == AST_LAMBDA ||
         node->type == AST_COROUTINE_DECL || node->type == AST_ASYNC_FUNC_DECL) {
         const_table_push_scope();
+        const_table_shadow_parameters(node);
         pushed_scope = true;
     }
 
@@ -399,7 +455,7 @@ static CopyEntry* copy_table = NULL;
 static void copy_table_push(const char* dest, const char* src) {
     CopyEntry* e = (CopyEntry*)checked_malloc(sizeof(CopyEntry));
     e->dest = checked_strdup(dest);
-    e->src = checked_strdup(src);
+    e->src = src ? checked_strdup(src) : NULL;
     e->next = copy_table;
     copy_table = e;
 }
@@ -434,6 +490,18 @@ static void copy_table_push_scope(void) {
     copy_table = e;
 }
 
+static void copy_table_shadow_parameters(ASTNode* node) {
+    if (!node || (node->type != AST_FUNC_DECL && node->type != AST_LAMBDA &&
+                  node->type != AST_COROUTINE_DECL && node->type != AST_ASYNC_FUNC_DECL)) return;
+    for (int i = 0; i < node->child_count; i++) {
+        ASTNode* param = node->children[i];
+        if (!param || param->type != AST_VAR_DECL) continue;
+        char* name = checked_strndup(param->token.start, (size_t)param->token.length);
+        copy_table_push(name, NULL);
+        free(name);
+    }
+}
+
 static void copy_table_clear(void) {
     while (copy_table) {
         CopyEntry* e = copy_table;
@@ -455,6 +523,7 @@ static void propagate_copies(ASTNode* node, ASTNode* scope) {
         node->type == AST_FOR_IN || node->type == AST_LAMBDA ||
         node->type == AST_COROUTINE_DECL || node->type == AST_ASYNC_FUNC_DECL) {
         copy_table_push_scope();
+        copy_table_shadow_parameters(node);
         pushed_scope = true;
     }
 
@@ -547,7 +616,8 @@ static ASTNode* eliminate_identities(ASTNode* node) {
     ASTNode* right = node->right;
 
     // x + 0 -> x
-    if (node->token.type == TOKEN_PLUS && is_int_literal(right)) {
+    if (node->token.type == TOKEN_PLUS && is_int_literal(right) &&
+        is_plain_numeric(left) && is_plain_numeric(right)) {
         if (parse_int_value(right->token) == 0) {
             opt_count++;
             ASTNode* result = left;
@@ -556,7 +626,8 @@ static ASTNode* eliminate_identities(ASTNode* node) {
         }
     }
     // 0 + x -> x
-    if (node->token.type == TOKEN_PLUS && is_int_literal(left)) {
+    if (node->token.type == TOKEN_PLUS && is_int_literal(left) &&
+        is_plain_numeric(left) && is_plain_numeric(right)) {
         if (parse_int_value(left->token) == 0) {
             opt_count++;
             ASTNode* result = right;
@@ -565,7 +636,8 @@ static ASTNode* eliminate_identities(ASTNode* node) {
         }
     }
     // x - 0 -> x
-    if (node->token.type == TOKEN_MINUS && is_int_literal(right)) {
+    if (node->token.type == TOKEN_MINUS && is_int_literal(right) &&
+        is_plain_numeric(left) && is_plain_numeric(right)) {
         if (parse_int_value(right->token) == 0) {
             opt_count++;
             ASTNode* result = left;
@@ -574,7 +646,8 @@ static ASTNode* eliminate_identities(ASTNode* node) {
         }
     }
     // x * 1 -> x
-    if (node->token.type == TOKEN_STAR && is_int_literal(right)) {
+    if (node->token.type == TOKEN_STAR && is_int_literal(right) &&
+        is_plain_numeric(left) && is_plain_numeric(right)) {
         if (parse_int_value(right->token) == 1) {
             opt_count++;
             ASTNode* result = left;
@@ -583,7 +656,8 @@ static ASTNode* eliminate_identities(ASTNode* node) {
         }
     }
     // 1 * x -> x
-    if (node->token.type == TOKEN_STAR && is_int_literal(left)) {
+    if (node->token.type == TOKEN_STAR && is_int_literal(left) &&
+        is_plain_numeric(left) && is_plain_numeric(right)) {
         if (parse_int_value(left->token) == 1) {
             opt_count++;
             ASTNode* result = right;
@@ -620,16 +694,17 @@ static ASTNode* peephole_optimize(ASTNode* node) {
     ASTNode* left = node->left;
     ASTNode* right = node->right;
 
-    // x * 2 -> x + x (when x is not a constant)
+    // x * 2 -> x + x (identifier operands only)
     if (node->token.type == TOKEN_STAR && is_int_literal(right)) {
-        if (parse_int_value(right->token) == 2 && !is_literal(left)) {
+        if (parse_int_value(right->token) == 2 && left->type == AST_IDENTIFIER &&
+            is_plain_numeric(left) && is_plain_numeric(right)) {
             opt_count++;
-            Token t = node->token;
-            t.type = TOKEN_PLUS;
+            Token t = make_owned_operator(node->token, "+", TOKEN_PLUS);
             ASTNode* add = create_node(AST_BINARY, t);
+            add->owned_token_text = (char*)t.start;
+            add->expr_type = node->expr_type;
             add->left = left;
             node->left = NULL;
-            // Free the original right node (the literal '2') to prevent memory leak
             free_ast(node->right);
             node->right = NULL;
             add->right = make_owned_identifier(left->token);
@@ -643,6 +718,38 @@ static ASTNode* peephole_optimize(ASTNode* node) {
 // PASS 5: Constant Fold Binary/Unary
 // ========================================================================
 
+static bool fold_int_op(int64_t l, int64_t r, CnextTokenType op, int64_t* result) {
+    switch (op) {
+        case TOKEN_PLUS:
+            if ((r > 0 && l > INT64_MAX - r) || (r < 0 && l < INT64_MIN - r)) return false;
+            *result = l + r;
+            return true;
+        case TOKEN_MINUS:
+            if ((r < 0 && l > INT64_MAX + r) || (r > 0 && l < INT64_MIN + r)) return false;
+            *result = l - r;
+            return true;
+        case TOKEN_STAR:
+            if (l > 0) {
+                if ((r > 0 && l > INT64_MAX / r) || (r < 0 && r < INT64_MIN / l)) return false;
+            } else if (l < 0) {
+                if ((r > 0 && l < INT64_MIN / r) || (r < 0 && l < INT64_MAX / r)) return false;
+            }
+            *result = l * r;
+            return true;
+        case TOKEN_SLASH:
+            if (r == 0 || (l == INT64_MIN && r == -1)) return false;
+            *result = l / r;
+            return true;
+        case TOKEN_EQ_EQ:    *result = (l == r); return true;
+        case TOKEN_BANG_EQ:  *result = (l != r); return true;
+        case TOKEN_LESS:     *result = (l < r); return true;
+        case TOKEN_LESS_EQ:  *result = (l <= r); return true;
+        case TOKEN_GREATER:  *result = (l > r); return true;
+        case TOKEN_GREATER_EQ: *result = (l >= r); return true;
+        default: return false;
+    }
+}
+
 static ASTNode* fold_binary(ASTNode* node) {
     if (!node || node->type != AST_BINARY) return NULL;
     if (!node->left || !node->right) return NULL;
@@ -652,28 +759,11 @@ static ASTNode* fold_binary(ASTNode* node) {
 
     // int op int
     if (is_int_literal(left) && is_int_literal(right)) {
-        long l = parse_int_value(left->token);
-        long r = parse_int_value(right->token);
-        long result = 0;
-        bool valid = true;
+        int64_t l = parse_int_value(left->token);
+        int64_t r = parse_int_value(right->token);
+        int64_t result = 0;
 
-        switch (node->token.type) {
-            case TOKEN_PLUS:       result = l + r; break;
-            case TOKEN_MINUS:      result = l - r; break;
-            case TOKEN_STAR:       result = l * r; break;
-            case TOKEN_SLASH:
-                if (r == 0) { valid = false; break; }
-                result = l / r; break;
-            case TOKEN_EQ_EQ:      result = (l == r); break;
-            case TOKEN_BANG_EQ:    result = (l != r); break;
-            case TOKEN_LESS:       result = (l < r); break;
-            case TOKEN_LESS_EQ:    result = (l <= r); break;
-            case TOKEN_GREATER:    result = (l > r); break;
-            case TOKEN_GREATER_EQ: result = (l >= r); break;
-            default: valid = false; break;
-        }
-
-        if (valid) {
+        if (fold_int_op(l, r, node->token.type, &result) && fold_result_fits(node, result)) {
             opt_count++;
             return make_int_literal(result, node->token);
         }
@@ -704,6 +794,12 @@ static ASTNode* fold_binary(ASTNode* node) {
 
         if (valid) {
             opt_count++;
+            if (node->token.type == TOKEN_EQ_EQ || node->token.type == TOKEN_BANG_EQ ||
+                node->token.type == TOKEN_LESS || node->token.type == TOKEN_LESS_EQ ||
+                node->token.type == TOKEN_GREATER || node->token.type == TOKEN_GREATER_EQ) {
+                return make_int_literal(result != 0 ? 1 : 0, node->token);
+            }
+            if (!isfinite(result)) return NULL;
             return make_float_literal(result, node->token);
         }
     }
@@ -727,6 +823,7 @@ static ASTNode* fold_binary(ASTNode* node) {
         }
 
         if (valid) {
+            if (!isfinite(result)) return NULL;
             opt_count++;
             return make_float_literal(result, node->token);
         }
@@ -742,10 +839,12 @@ static ASTNode* fold_unary(ASTNode* node) {
     ASTNode* operand = node->right;
 
     if (is_int_literal(operand)) {
-        long val = parse_int_value(operand->token);
+        int64_t val = parse_int_value(operand->token);
         if (node->token.type == TOKEN_MINUS) {
+            int64_t result = 0;
+            if (!fold_int_op(0, val, TOKEN_MINUS, &result) || !fold_result_fits(node, result)) return NULL;
             opt_count++;
-            return make_int_literal(-val, node->token);
+            return make_int_literal(result, node->token);
         } else if (node->token.type == TOKEN_BANG) {
             opt_count++;
             return make_int_literal(val == 0 ? 1 : 0, node->token);
@@ -755,8 +854,10 @@ static ASTNode* fold_unary(ASTNode* node) {
     if (is_float_literal(operand)) {
         double val = parse_float_value(operand->token);
         if (node->token.type == TOKEN_MINUS) {
+            double result = -val;
+            if (!isfinite(result)) return NULL;
             opt_count++;
-            return make_float_literal(-val, node->token);
+            return make_float_literal(result, node->token);
         } else if (node->token.type == TOKEN_BANG) {
             opt_count++;
             return make_int_literal(val == 0.0 ? 1 : 0, node->token);
@@ -810,7 +911,7 @@ static ASTNode* fold_if(ASTNode* node) {
     if (!node->condition) return NULL;
 
     if (is_int_literal(node->condition)) {
-        long val = parse_int_value(node->condition->token);
+        int64_t val = parse_int_value(node->condition->token);
         ASTNode* folded = NULL;
         if (val != 0) {
             folded = node->left;
@@ -836,7 +937,7 @@ static ASTNode* fold_while_false(ASTNode* node) {
     if (!node->condition) return NULL;
 
     if (is_int_literal(node->condition)) {
-        long val = parse_int_value(node->condition->token);
+        int64_t val = parse_int_value(node->condition->token);
         if (val == 0) {
             opt_count++;
             return create_node(AST_BLOCK, node->token);
@@ -918,7 +1019,7 @@ static void optimize_node(ASTNode* node) {
         if (folded) {
             move_ast_node(node, folded);
         } else if (is_int_literal(node->condition)) {
-            long val = parse_int_value(node->condition->token);
+            int64_t val = parse_int_value(node->condition->token);
             if (val == 0) {
                 free_ast(node->left);
                 node->left = NULL;
@@ -957,45 +1058,6 @@ static void optimize_node(ASTNode* node) {
 }
 
 // ========================================================================
-// PASS: Loop Optimizations
-// ========================================================================
-
-static void optimize_loops(ASTNode* node) {
-    if (!node) return;
-
-    if (node->type == AST_WHILE || node->type == AST_FOR) {
-        if (node->left) optimize_loops(node->left);
-
-        // Strength reduction in loop condition: x * 2 -> x + x
-        if (node->condition && node->condition->type == AST_BINARY) {
-            ASTNode* cond = node->condition;
-            if (cond->token.type == TOKEN_STAR && cond->right && is_int_literal(cond->right)) {
-                long r = parse_int_value(cond->right->token);
-                if (r == 2 && cond->left && !is_literal(cond->left)) {
-                    Token t = cond->token;
-                    t.type = TOKEN_PLUS;
-                    ASTNode* add = create_node(AST_BINARY, t);
-                    add->left = cond->left;
-                    add->right = make_owned_identifier(cond->left->token);
-                    cond->left = NULL;
-                    free_ast(cond->right);
-                    cond->right = NULL;
-                    free_ast(cond);
-                    node->condition = add;
-                    opt_count++;
-                }
-            }
-        }
-    }
-
-    for (int i = 0; i < node->child_count; i++) {
-        optimize_loops(node->children[i]);
-    }
-    optimize_loops(node->left);
-    optimize_loops(node->right);
-}
-
-// ========================================================================
 // Main optimization pipeline
 // ========================================================================
 
@@ -1013,9 +1075,6 @@ bool optimize_ast(ASTNode* program) {
 
     // Pass 3-6: Bottom-up optimizations (fold, peephole, identity, DCE, branch)
     optimize_node(program);
-
-    // Pass 8: Loop optimizations (strength reduction)
-    optimize_loops(program);
 
     // Cleanup
     const_table_clear();

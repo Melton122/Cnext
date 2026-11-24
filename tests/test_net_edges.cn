@@ -1,0 +1,12 @@
+// EXPECT: false
+// EXPECT: 1
+// EXPECT: 1
+import net
+
+main {
+    printin(net.tcp_send(-1, "x"))
+    str r = net.tcp_receive(-1, 16)
+    printin(r.length == 0)
+    net.tcp_close(-1)
+    printin(1)
+}

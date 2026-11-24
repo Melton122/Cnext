@@ -45,10 +45,11 @@ static inline CnextString fmt_pad_center(CnextString s, int total_width, char pa
     return (CnextString){buf, (size_t)total_width};
 }
 
-static inline CnextString fmt_join(CnextString* parts, int count, CnextString separator) {
-    if (count <= 0) return (CnextString){(char*)"", 0};
+static inline CnextString fmt_join(CnextArrayString parts, int count, CnextString separator) {
+    if (count <= 0 || !parts.data) return (CnextString){(char*)"", 0};
+    if (count > (int)parts.length) count = (int)parts.length;
     size_t total = 0;
-    for (int i = 0; i < count; i++) total += parts[i].length;
+    for (int i = 0; i < count; i++) total += parts.data[i].length;
     total += separator.length * (size_t)(count - 1);
     char* buf = (char*)malloc(total + 1);
     if (!buf) return (CnextString){NULL, 0};
@@ -58,8 +59,8 @@ static inline CnextString fmt_join(CnextString* parts, int count, CnextString se
             memcpy(buf + pos, separator.data, separator.length);
             pos += separator.length;
         }
-        memcpy(buf + pos, parts[i].data, parts[i].length);
-        pos += parts[i].length;
+        memcpy(buf + pos, parts.data[i].data, parts.data[i].length);
+        pos += parts.data[i].length;
     }
     buf[pos] = '\0';
     _cnext_track(buf);

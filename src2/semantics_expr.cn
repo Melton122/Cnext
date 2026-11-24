@@ -407,7 +407,8 @@ func analyze_expression(ASTNode? node): int {
         if node.expr_type != TOKEN_EOF && node.expr_type != TOKEN_VAR &&
            sem_is_numeric_type_kind(node.expr_type) {
             return node.expr_type
-        } else if node.token.kind == TOKEN_STRING_LITERAL {
+        } else if node.token.kind == TOKEN_STRING_LITERAL ||
+                   node.token.kind == TOKEN_RAW_STRING {
             node.expr_type = TOKEN_STR_TYPE
             return TOKEN_STR_TYPE
         }

@@ -1,0 +1,18 @@
+// EXPECT: 44
+// EXPECT: 60
+// EXPECT: 13
+// EXPECT: 7
+// EXPECT: 9
+// EXPECT: OK
+import random
+
+main {
+    random.seed(42)
+    printin(random.int(1, 100))
+    printin(random.int(1, 100))
+    printin(random.int(1, 100))
+    printin(random.int(7, 7))
+    printin(random.int(9, 3))
+    float f = random.uniform(0.0, 1.0)
+    if f >= 0.0 && f <= 1.0 { printin("OK") }
+}

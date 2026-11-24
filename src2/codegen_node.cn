@@ -8,6 +8,8 @@ int g_codegen_match_counter = 0
 int g_codegen_defer_counter = 0
 int g_try_counter = 0
 bool g_codegen_func_returns_void = false
+bool g_codegen_in_main = false
+bool g_codegen_main_cleanup_used = false
 
 func codegen_init(ASTNode? program) {
     codegen_output_set("#include \"runtime.h\"\n\n")
@@ -18,6 +20,8 @@ func codegen_init(ASTNode? program) {
     g_codegen_test_count = 0
     g_codegen_defer_counter = 0
     g_try_counter = 0
+    g_codegen_in_main = false
+    g_codegen_main_cleanup_used = false
     g_codegen_program = program
     g_lambda_counter = 0
     g_lambda_helpers = ""
@@ -613,7 +617,9 @@ func generate_constructor(str class_name, ASTNode? node) {
 func generate_function(ASTNode? node, str prefix) {
     if node == null { return }
     bool was_in_function = g_codegen_in_function
+    bool previous_in_main = g_codegen_in_main
     g_codegen_in_function = true
+    g_codegen_in_main = false
     bool outer_returns_void = g_codegen_func_returns_void
     int start = codegen_output_len()
     if node.is_generator {
@@ -625,12 +631,14 @@ func generate_function(ASTNode? node, str prefix) {
         g_codegen_top_level = gen_old_top_level
         g_codegen_in_function = was_in_function
         g_codegen_func_returns_void = outer_returns_void
+        g_codegen_in_main = previous_in_main
         if !was_in_function { flush_lambda_helpers(start) }
         return
     }
     ASTNode? saved_capture_params = g_capture_cell_params
     g_capture_cell_params = node
     bool is_main = node.kind == AST_MAIN
+    g_codegen_in_main = is_main
     g_codegen_func_returns_void = !is_main && node.return_type.kind == TOKEN_EOF
     // generate_program marks the declaration currently being emitted as
     // top-level. Its body is not file scope: without clearing this flag a
@@ -703,14 +711,22 @@ func generate_function(ASTNode? node, str prefix) {
                 codegen_emit("{")
                 codegen_emit(" _cnext_free_all(); return 1; }\n")
             }
+            write_indent()
+            codegen_emit("int _cnext_main_result = 0;\n")
+            g_codegen_main_cleanup_used = false
             int i = 0
             int n = len(node.left.children)
             while i < n {
                 generate_statement(node.left.children[i])
                 i = i + 1
             }
+            g_codegen_in_main = false
             codegen_pop_closure_scope()
-            codegen_emit("    _cnext_free_all();\n    return 0;\n}\n\n")
+            if g_codegen_main_cleanup_used {
+                codegen_emit("    _cnext_main_cleanup:\n")
+            }
+            codegen_emit("    _cnext_free_all();\n")
+            codegen_emit("    return _cnext_main_result;\n}\n\n")
             g_indent_level = 0
         } else {
             generate_block(node.left)
@@ -721,6 +737,7 @@ func generate_function(ASTNode? node, str prefix) {
     g_codegen_top_level = old_top_level
     g_codegen_in_function = was_in_function
     g_codegen_func_returns_void = outer_returns_void
+    g_codegen_in_main = previous_in_main
     g_capture_cell_params = saved_capture_params
     if !was_in_function { flush_lambda_helpers(start) }
 }
@@ -1039,17 +1056,33 @@ func generate_statement(ASTNode? node) {
         generate_function(node, "")
     } else if node.kind == AST_RETURN {
         write_indent()
-        codegen_emit("return")
-        if node.left != null {
-            codegen_emit(" ")
-            if node.left.expr_type == TOKEN_FUNC {
-                codegen_emit("cnext_closure_escape(")
-                emit_owned_closure(node.left)
-                codegen_emit(")")
+        if g_codegen_in_main {
+            g_codegen_main_cleanup_used = true
+            codegen_emit("_cnext_main_result = ")
+            if node.left != null {
+                if node.left.expr_type == TOKEN_FUNC {
+                    codegen_emit("cnext_closure_escape(")
+                    emit_owned_closure(node.left)
+                    codegen_emit(")")
+                }
+                else { generate_expression(node.left) }
+            } else {
+                codegen_emit("0")
             }
-            else { generate_expression(node.left) }
+            codegen_emit("; goto _cnext_main_cleanup;\n")
+        } else {
+            codegen_emit("return")
+            if node.left != null {
+                codegen_emit(" ")
+                if node.left.expr_type == TOKEN_FUNC {
+                    codegen_emit("cnext_closure_escape(")
+                    emit_owned_closure(node.left)
+                    codegen_emit(")")
+                }
+                else { generate_expression(node.left) }
+            }
+            codegen_emit(";\n")
         }
-        codegen_emit(";\n")
     } else if node.kind == AST_THROW {
         write_indent()
         codegen_emit("cnext_throw(")

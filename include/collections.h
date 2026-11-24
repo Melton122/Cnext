@@ -96,7 +96,14 @@ static void* hashmap_get(HashMap* map, const char* key) {
 }
 
 static bool hashmap_contains(HashMap* map, const char* key) {
-    return hashmap_get(map, key) != NULL;
+    if (!map || !key) return false;
+    unsigned int idx = hashmap_hash(key, map->capacity);
+    HashMapEntry* entry = map->buckets[idx];
+    while (entry) {
+        if (strcmp(entry->key, key) == 0) return true;
+        entry = entry->next;
+    }
+    return false;
 }
 
 static void hashmap_remove(HashMap* map, const char* key) {

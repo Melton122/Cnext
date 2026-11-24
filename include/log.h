@@ -27,7 +27,7 @@ static inline void log_set_color(bool enabled) { _cnext_log_color = enabled; }
 static inline void log_set_timestamps(bool enabled) { _cnext_log_time = enabled; }
 static inline void log_set_file(const char* path) {
     if (_cnext_log_file && _cnext_log_file != stderr) fclose(_cnext_log_file);
-    _cnext_log_file = path ? fopen(path, "a") : NULL;
+    _cnext_log_file = path ? fopen(path, "ab") : NULL;
 }
 
 static inline const char* _log_level_str(LogLevel level) {

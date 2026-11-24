@@ -537,6 +537,12 @@ void register_import(Token module) {
         Token set_has_token = {TOKEN_IDENTIFIER, "set_has", 7, module.line};
         Token set_remove_token = {TOKEN_IDENTIFIER, "set_remove", 10, module.line};
         Token set_size_token = {TOKEN_IDENTIFIER, "set_size", 8, module.line};
+        Token hashmap_new_token = {TOKEN_IDENTIFIER, "hashmap_new", 11, module.line};
+        Token hashmap_put_token = {TOKEN_IDENTIFIER, "hashmap_put", 11, module.line};
+        Token hashmap_get_token = {TOKEN_IDENTIFIER, "hashmap_get", 11, module.line};
+        Token hashmap_contains_token = {TOKEN_IDENTIFIER, "hashmap_contains", 16, module.line};
+        Token hashmap_remove_token = {TOKEN_IDENTIFIER, "hashmap_remove", 14, module.line};
+        Token hashmap_free_token = {TOKEN_IDENTIFIER, "hashmap_free", 12, module.line};
         define_symbol_if_missing(list_new_token, TOKEN_FUNC, true, NULL);
         define_symbol_if_missing(list_free_token, TOKEN_FUNC, true, NULL);
         define_symbol_if_missing(list_add_token, TOKEN_FUNC, true, NULL);
@@ -560,6 +566,12 @@ void register_import(Token module) {
         define_symbol_if_missing(set_has_token, TOKEN_FUNC, true, NULL);
         define_symbol_if_missing(set_remove_token, TOKEN_FUNC, true, NULL);
         define_symbol_if_missing(set_size_token, TOKEN_FUNC, true, NULL);
+        define_symbol_if_missing(hashmap_new_token, TOKEN_FUNC, true, NULL);
+        define_symbol_if_missing(hashmap_put_token, TOKEN_FUNC, true, NULL);
+        define_symbol_if_missing(hashmap_get_token, TOKEN_FUNC, true, NULL);
+        define_symbol_if_missing(hashmap_contains_token, TOKEN_FUNC, true, NULL);
+        define_symbol_if_missing(hashmap_remove_token, TOKEN_FUNC, true, NULL);
+        define_symbol_if_missing(hashmap_free_token, TOKEN_FUNC, true, NULL);
     } else if (token_matches_name(module, "crypto")) {
         Token crypto_md5_token = {TOKEN_IDENTIFIER, "crypto_md5", 10, module.line};
         Token crypto_sha256_token = {TOKEN_IDENTIFIER, "crypto_sha256", 13, module.line};
@@ -636,6 +648,52 @@ void register_import(Token module) {
         define_symbol_if_missing(channel_send_token, TOKEN_FUNC, true, NULL);
         define_symbol_if_missing(channel_recv_token, TOKEN_FUNC, true, NULL);
         define_symbol_if_missing(channel_free_token, TOKEN_FUNC, true, NULL);
+    } else if (token_matches_name(module, "fmt")) {
+        static const struct { const char* name; int len; } fmt_funcs[] = {
+            {"fmt_pad_left", 12}, {"fmt_pad_right", 13}, {"fmt_pad_center", 14},
+            {"fmt_join", 8}, {"fmt_repeat", 10}, {"fmt_int", 7},
+            {"fmt_float", 9}, {"fmt_hex", 7}, {"fmt_hex_upper", 13},
+            {"fmt_binary", 10}, {"fmt_filesize", 12}, {"fmt_plural", 10},
+            {"fmt_slice", 9}, {NULL, 0}
+        };
+        for (int i = 0; fmt_funcs[i].name; i++) {
+            Token t = {TOKEN_IDENTIFIER, fmt_funcs[i].name, fmt_funcs[i].len, module.line};
+            define_symbol_if_missing(t, TOKEN_FUNC, true, NULL);
+        }
+    } else if (token_matches_name(module, "http")) {
+        static const struct { const char* name; int len; } http_funcs[] = {
+            {"http_request", 12}, {"http_free_response", 18}, {"http_get_full", 13},
+            {"http_get_with_headers", 21}, {"http_post_full", 14},
+            {"http_post_with_headers", 22}, {"http_put", 8},
+            {"http_delete", 11}, {"http_patch", 10}, {"http_status_text", 16},
+            {NULL, 0}
+        };
+        for (int i = 0; http_funcs[i].name; i++) {
+            Token t = {TOKEN_IDENTIFIER, http_funcs[i].name, http_funcs[i].len, module.line};
+            define_symbol_if_missing(t, TOKEN_FUNC, true, NULL);
+        }
+    } else if (token_matches_name(module, "log")) {
+        static const struct { const char* name; int len; } log_funcs[] = {
+            {"log_set_level", 13}, {"log_set_color", 13}, {"log_set_timestamps", 18},
+            {"log_set_file", 12}, {"log_trace", 9}, {"log_debug", 9},
+            {"log_info", 8}, {"log_warn", 8}, {"log_error", 9},
+            {"log_fatal", 9}, {"log_close", 9}, {NULL, 0}
+        };
+        for (int i = 0; log_funcs[i].name; i++) {
+            Token t = {TOKEN_IDENTIFIER, log_funcs[i].name, log_funcs[i].len, module.line};
+            define_symbol_if_missing(t, TOKEN_FUNC, true, NULL);
+        }
+    } else if (token_matches_name(module, "args")) {
+        static const struct { const char* name; int len; } args_funcs[] = {
+            {"args_init", 9}, {"args_count", 10}, {"args_get", 8},
+            {"args_program_name", 17}, {"args_has", 8}, {"args_value", 10},
+            {"args_value_int", 14}, {"args_value_bool", 15},
+            {"args_value_default", 18}, {"args_print_usage", 16}, {NULL, 0}
+        };
+        for (int i = 0; args_funcs[i].name; i++) {
+            Token t = {TOKEN_IDENTIFIER, args_funcs[i].name, args_funcs[i].len, module.line};
+            define_symbol_if_missing(t, TOKEN_FUNC, true, NULL);
+        }
     } else if (token_matches_name(module, "math")) {
         static const struct { const char* name; int len; } math_funcs[] = {
             {"math_abs", 8}, {"math_max", 8}, {"math_min", 8},

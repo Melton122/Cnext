@@ -283,18 +283,43 @@ long us = benchmark(1000000)    // Benchmark (microseconds)
 ```cnext
 import http
 
-var resp = http_get_full("https://api.example.com/data")
+var resp = http.get_full("https://api.example.com/data")
 int code = resp.status_code
 str body = resp.body
-http_free_response(&resp)
+http.free_response(&resp)
 ```
 
-Available calls: `http_request(method, url, body, headers)`, `http_get_full(url)`,
-`http_get_with_headers(url, headers)`, `http_post_full(url, body)`,
-`http_post_with_headers(url, body, headers)`, `http_put(url, body)`,
-`http_delete(url)`, `http_patch(url, body)`, and `http_status_text(code)`.
+Available calls: `http.request(method, url, body, headers)`, `http.get_full(url)`,
+`http.get_with_headers(url, headers)`, `http.post_full(url, body)`,
+`http.post_with_headers(url, body, headers)`, `http.put(url, body)`,
+`http.delete(url)`, `http.patch(url, body)`, and `http.status_text(code)`.
 `http_get`, `http_post`, and `download_file` are not HTTP-module builtins;
 `download_file` lives in the `net` module.
+
+## Format and Logging Modules
+
+```cnext
+import fmt
+import log
+
+printin(fmt.pad_left("hi", 5, '0'))
+printin(fmt.join({"a", "b", "c"}, 3, ","))
+printin(fmt.filesize(1536))
+log.set_color(false)
+log.set_timestamps(false)
+log.info(to_cstr("started"))
+```
+
+## Argument Module
+
+```cnext
+import args
+
+int count = args.count()
+str program = args.program_name()
+bool verbose = args.has("verbose")
+str value = args.value("name")
+```
 
 ## Thread Functions (Module Required)
 

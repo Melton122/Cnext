@@ -213,6 +213,8 @@ void reset_codegen_state(void) {
     lambda_counter = 0;
     codegen_test_mode = false;
     codegen_in_test = false;
+    codegen_in_main = false;
+    codegen_main_cleanup_used = false;
     codegen_test_count = 0;
     program_node = NULL;
     generator_counter = 0;

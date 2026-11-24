@@ -242,7 +242,9 @@ func emit_lambda(ASTNode lambda) {
     str outer_output = codegen_flush_output()
     int outer_indent = g_indent_level
     var outer_caps = g_active_captures
+    bool previous_in_main = g_codegen_in_main
     codegen_output_set("")
+    g_codegen_in_main = false
     g_indent_level = 0
     g_active_captures = captures
     var cap = captures
@@ -315,6 +317,7 @@ func emit_lambda(ASTNode lambda) {
     codegen_output_set(outer_output)
     g_indent_level = outer_indent
     g_active_captures = outer_caps
+    g_codegen_in_main = previous_in_main
 
     if captures != null {
         codegen_emit("({ CnextClosure __cnext_value = cnext_closure_create((void*)" + fn_name + ", sizeof(" + env_type + "), ")

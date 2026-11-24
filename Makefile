@@ -109,6 +109,7 @@ check: $(EXEC)
 	./$(EXEC) test
 	$(PARITY_PY) tests/test_native_linking.py
 	$(PARITY_PY) tests/test_diagnostics.py
+	$(PARITY_PY) tests/test_optimizer_semantics.py
 	$(MAKE) msvc-defer-test
 	@echo "Running Python test suite..."
 	@python3 tests/run_tests.py 2>/dev/null || python tests/run_tests.py 2>/dev/null || echo "Python tests skipped"

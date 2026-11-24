@@ -1,0 +1,17 @@
+// EXPECT: 2020
+// EXPECT: 2020
+// EXPECT: 6
+// EXPECT: OK
+// EXPECT: 1
+import time
+
+main {
+    long ts = 1592222400
+    printin(time.format(ts, "%Y"))
+    printin(time.year(ts))
+    printin(time.month(ts))
+    long p = time.parse("2020-06-15 12:00:00", "%Y-%m-%d %H:%M:%S")
+    if time.year(p) == 2020 && time.month(p) == 6 { printin("OK") }
+    time.sleep(0)
+    printin(1)
+}

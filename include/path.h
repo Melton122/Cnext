@@ -93,7 +93,10 @@ static CnextString path_normalize(CnextString path) {
     if (!buf) { free(copy); return (CnextString){NULL, 0}; }
     size_t w = 0;
     size_t i = 0;
-    if (len >= 2 && copy[1] == ':') {
+    if (copy[0] == '/') {
+        buf[w++] = '/';
+        i = 1;
+    } else if (len >= 2 && copy[1] == ':') {
         buf[w++] = copy[0];
         buf[w++] = copy[1];
         i = 2;

@@ -1,0 +1,25 @@
+// EXPECT: foo/bar
+// EXPECT: foo/bar
+// EXPECT: /foo/bar
+// EXPECT: /foo/bar/file.txt
+// EXPECT: /foo/baz
+// EXPECT: C:/foo/bar
+// EXPECT: .
+// EXPECT: file.txt
+// EXPECT: .txt
+// EXPECT: 1
+import path
+
+main {
+    printin(path.join("foo", "bar"))
+    printin(path.join("foo/", "bar"))
+    printin(path.dirname("/foo/bar/file.txt"))
+    printin(path.normalize("/foo/bar/file.txt"))
+    printin(path.normalize("/foo/./bar/../baz/"))
+    printin(path.normalize("C:\\foo\\bar"))
+    printin(path.dirname("file.txt"))
+    printin(path.basename("/foo/bar/file.txt"))
+    printin(path.extension("/foo/bar/file.txt"))
+    str e = path.extension("file")
+    printin(e.length == 0)
+}

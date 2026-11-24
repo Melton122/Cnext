@@ -24,6 +24,8 @@ typedef struct CodeGenContext {
     int lambda_counter;
     bool test_mode;
     bool in_test;
+    bool in_main;
+    bool main_cleanup_used;
     int test_count;
     ASTNode* program_node;
     int generator_counter;
@@ -50,6 +52,8 @@ extern CodeGenContext g_codegen;
 #define lambda_counter          g_codegen.lambda_counter
 #define codegen_test_mode       g_codegen.test_mode
 #define codegen_in_test         g_codegen.in_test
+#define codegen_in_main         g_codegen.in_main
+#define codegen_main_cleanup_used g_codegen.main_cleanup_used
 #define codegen_test_count      g_codegen.test_count
 #define program_node            g_codegen.program_node
 #define generator_counter       g_codegen.generator_counter

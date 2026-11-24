@@ -1,0 +1,6 @@
+var g = 10
+func f(int g): int { return g }
+
+main {
+    printin(f(20))
+}

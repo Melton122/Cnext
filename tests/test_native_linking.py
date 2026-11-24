@@ -225,6 +225,65 @@ const char* native_binary(void) { return "a\0b"; }
         self.assertIn("Cannot combine --emit-c", result.stderr)
         self.assertFalse((self.work / "generated.c").exists())
 
+    def test_emit_c_rejects_output_option(self):
+        generated = self.work / "generated.c"
+        result = self.command(CNEXT, "build", self.source, "--emit-c", generated,
+                              "-o", self.output)
+        self.assertEqual(result.returncode, 64)
+        self.assertIn("Cannot combine --emit-c with -o", result.stderr)
+        self.assertFalse(generated.exists())
+
+    def test_main_return_uses_cleanup_path(self):
+        source = self.write("early_return.cn", '''
+main {
+    defer printin("defer ran")
+    return 7
+}
+''')
+        generated = self.work / "early_return.c"
+        self.assert_ok(self.command(CNEXT, "build", source, "--emit-c", generated))
+        text = generated.read_text(encoding="utf-8")
+        self.assertIn("_cnext_main_result = 7; goto _cnext_main_cleanup;", text)
+        self.assertLess(text.index("_cnext_main_cleanup:"),
+                        text.index("return _cnext_main_result;"))
+        self.assertNotIn("return 7;", text)
+        self.assert_ok(self.command("gcc", "-std=gnu11", "-iquote", ROOT / "include",
+                                    generated, "-o", self.output))
+        result = self.command(self.output)
+        self.assertEqual(result.returncode, 7)
+        self.assertEqual(result.stdout, "defer ran\n")
+
+    def test_raw_string_newlines_are_escaped(self):
+        source = self.work / "raw.cn"
+        with source.open("w", encoding="utf-8", newline="\n") as output:
+            output.write(r'''main {
+    str raw = r"line one
+line two C:\temp"
+    printin(len(raw))
+}
+''')
+        generated = self.work / "raw.c"
+        self.assert_ok(self.command(CNEXT, "build", source, "--emit-c", generated))
+        self.assert_ok(self.command("gcc", "-std=gnu11", "-iquote", ROOT / "include",
+                                    generated, "-o", self.output))
+        result = self.command(self.output)
+        self.assertEqual(result.stdout.strip(), "25")
+
+    def test_print_macro_does_not_shadow_user_identifier(self):
+        source = self.write("shadow.cn", '''
+main {
+    int _x = 42
+    printin(_x)
+}
+''')
+        generated = self.work / "shadow.c"
+        self.assert_ok(self.command(CNEXT, "build", source, "--emit-c", generated))
+        self.assert_ok(self.command("gcc", "-std=gnu11", "-Werror=shadow",
+                                    "-iquote", ROOT / "include", generated,
+                                    "-o", self.output))
+        result = self.command(self.output)
+        self.assertEqual(result.stdout.strip(), "42")
+
     def test_link_failure_is_reported(self):
         result = self.cnext("build", "--link-lib", "cnext_library_that_does_not_exist")
         self.assertNotEqual(result.returncode, 0)

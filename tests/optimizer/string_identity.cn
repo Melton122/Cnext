@@ -1,0 +1,4 @@
+main {
+    printin("x" + 0)
+    printin(0 + "x")
+}

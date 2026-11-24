@@ -785,7 +785,7 @@ static inline void print_closure(CnextClosure x) { (void)x; _cnext_print("<closu
 static inline void print_iter(CnextIterBase x) { (void)x; _cnext_print("<iterator>"); }
 static inline void print_tuple(CnextTuple x) { printf("%s", x.repr.data ? x.repr.data : "(null)"); }
 
-#define print_raw(...) do { __auto_type _x = (__VA_ARGS__); _Generic((_x), \
+#define print_raw(...) do { __auto_type _cnext_print_value = (__VA_ARGS__); _Generic((_cnext_print_value), \
     int: print_int, \
     unsigned int: print_uint, \
     short: print_int, \
@@ -805,9 +805,9 @@ static inline void print_tuple(CnextTuple x) { printf("%s", x.repr.data ? x.repr
     bool: print_bool, \
     CnextClosure: print_closure, \
     CnextIterBase: print_iter, \
-    default: print_ptr)(_x); } while(0)
+    default: print_ptr)(_cnext_print_value); } while(0)
 
-#define printin(...) do { __auto_type _x = (__VA_ARGS__); _Generic((_x), \
+#define printin(...) do { __auto_type _cnext_print_value = (__VA_ARGS__); _Generic((_cnext_print_value), \
     int: printin_int, \
     unsigned int: printin_uint, \
     short: printin_int, \
@@ -827,7 +827,7 @@ static inline void print_tuple(CnextTuple x) { printf("%s", x.repr.data ? x.repr
     bool: printin_bool, \
     CnextClosure: printin_closure, \
     CnextIterBase: printin_iter, \
-    default: printin_ptr)(_x); } while(0)
+    default: printin_ptr)(_cnext_print_value); } while(0)
 
 #ifdef _MSC_VER
 #undef print_raw

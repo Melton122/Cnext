@@ -5,12 +5,8 @@
 #include <string.h>
 #include <stdbool.h>
 
-static int _cnext_argc = 0;
-static char** _cnext_argv = NULL;
-
 static inline void args_init(int argc, char** argv) {
-    _cnext_argc = argc;
-    _cnext_argv = argv;
+    cnext_init_args(argc, argv);
 }
 
 static inline int args_count(void) {

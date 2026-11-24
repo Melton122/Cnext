@@ -1,0 +1,21 @@
+// EXPECT: hello
+// EXPECT: hello world
+// EXPECT: 1
+import thread
+
+main {
+    var m = mutex_new()
+    mutex_lock(m)
+    mutex_unlock(m)
+    mutex_free(m)
+    var ch = channel_new(4)
+    channel_send(ch, "hello")
+    printin(channel_recv(ch))
+    channel_send(ch, "hello")
+    channel_send(ch, "world")
+    str a = channel_recv(ch)
+    str b = channel_recv(ch)
+    printin(a + " " + b)
+    channel_free(ch)
+    printin(1)
+}
