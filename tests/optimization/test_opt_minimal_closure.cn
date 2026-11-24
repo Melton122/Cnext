@@ -1,0 +1,6 @@
+// Minimal closure test for optimizer debugging
+main {
+    var x = 10
+    var add_x = (int a) => a + x
+    printin(add_x(5) == 15)
+}

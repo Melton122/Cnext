@@ -33,8 +33,8 @@ class CrossPlatformTests(unittest.TestCase):
 
     def test_download_tool_output_options_precede_terminator(self):
         source = (ROOT / "src" / "main_packages.c").read_text(encoding="utf-8")
-        self.assertIn('{"curl", "-fsSL", "-o", out_path, "--", url, NULL}', source)
-        self.assertIn('{"wget", "-q", "-O", out_path, "--", url, NULL}', source)
+        self.assertIn('{"curl", "-fsSL", "-o", tmp_path, "--", url, NULL}', source)
+        self.assertIn('{"wget", "-q", "-O", tmp_path, "--", url, NULL}', source)
 
     def test_process_spawn_is_the_only_spawnvp_caller(self):
         callers = []
@@ -69,6 +69,65 @@ main {
         result = self.command(CNEXT, "build", source, "--emit-c", self.work / "missing" / "generated.c")
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse((self.work / "temp_out.c").exists())
+
+    def test_cli_does_not_build_shell_strings(self):
+        source = (ROOT / "src" / "main.c").read_text(encoding="utf-8")
+        self.assertNotIn('system("', source)
+        self.assertIn("run_process_quiet", source)
+
+    def test_cache_clear_removes_directory_without_shell(self):
+        cache = self.work / ".cnext" / "cache"
+        nested = cache / "nested"
+        nested.mkdir(parents=True)
+        (nested / "value.txt").write_text("value", encoding="utf-8")
+        status = self.command(CNEXT, "cache", "status")
+        self.assert_ok(status)
+        self.assertIn("Entries: 1", status.stdout)
+        clear = self.command(CNEXT, "cache", "clear")
+        self.assert_ok(clear)
+        self.assertFalse(cache.exists())
+
+    def test_captured_process_drains_output_to_completion(self):
+        source = (ROOT / "src" / "main_utils.c").read_text(encoding="utf-8")
+        self.assertIn("append_captured_output", source)
+        self.assertNotIn("while (total < output_buf_size - 1", source)
+        self.assertIn("Warning: captured output truncated.", source)
+
+    def test_windows_header_workloads_are_lean(self):
+        main_source = (ROOT / "src" / "main.c").read_text(encoding="utf-8")
+        registry_source = (ROOT / "src" / "registry.c").read_text(encoding="utf-8")
+        utils_source = (ROOT / "src" / "main_utils.c").read_text(encoding="utf-8")
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        self.assertNotIn("#include <windows.h>", main_source)
+        self.assertNotIn("#include <windows.h>", registry_source)
+        self.assertIn("bool remove_tree", utils_source)
+        self.assertIn("int count_tree_entries", utils_source)
+        self.assertIn("-DWIN32_LEAN_AND_MEAN", makefile)
+        self.assertIn("-DNOMINMAX", makefile)
+
+    def test_benchmark_harness_is_reproducible(self):
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        bench = (ROOT / "tools" / "bench.py").read_text(encoding="utf-8")
+        self.assertIn("tools/bench.py", makefile)
+        self.assertNotIn("@time $(MAKE)", makefile)
+        self.assertNotIn("@touch src/main.c", makefile)
+        self.assertIn("--runs", bench)
+        self.assertIn("median_ms", bench)
+        self.assertIn("results.json", bench)
+        self.assertIn("baseline.json", bench)
+
+    def test_install_scripts_quote_temp_paths_and_cleanup(self):
+        shell = (ROOT / "install.sh").read_text(encoding="utf-8")
+        self.assertIn(r'trap "rm -rf -- \"$tmpdir\"" EXIT', shell)
+        self.assertIn('curl -fsSL -o "$dest" -- "$url"', shell)
+
+        powershell_script = (ROOT / "install.ps1").read_text(encoding="utf-8")
+        self.assertIn("finally {", powershell_script)
+        self.assertIn("Remove-Item -LiteralPath $TMPDIR", powershell_script)
+
+        batch = (ROOT / "install.bat").read_text(encoding="utf-8")
+        self.assertGreaterEqual(batch.count('rmdir /S /Q "%TMPDIR%"'), 4)
+        self.assertIn('curl -fsSL -o "%TMPDIR%\\%FILENAME%" -- "%URL%"', batch)
 
 
 if __name__ == "__main__":

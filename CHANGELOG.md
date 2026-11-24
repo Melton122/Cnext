@@ -4,6 +4,8 @@ All notable changes to Cnext will be documented in this file.
 
 ## [Unreleased]
 
+## [10.0.5] - 2026 — Baby Otter
+
 ### Added
 - **`process_spawn(str[] argv)`:** the `process` module can now start a program
   from an argv vector with no shell in between, so each element reaches the
@@ -34,12 +36,29 @@ All notable changes to Cnext will be documented in this file.
   with stable `E101` diagnostics in both the native and self-hosted compilers.
   Numeric assignment, initializer, and return checks use a widen-only matrix;
   narrowing, signedness changes, and floating-point/integer crossings require an
-  explicit `as` cast. `for-in` bindings infer element types from arrays, strings,
-  ranges, `str_split`, and generator calls. Try-expression propagation from a
-  typed function is diagnosed before codegen can emit an invalid valueless
-  `return`
+   explicit `as` cast. `for-in` bindings infer element types from arrays, strings,
+   ranges, `str_split`, and generator calls. Try-expression propagation from a
+   typed function is diagnosed before codegen can emit an invalid valueless
+   `return`
+- **Categorized regression suite:** `.cn` tests now live under
+  `tests/<category>/`; native, Python, and parity harnesses recurse while
+  excluding fixture directories, and the optimizer regressions are first-class
+  tests
+- **Deterministic invalid-input fuzzing:** `tests/test_fuzz_invalid_input.py`
+  checks crash/timeout/output bounds and a compile-only side-effect check, with
+  seeded `--cases`/`--seed` controls for deeper sweeps
+- **`fmt`/`lint` parity for `defer`/`when`:** formatting is idempotent and the
+  linter no longer reports false literal-comparison warnings for boolean `when`
+  arms
+- **Reproducible benchmarks:** `tools/bench.py` replaces the shell-only
+  `make bench` with repeated medians, fixed job counts, and JSON baseline/result
+  artifacts; lean Windows headers and cache helpers cut clean builds ~20% and
+  incremental builds ~50%
 
 ### Fixed
+- **Package manager and installers are hardened:** HTTPS-only downloads, name/URL validation, scoped temp files, atomic token saves, auth-bearing login verification, safe cache parents, unique cache temp files, query encoding, and quoted installer cleanup
+- **Captured process output is bounded and drains to EOF:** Windows stdin capture uses a reader thread, POSIX polling avoids early-close/SIGPIPE failures, and truncation is reported instead of hanging or silently losing output
+- **MinGW `-O2` closure regression is fixed:** `__USE_MINGW_SETJMP_NON_SEH` avoids SEH `longjmp` unwinding crashes, with a preprocessor guard and a repeated Windows regression run
 - **Diagnostic output is bounded:** source excerpts and caret padding are
   capped, so an error on a very long line no longer floods the terminal or
   exhausts memory. `tests/test_diagnostics.py` covers the long-line case

@@ -5,7 +5,7 @@ REM For PowerShell: iwr -useb https://raw.githubusercontent.com/Melton122/Cnext/
 
 setlocal enabledelayedexpansion
 
-set "CNEXT_VERSION=10.0.4"
+set "CNEXT_VERSION=10.0.5"
 set "CNEXT_REPO=Melton122/Cnext"
 set "INSTALL_DIR=%LOCALAPPDATA%\Cnext"
 
@@ -29,12 +29,12 @@ if not exist "%INSTALL_DIR%\include" mkdir "%INSTALL_DIR%\include"
 REM Download
 set "FILENAME=cnext-windows-%ARCH%-v%CNEXT_VERSION%.zip"
 set "URL=https://github.com/%CNEXT_REPO%/releases/download/v%CNEXT_VERSION%/%FILENAME%"
-set "TMPDIR=%TEMP%\cnext_install_%RANDOM%"
+set "TMPDIR=%TEMP%\cnext_install_%RANDOM%%RANDOM%"
 
 echo Downloading Cnext v%CNEXT_VERSION%...
 if not exist "%TMPDIR%" mkdir "%TMPDIR%"
 
-curl -fsSL -o "%TMPDIR%\%FILENAME%" "%URL%" 2>nul
+curl -fsSL -o "%TMPDIR%\%FILENAME%" -- "%URL%" 2>nul
 if %errorlevel% neq 0 (
     powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%URL%' -OutFile '%TMPDIR%\%FILENAME%'" 2>nul
     if !errorlevel! neq 0 (
@@ -42,6 +42,7 @@ if %errorlevel% neq 0 (
         echo.
         echo Please download manually from:
         echo   https://github.com/%CNEXT_REPO%/releases
+        if exist "%TMPDIR%" rmdir /S /Q "%TMPDIR%" 2>nul
         pause
         exit /b 1
     )
@@ -52,12 +53,19 @@ echo Extracting...
 powershell -Command "Expand-Archive -Path '%TMPDIR%\%FILENAME%' -DestinationPath '%TMPDIR%\extract' -Force" 2>nul
 if %errorlevel% neq 0 (
     echo ERROR: Extraction failed.
+    if exist "%TMPDIR%" rmdir /S /Q "%TMPDIR%" 2>nul
     pause
     exit /b 1
 )
 
 echo Installing...
 copy /Y "%TMPDIR%\extract\cnext.exe" "%INSTALL_DIR%\bin\" >nul
+if not exist "%INSTALL_DIR%\bin\cnext.exe" (
+    echo ERROR: cnext.exe was not installed.
+    if exist "%TMPDIR%" rmdir /S /Q "%TMPDIR%" 2>nul
+    pause
+    exit /b 1
+)
 xcopy /E /Y /Q "%TMPDIR%\extract\include\*" "%INSTALL_DIR%\include\" >nul 2>nul
 
 REM Add to PATH

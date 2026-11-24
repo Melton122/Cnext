@@ -85,7 +85,10 @@ bool lint_source(const char* source, LintResult* result) {
             bool is_cmp = false;
             if (prev_token.type == TOKEN_EQ_EQ || prev_token.type == TOKEN_BANG_EQ ||
                 prev_token.type == TOKEN_AND_AND || prev_token.type == TOKEN_OR_OR ||
-                prev_token.type == TOKEN_LPAREN || prev_token.type == TOKEN_LBRACE) {
+                prev_token.type == TOKEN_LPAREN || prev_token.type == TOKEN_LBRACE ||
+                prev_token.type == TOKEN_COMMA || prev_token.type == TOKEN_FAT_ARROW ||
+                prev_token.type == TOKEN_WHEN || prev_token.type == TOKEN_ELSE ||
+                prev_token.type == TOKEN_RETURN) {
                 // Not a comparison
             } else {
                 is_cmp = true;

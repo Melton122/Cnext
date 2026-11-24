@@ -1,6 +1,10 @@
 #ifndef CNEXT_RUNTIME_H
 #define CNEXT_RUNTIME_H
 
+#ifdef __MINGW32__
+#define __USE_MINGW_SETJMP_NON_SEH 1
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>

@@ -404,7 +404,7 @@ cnext/
 │   ├── collections.h       # Data structures
 │   ├── string_utils.h      # String utilities
 │   └── diagnostics.h       # Error diagnostics
-├── tests/                  # Test files (50+ tests)
+├── tests/                  # Categorized .cn test programs
 ├── examples/               # Example programs
 ├── docs/                   # Documentation
 ├── lsp/                    # Language Server Protocol
@@ -491,7 +491,7 @@ Found a bug? Please report it:
 ### Running Tests
 
 ```bash
-# Run every Cnext test file in tests/
+# Run every Cnext test file under tests/
 cnext test
 
 # List discovered test files
@@ -501,7 +501,7 @@ cnext test --list
 cnext test async
 
 # Run exactly one test file
-cnext test tests/test_async.cn
+cnext test tests/control/test_async.cn
 
 # Run the full compiler and Python test suite
 make check
@@ -509,7 +509,7 @@ make check
 
 ### Writing Tests
 
-Create a test file in `tests/`:
+Create a test file in the appropriate `tests/<category>/` directory:
 
 ```cnext
 // EXPECT: expected output line 1
@@ -527,13 +527,18 @@ are reported as test failures, so CI cannot silently skip a broken test.
 
 ### Test Categories
 
-- **Lexer tests:** Token recognition
-- **Parser tests:** Syntax parsing
-- **Semantic tests:** Type checking
-- **Codegen tests:** Code generation
-- **Runtime tests:** Runtime behavior
-- **Optimizer tests:** Optimization passes
-- **Integration tests:** Full program tests
+- **`tests/core/`:** Language core, functions, closures, memory
+- **`tests/types/`:** Numeric, text, nullability, and type-system behavior
+- **`tests/oop/`:** Classes, generics, inheritance, interfaces, traits
+- **`tests/control/`:** Defer, try/when, async, coroutines, generators, threads
+- **`tests/collections/`:** Arrays, slices, tuples, collection modules
+- **`tests/stdlib/`:** Builtins and header-only stdlib modules
+- **`tests/io/`:** File, path, process, network, HTTP, time, OS
+- **`tests/optimization/`:** Optimizer regressions and minimal reproducers
+- **`tests/cli/`:** CLI commands, testing, packaging, integration
+- **`tests/version_features/`:** Versioned feature snapshots
+
+`tests/bootstrap/` and `tests/optimizer/` contain compiler fixtures and are excluded from `cnext test` discovery.
 
 ## Examples
 

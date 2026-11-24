@@ -1,0 +1,16 @@
+// Minimal generator test for optimizer debugging
+func count_to(int n): iter<int> {
+    var i = 1
+    while i <= n {
+        yield i
+        i = i + 1
+    }
+}
+
+main {
+    var sum = 0
+    for var x in count_to(3) {
+        sum = sum + x
+    }
+    printin(sum == 6)
+}

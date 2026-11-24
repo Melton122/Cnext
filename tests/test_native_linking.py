@@ -205,14 +205,20 @@ const char* native_binary(void) { return "a\0b"; }
                          "    int count = 0;\n"
                          "    for (_AllocNode* p = _cnext_allocs; p; p = p->next) count++;\n"
                          "    return count;\n}\n")
+        if os.name == "nt":
+            macros = self.command("gcc", "-std=gnu11", "-E", "-dM", "-iquote", ROOT / "include", generated)
+            self.assert_ok(macros)
+            self.assertIn("#define __USE_MINGW_SETJMP_NON_SEH 1", macros.stdout)
         for optimization in ("-O0", "-O2"):
             with self.subTest(optimization=optimization):
                 self.assert_ok(self.command("gcc", "-std=gnu11", optimization,
                                             "-iquote", ROOT / "include", generated,
                                             "-o", self.output))
-                result = self.command(self.output)
-                self.assert_ok(result)
-                self.assertEqual(result.stdout, EXPECTED[filename])
+                repetitions = 100 if os.name == "nt" and optimization == "-O2" else 1
+                for _ in range(repetitions):
+                    result = self.command(self.output)
+                    self.assert_ok(result)
+                    self.assertEqual(result.stdout, EXPECTED[filename])
 
     def test_native_argument_limit(self):
         result = self.cnext("build", *(["--object", "unused.o"] * 129))

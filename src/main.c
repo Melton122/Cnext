@@ -527,8 +527,12 @@ static int parse_build_args(int argc, char** argv, BuildOptions* opts) {
     return 0;
 }
 
+#define TEST_ENTRY_PATH_MAX 512
+#define MAX_TEST_ENTRIES 512
+
 typedef struct {
-    char name[256];
+    char name[TEST_ENTRY_PATH_MAX];
+    char base[256];
 } TestEntry;
 
 static int compare_test_entries(const void* left, const void* right) {
@@ -538,6 +542,55 @@ static int compare_test_entries(const void* left, const void* right) {
 static bool has_cn_extension(const char* path) {
     size_t len = strlen(path);
     return len > 3 && strcmp(path + len - 3, ".cn") == 0;
+}
+
+static bool is_excluded_test_dir(const char* name) {
+    return strcmp(name, ".") == 0 || strcmp(name, "..") == 0 || name[0] == '.' ||
+        strcmp(name, "bootstrap") == 0 || strcmp(name, "optimizer") == 0;
+}
+
+static bool path_matches_filter(const char* relative, const char* base, const char* filter) {
+    return !filter || strstr(relative, filter) != NULL || strstr(base, filter) != NULL;
+}
+
+static bool add_test_entry(TestEntry* entries, int* count, const char* relative, const char* base) {
+    if (*count >= MAX_TEST_ENTRIES) return false;
+    snprintf(entries[*count].name, sizeof(entries[*count].name), "%s", relative);
+    snprintf(entries[*count].base, sizeof(entries[*count].base), "%s", base);
+    (*count)++;
+    return true;
+}
+
+static void collect_test_entries(const char* dir_path, const char* prefix, const char* filter,
+                                 TestEntry* entries, int* count) {
+    DIR* dir = opendir(dir_path);
+    if (!dir) return;
+    struct dirent* ent;
+    while (*count < MAX_TEST_ENTRIES && (ent = readdir(dir)) != NULL) {
+        if (is_excluded_test_dir(ent->d_name)) continue;
+        char full_path[CNEXT_PATH_MAX];
+        if (join_path(full_path, sizeof(full_path), dir_path, ent->d_name) != 0) continue;
+        struct stat info;
+        if (stat(full_path, &info) != 0) continue;
+        if (S_ISDIR(info.st_mode)) {
+            char next_prefix[TEST_ENTRY_PATH_MAX];
+            int written = prefix[0]
+                ? snprintf(next_prefix, sizeof(next_prefix), "%s/%s", prefix, ent->d_name)
+                : snprintf(next_prefix, sizeof(next_prefix), "%s", ent->d_name);
+            if (written < 0 || (size_t)written >= sizeof(next_prefix)) continue;
+            collect_test_entries(full_path, next_prefix, filter, entries, count);
+        } else if (has_cn_extension(ent->d_name)) {
+            char relative[TEST_ENTRY_PATH_MAX];
+            int written = prefix[0]
+                ? snprintf(relative, sizeof(relative), "%s/%s", prefix, ent->d_name)
+                : snprintf(relative, sizeof(relative), "%s", ent->d_name);
+            if (written < 0 || (size_t)written >= sizeof(relative)) continue;
+            if (path_matches_filter(relative, ent->d_name, filter)) {
+                add_test_entry(entries, count, relative, ent->d_name);
+            }
+        }
+    }
+    closedir(dir);
 }
 
 static bool output_has_expectations_in_order(const char* output, ExpectedLine* expects, int expect_count) {
@@ -553,7 +606,7 @@ static bool output_has_expectations_in_order(const char* output, ExpectedLine* e
 static int run_tests(int argc, char** argv) {
     const char* filter = NULL;
     bool list_only = false;
-    TestEntry entries[512];
+    TestEntry entries[MAX_TEST_ENTRIES];
     int entry_count = 0;
 
     for (int i = 2; i < argc; i++) {
@@ -565,31 +618,22 @@ static int run_tests(int argc, char** argv) {
         }
     }
 
-    if (filter && has_cn_extension(filter)) {
+    bool explicit_path = filter && has_cn_extension(filter) && strpbrk(filter, "/\\") != NULL;
+    if (explicit_path) {
         const char* filename = strrchr(filter, CNEXT_PATH_SEP);
 #ifdef _WIN32
         const char* alternate = strrchr(filter, '/');
         if (!filename || (alternate && alternate > filename)) filename = alternate;
 #endif
         filename = filename ? filename + 1 : filter;
-        strncpy(entries[0].name, filename, sizeof(entries[0].name) - 1);
-        entries[0].name[sizeof(entries[0].name) - 1] = '\0';
-        entry_count = 1;
+        add_test_entry(entries, &entry_count, filter, filename);
     } else {
-        DIR* dir = opendir("tests");
-        if (!dir) {
+        struct stat tests_dir;
+        if (stat("tests", &tests_dir) != 0 || !S_ISDIR(tests_dir.st_mode)) {
             fprintf(stderr, "Could not open test directory 'tests'.\n");
             return 74;
         }
-        struct dirent* ent;
-        while (entry_count < 512 && (ent = readdir(dir)) != NULL) {
-            if (has_cn_extension(ent->d_name) && (!filter || strstr(ent->d_name, filter))) {
-                strncpy(entries[entry_count].name, ent->d_name, sizeof(entries[entry_count].name) - 1);
-                entries[entry_count].name[sizeof(entries[entry_count].name) - 1] = '\0';
-                entry_count++;
-            }
-        }
-        closedir(dir);
+        collect_test_entries("tests", "", filter, entries, &entry_count);
     }
 
     qsort(entries, entry_count, sizeof(entries[0]), compare_test_entries);
@@ -605,16 +649,12 @@ static int run_tests(int argc, char** argv) {
     printf("Running %d Cnext test file%s...\n\n", entry_count, entry_count == 1 ? "" : "s");
     int passed = 0;
     int failed = 0;
-    // A bare filename is a filter inside tests/, not a path relative to the
-    // current directory: `cnext test test_hello.cn` should find tests/test_hello.cn.
-    bool filter_is_path = filter && has_cn_extension(filter) &&
-        (strchr(filter, '/') != NULL || strchr(filter, '\\') != NULL);
     for (int i = 0; i < entry_count; i++) {
         char input_path[CNEXT_PATH_MAX];
         char output_path[CNEXT_PATH_MAX];
         char output_name[64];
         const char* test_file = entries[i].name;
-        if (filter_is_path) {
+        if (explicit_path) {
             strncpy(input_path, filter, sizeof(input_path) - 1);
             input_path[sizeof(input_path) - 1] = '\0';
         } else {
@@ -962,21 +1002,27 @@ int main(int argc, char** argv) {
         printf("Checking system...\n\n");
 
         // Check GCC
-        int gcc_ok = system("gcc --version >" DEV_NULL " 2>&1") == 0;
+        const char* const gcc_args[] = {"gcc", "--version", NULL};
+        int gcc_ok = run_process_quiet("gcc", gcc_args) == 0;
         printf("  GCC:          %s\n", gcc_ok ? "OK" : "NOT FOUND");
 
         // Check Make
-        int make_ok = system("make --version >" DEV_NULL " 2>&1") == 0 ||
-                      system("mingw32-make --version >" DEV_NULL " 2>&1") == 0;
+        const char* const make_args[] = {"make", "--version", NULL};
+        const char* const mingw_make_args[] = {"mingw32-make", "--version", NULL};
+        int make_ok = run_process_quiet("make", make_args) == 0 ||
+                      run_process_quiet("mingw32-make", mingw_make_args) == 0;
         printf("  Make:         %s\n", make_ok ? "OK" : "NOT FOUND");
 
         // Check curl (for networking)
-        int curl_ok = system("curl --version >" DEV_NULL " 2>&1") == 0;
+        const char* const curl_args[] = {"curl", "--version", NULL};
+        int curl_ok = run_process_quiet("curl", curl_args) == 0;
         printf("  curl:         %s\n", curl_ok ? "OK" : "NOT FOUND");
 
         // Check Python (for tests)
-        int python_ok = system("python3 --version >" DEV_NULL " 2>&1") == 0 ||
-                        system("python --version >" DEV_NULL " 2>&1") == 0;
+        const char* const python3_args[] = {"python3", "--version", NULL};
+        const char* const python_args[] = {"python", "--version", NULL};
+        int python_ok = run_process_quiet("python3", python3_args) == 0 ||
+                        run_process_quiet("python", python_args) == 0;
         printf("  Python:       %s\n", python_ok ? "OK" : "NOT FOUND");
 
         printf("\n");
@@ -1013,21 +1059,26 @@ int main(int argc, char** argv) {
 
     if (strcmp(command, "cache") == 0) {
         const char* action = argc >= 3 ? argv[2] : "status";
-        if (strcmp(action, "clear") == 0) {
 #ifdef _WIN32
-            int unused = system("rmdir /s /q .cnext\\cache 2>nul"); (void)unused;
+        const char* cache_dir = ".cnext\\cache";
 #else
-            int unused = system("rm -rf .cnext/cache 2>/dev/null || true"); (void)unused;
+        const char* cache_dir = ".cnext/cache";
 #endif
+        if (strcmp(action, "clear") == 0) {
+            if (!remove_tree(cache_dir)) {
+                fprintf(stderr, "Could not clear cache.\n");
+                return 1;
+            }
             printf("Cache cleared.\n");
         } else {
             printf("Build cache status:\n");
-            printf("  Location: .cnext/cache/\n");
-#ifdef _WIN32
-            int unused = system("dir .cnext\\cache 2>nul || echo   No cache found."); (void)unused;
-#else
-            int unused = system("ls -la .cnext/cache/ 2>/dev/null || echo '  No cache found.'"); (void)unused;
-#endif
+            printf("  Location: %s%c\n", cache_dir, CNEXT_PATH_SEP);
+            int entries = count_tree_entries(cache_dir);
+            if (entries < 0) {
+                printf("  No cache found.\n");
+            } else {
+                printf("  Entries: %d\n", entries);
+            }
         }
         return 0;
     }

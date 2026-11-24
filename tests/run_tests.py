@@ -15,11 +15,31 @@ import sys
 import tempfile
 from pathlib import Path
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(errors="replace")
+
 ROOT = Path(__file__).resolve().parents[1]
+TEST_ROOT = ROOT / "tests"
+TMP_DIR = ROOT / "build" / "tmp"
 DEFAULT_EXE = "cnext.exe" if os.name == "nt" else "cnext"
 DEFAULT_OUT = "out.exe" if os.name == "nt" else "out"
 CNEXT_EXE = Path(os.environ.get("CNEXT_EXE", ROOT / DEFAULT_EXE))
 OUT_EXE = ROOT / DEFAULT_OUT
+EXCLUDED_TEST_DIRS = {"bootstrap", "optimizer"}
+EXCLUDED_TESTS = {"test_packages.cn", "test_array_bounds.cn", "test_testing_fail.cn"}
+
+
+def discover_tests(include_excluded=False):
+    found = []
+    for path in TEST_ROOT.rglob("*.cn"):
+        relative = path.relative_to(TEST_ROOT)
+        if any(part in EXCLUDED_TEST_DIRS for part in relative.parts[:-1]):
+            continue
+        if not include_excluded and path.name in EXCLUDED_TESTS:
+            continue
+        found.append(relative.as_posix())
+    return sorted(found)
+
 
 def run_test(test_file, is_example=False):
     """Build a .cn file, run it, and check for errors."""
@@ -33,7 +53,7 @@ def run_test(test_file, is_example=False):
             [str(CNEXT_EXE), "build", str(test_path)],
             cwd=ROOT,
             capture_output=True,
-            text=True,
+            text=True, errors="replace",
             timeout=10
         )
     except Exception as e:
@@ -57,7 +77,7 @@ def run_test(test_file, is_example=False):
     run_output = ""
     if OUT_EXE.exists():
         try:
-            run_result = subprocess.run([str(OUT_EXE)], capture_output=True, text=True, timeout=5)
+            run_result = subprocess.run([str(OUT_EXE)], capture_output=True, text=True, errors="replace", timeout=5)
             run_output = run_result.stdout.strip()
         except Exception as e:
             run_output = f"Run failed: {e}"
@@ -66,7 +86,7 @@ def run_test(test_file, is_example=False):
 
 def run_negative_test(name, source, expected_message):
     """Compile invalid source and verify a useful compiler error is produced."""
-    with tempfile.NamedTemporaryFile("w", suffix=".cn", dir=ROOT / "tests", delete=False, encoding="utf-8") as temp:
+    with tempfile.NamedTemporaryFile("w", suffix=".cn", dir=TMP_DIR, delete=False, encoding="utf-8") as temp:
         temp.write(source)
         temp_path = Path(temp.name)
 
@@ -75,7 +95,7 @@ def run_negative_test(name, source, expected_message):
             [str(CNEXT_EXE), "build", str(temp_path)],
             cwd=ROOT,
             capture_output=True,
-            text=True,
+            text=True, errors="replace",
             timeout=10
         )
         output = f"{result.stdout}\n{result.stderr}"
@@ -91,7 +111,7 @@ def run_runtime_negative_test(test_file, expected_message):
         [str(CNEXT_EXE), "build", str(test_path)],
         cwd=ROOT,
         capture_output=True,
-        text=True,
+        text=True, errors="replace",
         timeout=10
     )
     if result.returncode != 0:
@@ -101,7 +121,7 @@ def run_runtime_negative_test(test_file, expected_message):
         [str(OUT_EXE)],
         cwd=ROOT,
         capture_output=True,
-        text=True,
+        text=True, errors="replace",
         timeout=5
     )
     output = f"{run_result.stdout}\n{run_result.stderr}"
@@ -109,128 +129,12 @@ def run_runtime_negative_test(test_file, expected_message):
     return success, "OK" if success else output.strip()
 
 def main():
-    scratch_file = ROOT / "test_output.txt"
+    TMP_DIR.mkdir(parents=True, exist_ok=True)
+    scratch_file = TMP_DIR / "test_output.txt"
     scratch_file.unlink(missing_ok=True)
 
-    tests = [
-        "test_methods.cn",
-        "test_traits.cn",
-        "test_random.cn",
-        "test_testing.cn",
-        "test_break_continue.cn",
-        "test_array_index.cn",
-        "test_array_builtins_contract.cn",
-        "test_increment.cn",
-        "test_var_inference.cn",
-        "test_functions.cn",
-        "test_full.cn",
-        "test_io.cn",
-        "test_file.cn",
-        "test_net.cn",
-        "test_json.cn",
-        "test_math.cn",
-        # test_packages.cn removed — requires external package registry (test_pkg doesn't exist)
-        "test_ternary.cn",
-        "test_try_catch.cn",
-        "test_inheritance.cn",
-        "test_interfaces.cn",
-        "test_v3.cn",
-        "test_v3_new.cn",
-        "test_os.cn",
-        "test_string_utils.cn",
-        "test_string_utils_v8.cn",
-        "test_time.cn",
-        "test_regex.cn",
-        "test_collections.cn",
-        "test_crypto.cn",
-        "test_path.cn",
-        "test_encoding.cn",
-        "test_process.cn",
-        "test_slices.cn",
-        "test_casting.cn",
-        "test_lambdas.cn",
-        "test_named_args.cn",
-        "test_null.cn",
-        "test_null_safety_ops.cn",
-        "test_operator_overloading.cn",
-        "test_optimizer.cn",
-        "test_optimizer_v8.cn",
-        "test_tuples.cn",
-        "test_typeof.cn",
-        "test_variadic.cn",
-        "test_default_args.cn",
-        "test_constexpr.cn",
-        "test_v4_features.cn",
-        "test_v8.cn",
-        "test_v8_comprehensive.cn",
-        "test_v9.cn",
-        "test_v9_features.cn",
-        "test_async.cn",
-        "test_coroutines.cn",
-        "test_generators_full.cn",
-        "test_generics_full.cn",
-        "test_closures_full.cn",
-        "test_new_types.cn",
-        "test_threading.cn",
-        "test_int.cn",
-        "test_int_only.cn",
-        "test_uint.cn",
-        "test_ubyte.cn",
-        "test_simple.cn",
-        "test_simple_uint.cn",
-        "test_cli_features.cn",
-        "test_math_builtins.cn",
-        "test_string_builtins.cn",
-        "test_core_builtins.cn",
-        "test_encoding_builtins.cn",
-        "test_system_builtins.cn",
-        "test_typeconv_builtins.cn",
-        "test_file_builtins.cn",
-        "test_comprehensive_builtins.cn",
-        "test_json_arrays.cn",
-        "test_encoding_edges.cn",
-        "test_array_params.cn",
-        "test_bit_extract.cn",
-        "test_bit_match.cn",
-        "test_c_interop.cn",
-        "test_c_strings.cn",
-        "test_class_ctor_params.cn",
-        "test_class_field_arrays.cn",
-        "test_class_return.cn",
-        "test_class_selfref.cn",
-        "test_class_zero_init.cn",
-        "test_defer.cn",
-        "test_defer_captures.cn",
-        "test_defer_matrix.cn",
-        "test_for_in_element_types.cn",
-        "test_forward_calls.cn",
-        "test_generic_class_field_array.cn",
-        "test_interp_blank_placeholder.cn",
-        "test_mem_scope.cn",
-        "test_memory.cn",
-        "test_obj_array_element_var.cn",
-        "test_parser_shape.cn",
-        "test_refcount.cn",
-        "test_sensor_record.cn",
-        "test_str_field_compare.cn",
-        "test_str_split_join.cn",
-        "test_strict_numeric_types.cn",
-        "test_try_scopes.cn",
-        "test_when_try_parity.cn",
-        "test_fmt_module.cn",
-        "test_http_status_text.cn",
-        "test_log_module.cn",
-        "test_args_module.cn",
-        "test_collections_edges.cn",
-        "test_crypto_edges.cn",
-        "test_path_edges.cn",
-        "test_random_edges.cn",
-        "test_file_io_edges.cn",
-        "test_net_edges.cn",
-        "test_thread_edges.cn",
-        "test_time_edges.cn",
-    ]
-    
+    tests = discover_tests()
+
     all_passed = True
     for test in tests:
         success, msg, c_code = run_test(test)
@@ -308,8 +212,8 @@ def main():
         print(f"[{status}] negative/{name}: {msg}")
 
     runtime_negative_tests = [
-        ("test_array_bounds.cn", "Array bounds out of range"),
-        ("test_testing_fail.cn", "FAIL"),
+        ("collections/test_array_bounds.cn", "Array bounds out of range"),
+        ("cli/test_testing_fail.cn", "FAIL"),
     ]
 
     for test, expected in runtime_negative_tests:
@@ -327,70 +231,80 @@ def main():
     # --- Formatter tests ---
     print("\n--- Formatter Tests ---")
     formatter_tests = [
-        ("format_basic", "main {\nvar x = 1\nprintin(x)\n}\n"),
-        ("format_functions", "func add(int a, int b): int {\nreturn a + b\n}\nmain {\nvar result = add(1, 2)\nprintin(result)\n}\n"),
-        ("format_classes", "class Point {\nvar x: int\nvar y: int\nfunc distance(): float {\nreturn sqrt(x * x + y * y)\n}\n}\n"),
-        ("format_nested", "main {\nfor var i = 0; i < 10; i++ {\nif i > 5 {\nprintin(i)\n}\n}\n}\n"),
+        ("format_basic", "main {\nvar x = 1\nprintin(x)\n}\n", None),
+        ("format_functions", "func add(int a, int b): int {\nreturn a + b\n}\nmain {\nvar result = add(1, 2)\nprintin(result)\n}\n", None),
+        ("format_classes", "class Point {\nvar x: int\nvar y: int\nfunc distance(): float {\nreturn sqrt(x * x + y * y)\n}\n}\n", None),
+        ("format_nested", "main {\nfor var i = 0; i < 10; i++ {\nif i > 5 {\nprintin(i)\n}\n}\n}\n", None),
+        ("format_defer_when", "main {\n    defer printin(\"cleanup\")\n    int chosen = when { false => 1, true => 2, else => 3 }\n    printin(chosen)\n}\n", ["defer printin(\"cleanup\")", "when {"]),
     ]
 
-    for name, source in formatter_tests:
-        with tempfile.NamedTemporaryFile("w", suffix=".cn", dir=ROOT / "tests", delete=False, encoding="utf-8") as temp:
+    for name, source, needles in formatter_tests:
+        with tempfile.NamedTemporaryFile("w", suffix=".cn", dir=TMP_DIR, delete=False, encoding="utf-8") as temp:
             temp.write(source)
             temp_path = Path(temp.name)
         try:
             result = subprocess.run(
                 [str(CNEXT_EXE), "fmt", str(temp_path)],
-                cwd=ROOT, capture_output=True, text=True, timeout=10
+                cwd=ROOT, capture_output=True, text=True, errors="replace", timeout=10
             )
-            # Read the formatted output
             with open(temp_path, "r", encoding="utf-8") as f:
                 formatted = f.read()
-            success = result.returncode == 0 and len(formatted) > 0
+            missing = [needle for needle in (needles or []) if needle not in formatted]
+            if name == "format_defer_when":
+                arm_lines = [line.strip().rstrip(",") for line in formatted.splitlines()]
+                for arm in ("false => 1", "true => 2", "else => 3"):
+                    if arm not in arm_lines:
+                        missing.append(arm)
+                if "printin (" in formatted:
+                    missing.append("no space before call parenthesis")
+            success = result.returncode == 0 and len(formatted) > 0 and not missing
             status = "PASS" if success else "FAIL"
             if not success:
                 all_passed = False
-            print(f"[{status}] formatter/{name}: {'OK' if success else result.stderr.strip()[:100]}")
+            detail = "OK" if success else (", ".join(missing) or result.stderr.strip()[:100])
+            print(f"[{status}] formatter/{name}: {detail}")
         finally:
             temp_path.unlink(missing_ok=True)
 
-    # --- Linter tests ---
     print("\n--- Linter Tests ---")
     linter_tests = [
-        ("lint_clean", "main {\nvar x = 1\nprintin(x)\n}\n", True),
-        ("lint_unused_var", "main {\nvar x = 1\nprintin(1)\n}\n", True),  # should complete without crash
-        ("lint_empty", "", True),
+        ("lint_clean", "main {\nvar x = 1\nprintin(x)\n}\n", True, None),
+        ("lint_unused_var", "main {\nvar x = 1\nprintin(1)\n}\n", True, None),
+        ("lint_empty", "", True, None),
+        ("lint_when_booleans", "main {\n    int chosen = when { false => 1, true => 2, else => 3 }\n    printin(chosen)\n}\n", True, "Comparison with literal"),
     ]
 
-    for name, source, should_succeed in linter_tests:
-        with tempfile.NamedTemporaryFile("w", suffix=".cn", dir=ROOT / "tests", delete=False, encoding="utf-8") as temp:
+    for name, source, should_succeed, forbidden in linter_tests:
+        with tempfile.NamedTemporaryFile("w", suffix=".cn", dir=TMP_DIR, delete=False, encoding="utf-8") as temp:
             temp.write(source)
             temp_path = Path(temp.name)
         try:
             result = subprocess.run(
                 [str(CNEXT_EXE), "lint", str(temp_path)],
-                cwd=ROOT, capture_output=True, text=True, timeout=10
+                cwd=ROOT, capture_output=True, text=True, errors="replace", timeout=10
             )
-            success = (result.returncode == 0) == should_succeed
+            output = result.stdout + result.stderr
+            success = (result.returncode == 0) == should_succeed and (forbidden is None or forbidden not in output)
             status = "PASS" if success else "FAIL"
             if not success:
                 all_passed = False
-            print(f"[{status}] linter/{name}: {'OK' if success else result.stderr.strip()[:100]}")
+            print(f"[{status}] linter/{name}: {'OK' if success else output.strip()[:100]}")
         finally:
             temp_path.unlink(missing_ok=True)
 
     # --- Memory safety / stress tests ---
     print("\n--- Memory Safety Tests ---")
     stress_source = "main {\n    var big = \"\"\n    for var i = 0; i < 100; i++ {\n        big = big + \"x\"\n    }\n    printin(len(big))\n    printin(\"stress OK\")\n}\n"
-    stress_path = ROOT / "tests" / "_stress_test.cn"
+    stress_path = TMP_DIR / "_stress_test.cn"
     with open(stress_path, "w", encoding="utf-8") as f:
         f.write(stress_source)
     try:
         result = subprocess.run(
             [str(CNEXT_EXE), "build", str(stress_path)],
-            cwd=ROOT, capture_output=True, text=True, timeout=10
+            cwd=ROOT, capture_output=True, text=True, errors="replace", timeout=10
         )
         if result.returncode == 0 and OUT_EXE.exists():
-            run_result = subprocess.run([str(OUT_EXE)], capture_output=True, text=True, timeout=10)
+            run_result = subprocess.run([str(OUT_EXE)], capture_output=True, text=True, errors="replace", timeout=10)
             success = run_result.returncode == 0 and "stress OK" in run_result.stdout
         else:
             success = False
@@ -411,16 +325,16 @@ main {
     printin("recursion OK")
 }
 """
-    with tempfile.NamedTemporaryFile("w", suffix=".cn", dir=ROOT / "tests", delete=False, encoding="utf-8") as temp:
+    with tempfile.NamedTemporaryFile("w", suffix=".cn", dir=TMP_DIR, delete=False, encoding="utf-8") as temp:
         temp.write(recursion_source)
         temp_path = Path(temp.name)
     try:
         result = subprocess.run(
             [str(CNEXT_EXE), "build", str(temp_path)],
-            cwd=ROOT, capture_output=True, text=True, timeout=10
+            cwd=ROOT, capture_output=True, text=True, errors="replace", timeout=10
         )
         if result.returncode == 0 and OUT_EXE.exists():
-            run_result = subprocess.run([str(OUT_EXE)], capture_output=True, text=True, timeout=10)
+            run_result = subprocess.run([str(OUT_EXE)], capture_output=True, text=True, errors="replace", timeout=10)
             success = run_result.returncode == 0 and "recursion OK" in run_result.stdout
         else:
             success = False
@@ -491,8 +405,8 @@ int main(void) {
     return 0;
 }
 """
-    c_path = ROOT / "tests" / "_thread_stress.c"
-    out_path = ROOT / "tests" / ("_thread_stress.exe" if os.name == "nt" else "_thread_stress")
+    c_path = TMP_DIR / "_thread_stress.c"
+    out_path = TMP_DIR / ("_thread_stress.exe" if os.name == "nt" else "_thread_stress")
     c_path.write_text(thread_stress_source, encoding="utf-8")
     try:
         compile_cmd = ["gcc", "-std=gnu11", "-O2", "-w",
@@ -502,13 +416,13 @@ int main(void) {
             compile_cmd += ["-lwinhttp", "-lws2_32"]
         else:
             compile_cmd += ["-lpthread"]
-        compile_result = subprocess.run(compile_cmd, capture_output=True, text=True, timeout=60,
+        compile_result = subprocess.run(compile_cmd, capture_output=True, text=True, errors="replace", timeout=60,
                                         cwd=ROOT)
         if compile_result.returncode != 0 or not out_path.exists():
             success = False
             detail = compile_result.stderr.strip()[:100] or "compile failed"
         else:
-            run_result = subprocess.run([str(out_path)], capture_output=True, text=True, timeout=60)
+            run_result = subprocess.run([str(out_path)], capture_output=True, text=True, errors="replace", timeout=60)
             success = run_result.returncode == 0 and "THREAD STRESS OK" in run_result.stdout
             detail = "OK" if success else run_result.stdout.strip()[:100]
         status = "PASS" if success else "FAIL"

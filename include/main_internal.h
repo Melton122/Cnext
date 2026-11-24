@@ -39,7 +39,7 @@ int _mkdir(const char* path);
 #include "registry.h"
 #include "docgen.h"
 
-#define CNEXT_VERSION "10.0.4"
+#define CNEXT_VERSION "10.0.5"
 #define CNEXT_TEMP_C "temp_out.c"
 #define CNEXT_PATH_MAX 4096
 
@@ -50,12 +50,15 @@ bool has_path_separator(const char* path);
 bool dirname_from_path(const char* path, char* buffer, size_t buffer_size);
 bool build_include_path(const char* argv0, char* include_path, size_t include_path_size);
 int run_process(const char* program, const char* const args[]);
+int run_process_quiet(const char* program, const char* const args[]);
 int run_process_captured(const char* program, const char* const args[], char* output_buf, size_t output_buf_size);
 int run_process_with_stdin(const char* program, const char* const args[], char* output_buf, size_t output_buf_size, const char* stdin_data);
 const char* executable_command(const char* output_exe, char* buffer, size_t buffer_size);
 int make_dir(const char* path);
 int join_path(char* out, size_t out_size, const char* base, const char* name);
 bool is_safe_path_component(const char* name);
+bool remove_tree(const char* path);
+int count_tree_entries(const char* path);
 
 #define MAX_EXPECT_LINES 64
 #define EXPECT_LINE_MAX 1024

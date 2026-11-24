@@ -31,7 +31,7 @@ endif
 # Version (single source of truth: include/main_internal.h)
 VERSION := $(shell sed -n 's/.*CNEXT_VERSION "\([^"]*\)".*/\1/p' include/main_internal.h 2>/dev/null)
 ifeq ($(strip $(VERSION)),)
-    VERSION := 10.0.4
+    VERSION := 10.0.5
 endif
 
 # Install layout: exe -> INSTALL_BIN, runtime headers -> INSTALL_INC.
@@ -68,7 +68,7 @@ endif
 # Parallel jobs: make -j8 or JOBS=8
 JOBS ?= 1
 
-CFLAGS = $(STD) $(WARNINGS) $(OPT) -iquote include -MMD -MP
+CFLAGS = $(STD) $(WARNINGS) $(OPT) -DWIN32_LEAN_AND_MEAN -DNOMINMAX -iquote include -MMD -MP
 LDFLAGS = $(PLATFORM_LIBS)
 
 # Source files
@@ -98,8 +98,8 @@ $(EXEC): $(OBJS)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	$(RM) $(OBJS) $(DEPS) $(EXEC) temp_out.c _cnext_*.tmp __cnext_run_tmp.c _p*.c _probe* tests/_test_out tests/_test_out.exe tests/_test_list.txt tests/_test_methods_temp.c $(LEAKTEST) $(LEAKTEST_OBJ) 2>/dev/null || true
-	$(RMDIR) $(PARITY_DIR) out_parity 2>/dev/null || true
+	$(RM) $(OBJS) $(DEPS) $(EXEC) temp_out.c _cnext_*.tmp __cnext_run_tmp.c _p*.c _probe* tests/_test_out tests/_test_out.exe tests/_test_list.txt tests/_test_methods_temp.c tests/_cnext_test_* $(LEAKTEST) $(LEAKTEST_OBJ) 2>/dev/null || true
+	$(RMDIR) $(PARITY_DIR) out_parity build/tmp 2>/dev/null || true
 
 test: $(EXEC)
 	./$(EXEC) test
@@ -109,13 +109,15 @@ check: $(EXEC)
 	./$(EXEC) test
 	$(PARITY_PY) tests/test_native_linking.py
 	$(PARITY_PY) tests/test_diagnostics.py
+	$(PARITY_PY) tests/test_fuzz_invalid_input.py
 	$(PARITY_PY) tests/test_optimizer_semantics.py
 	$(PARITY_PY) tests/test_cross_platform.py
+	$(PARITY_PY) tests/test_package_security.py
 	$(MAKE) msvc-defer-test
 	@echo "Running Python test suite..."
-	@python3 tests/run_tests.py 2>/dev/null || python tests/run_tests.py 2>/dev/null || echo "Python tests skipped"
+	$(PARITY_PY) tests/run_tests.py
 	@echo "Running LSP tests..."
-	@python3 tests/test_lsp.py 2>/dev/null || python tests/test_lsp.py 2>/dev/null || echo "LSP tests skipped"
+	$(PARITY_PY) tests/test_lsp.py
 
 install: $(EXEC)
 ifdef WINDOWS_BUILD
@@ -185,7 +187,7 @@ parity: $(EXEC) $(PARITY_CAND) $(PARITY_REF)
 	$(PARITY_PY) tests/parity_lexer.py \
 		--ref-binary "$(PARITY_REF)" \
 		--cand-cmd "$(PARITY_CAND) {file}" \
-		--paths "tests/*.cn" "examples/*.cn" "src2/*.cn"
+		--paths "tests/**/*.cn" "examples/*.cn" "src2/*.cn"
 
 parser-parity: $(EXEC)
 	@echo "=== Self-hosting parser parity ==="
@@ -203,7 +205,7 @@ $(MSVC_DEFER_EXE): $(filter-out src/codegen_node.o,$(OBJS)) $(MSVC_DEFER_OBJ)
 msvc-defer-test: $(MSVC_DEFER_EXE)
 	@echo "=== MSVC defer lowering ==="
 	$(PARITY_PY) tests/test_msvc_defer_codegen.py --compiler "$(MSVC_DEFER_EXE)"
-	$(PARITY_PY) tests/test_msvc_defer_codegen.py --compiler "$(MSVC_DEFER_EXE)" --source tests/test_defer_captures.cn
+	$(PARITY_PY) tests/test_msvc_defer_codegen.py --compiler "$(MSVC_DEFER_EXE)" --source tests/control/test_defer_captures.cn
 
 $(PARITY_CAND): src2/lexer.cn $(EXEC) | $(PARITY_DIR)
 	@echo "Building self-hosted lexer: $@"
@@ -237,18 +239,8 @@ self-build: $(EXEC)
 	@echo "=== Self-Hosting Verification ==="
 	$(PARITY_PY) tools/verify_bootstrap.py --directory "$(PARITY_DIR)"
 
-# Build benchmark
 bench: $(EXEC)
-	@echo "=== Build Benchmark ==="
-	@echo "Cleaning..."
-	@$(MAKE) clean > /dev/null 2>&1
-	@echo "Building with $(shell nproc 2>/dev/null || echo 4) cores..."
-	@time $(MAKE) -j$(shell nproc 2>/dev/null || echo 4) 2>/dev/null
-	@echo ""
-	@echo "=== Incremental Build Benchmark ==="
-	@touch src/main.c
-	@echo "Rebuilding after touching main.c..."
-	@time $(MAKE) 2>/dev/null
+	$(PARITY_PY) tools/bench.py --make "$(MAKE)" --compiler "$(EXEC)" --runs 3
 
 release: $(EXEC)
 	@echo "Packaging Cnext $(VERSION) release..."

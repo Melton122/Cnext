@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-CNEXT_VERSION="${CNEXT_VERSION:-10.0.4}"
+CNEXT_VERSION="${CNEXT_VERSION:-10.0.5}"
 CNEXT_REPO="Melton122/cnext"
 INSTALL_DIR="${CNEXT_INSTALL_DIR:-/usr/local}"
 
@@ -15,6 +15,14 @@ info()  { echo -e "${CYAN}>>> $1${NC}"; }
 ok()    { echo -e "${GREEN}>>> $1${NC}"; }
 warn()  { echo -e "${YELLOW}>>> $1${NC}"; }
 err()   { echo -e "${RED}>>> $1${NC}" >&2; }
+
+case "$INSTALL_DIR" in
+    /*) ;;
+    *)
+        err "CNEXT_INSTALL_DIR must be an absolute path."
+        exit 1
+        ;;
+esac
 
 detect_platform() {
     local os arch
@@ -49,9 +57,9 @@ download_file() {
     local dest="$2"
 
     if command -v curl &>/dev/null; then
-        curl -fsSL -o "$dest" "$url"
+        curl -fsSL -o "$dest" -- "$url"
     elif command -v wget &>/dev/null; then
-        wget -q -O "$dest" "$url"
+        wget -q -O "$dest" -- "$url"
     else
         err "Neither curl nor wget found. Install one and try again."
         exit 1
@@ -97,7 +105,7 @@ install_cnext() {
     info "Downloading Cnext v${CNEXT_VERSION}..."
     local tmpdir
     tmpdir=$(mktemp -d)
-    trap "rm -rf $tmpdir" EXIT
+    trap "rm -rf -- \"$tmpdir\"" EXIT
 
     local archive_path="${tmpdir}/${filename}"
     download_file "$url" "$archive_path" || {

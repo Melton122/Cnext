@@ -1,7 +1,111 @@
 #include "main_internal.h"
 #ifdef _WIN32
 #include <windows.h>
+#else
+#include <fcntl.h>
+#include <poll.h>
+#include <signal.h>
 #endif
+
+static bool append_captured_output(char* output_buf, size_t output_buf_size, size_t* total, const char* chunk, size_t chunk_len) {
+    if (output_buf_size == 0) return chunk_len > 0;
+    size_t limit = output_buf_size - 1;
+    if (*total > limit) *total = limit;
+    size_t room = limit - *total;
+    size_t copy = chunk_len < room ? chunk_len : room;
+    if (copy > 0) memcpy(output_buf + *total, chunk, copy);
+    *total += copy;
+    return copy < chunk_len;
+}
+
+static void report_captured_truncation(bool truncated) {
+    if (truncated) fprintf(stderr, "Warning: captured output truncated.\n");
+}
+
+static bool path_exists(const char* path) {
+    struct stat st;
+    return stat(path, &st) == 0;
+}
+
+bool remove_tree(const char* path) {
+    if (!path_exists(path)) return true;
+#ifdef _WIN32
+    char pattern[CNEXT_PATH_MAX];
+    int written = snprintf(pattern, sizeof(pattern), "%s\\*", path);
+    if (written < 0 || (size_t)written >= sizeof(pattern)) return false;
+    WIN32_FIND_DATAA data;
+    HANDLE handle = FindFirstFileA(pattern, &data);
+    if (handle == INVALID_HANDLE_VALUE) return false;
+    do {
+        if (strcmp(data.cFileName, ".") == 0 || strcmp(data.cFileName, "..") == 0) continue;
+        char child[CNEXT_PATH_MAX];
+        if (join_path(child, sizeof(child), path, data.cFileName) != 0) {
+            FindClose(handle);
+            return false;
+        }
+        bool ok = (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+            ? remove_tree(child)
+            : DeleteFileA(child) != 0;
+        if (!ok) {
+            FindClose(handle);
+            return false;
+        }
+    } while (FindNextFileA(handle, &data));
+    FindClose(handle);
+    return RemoveDirectoryA(path) != 0;
+#else
+    DIR* dir = opendir(path);
+    if (!dir) return false;
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
+        char child[CNEXT_PATH_MAX];
+        if (join_path(child, sizeof(child), path, entry->d_name) != 0) {
+            closedir(dir);
+            return false;
+        }
+        struct stat st;
+        bool ok = stat(child, &st) != 0 || S_ISDIR(st.st_mode)
+            ? remove_tree(child)
+            : unlink(child) == 0;
+        if (!ok) {
+            closedir(dir);
+            return false;
+        }
+    }
+    closedir(dir);
+    return rmdir(path) == 0;
+#endif
+}
+
+int count_tree_entries(const char* path) {
+#ifdef _WIN32
+    char pattern[CNEXT_PATH_MAX];
+    int written = snprintf(pattern, sizeof(pattern), "%s\\*", path);
+    if (written < 0 || (size_t)written >= sizeof(pattern)) return -1;
+    WIN32_FIND_DATAA data;
+    HANDLE handle = FindFirstFileA(pattern, &data);
+    if (handle == INVALID_HANDLE_VALUE) return -1;
+    int count = 0;
+    do {
+        if (strcmp(data.cFileName, ".") == 0 || strcmp(data.cFileName, "..") == 0) continue;
+        count++;
+    } while (FindNextFileA(handle, &data));
+    FindClose(handle);
+    return count;
+#else
+    DIR* dir = opendir(path);
+    if (!dir) return -1;
+    int count = 0;
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
+        count++;
+    }
+    closedir(dir);
+    return count;
+#endif
+}
 
 char* read_file(const char* path) {
     FILE* file = fopen(path, "rb");
@@ -379,6 +483,62 @@ static size_t append_quoted_arg(char* dst, size_t cap, size_t pos, const char* a
     return pos;
 }
 
+int run_process_quiet(const char* program, const char* const args[]) {
+    if (!program || program[0] == '\0') return 127;
+#ifdef _WIN32
+    HANDLE devnull = CreateFileA("nul", GENERIC_WRITE, FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+    if (devnull == INVALID_HANDLE_VALUE) return 127;
+    char cmdline[4096];
+    size_t pos = 0;
+    cmdline[pos++] = '"';
+    for (const char* p = program; *p; p++)
+        if (pos < sizeof(cmdline) - 1) cmdline[pos++] = *p;
+    if (pos < sizeof(cmdline) - 1) cmdline[pos++] = '"';
+    for (int i = 1; args[i]; i++) {
+        if (pos >= sizeof(cmdline) - 256) break;
+        cmdline[pos++] = ' ';
+        pos = append_quoted_arg(cmdline, sizeof(cmdline), pos, args[i]);
+    }
+    cmdline[pos] = '\0';
+    char prog_copy[4096];
+    strncpy(prog_copy, cmdline, sizeof(prog_copy) - 1);
+    prog_copy[sizeof(prog_copy) - 1] = '\0';
+    PROCESS_INFORMATION pi = {0};
+    STARTUPINFOA si = {0};
+    si.cb = sizeof(si);
+    si.hStdOutput = devnull;
+    si.hStdError = devnull;
+    si.dwFlags = STARTF_USESTDHANDLES;
+    BOOL ok = CreateProcessA(NULL, prog_copy, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi);
+    CloseHandle(devnull);
+    if (!ok) return 127;
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    DWORD exit_code = 0;
+    GetExitCodeProcess(pi.hProcess, &exit_code);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    return (int)exit_code;
+#else
+    pid_t pid = fork();
+    if (pid < 0) return 127;
+    if (pid == 0) {
+        int devnull = open("/dev/null", O_WRONLY);
+        if (devnull >= 0) {
+            dup2(devnull, STDOUT_FILENO);
+            dup2(devnull, STDERR_FILENO);
+            if (devnull > STDERR_FILENO) close(devnull);
+        }
+        execvp(program, (char* const*)args);
+        _exit(127);
+    }
+    int status = 0;
+    if (waitpid(pid, &status, 0) < 0) return 127;
+    if (WIFEXITED(status)) return WEXITSTATUS(status);
+    if (WIFSIGNALED(status)) return 128 + WTERMSIG(status);
+    return 127;
+#endif
+}
+
 int run_process_captured(const char* program, const char* const args[], char* output_buf, size_t output_buf_size) {
     output_buf[0] = '\0';
 
@@ -432,15 +592,14 @@ int run_process_captured(const char* program, const char* const args[], char* ou
     }
 
     size_t total = 0;
+    bool truncated = false;
     DWORD n;
     char tmpbuf[4096];
     while (ReadFile(hReadPipe, tmpbuf, sizeof(tmpbuf), &n, NULL) && n > 0) {
-        if (total + n < output_buf_size - 1) {
-            memcpy(output_buf + total, tmpbuf, n);
-            total += n;
-        }
+        truncated = append_captured_output(output_buf, output_buf_size, &total, tmpbuf, (size_t)n) || truncated;
     }
-    output_buf[total] = '\0';
+    if (output_buf_size > 0) output_buf[total] = '\0';
+    report_captured_truncation(truncated);
     CloseHandle(hReadPipe);
 
     WaitForSingleObject(pi.hProcess, INFINITE);
@@ -473,11 +632,14 @@ int run_process_captured(const char* program, const char* const args[], char* ou
 
     close(pipefd[1]);
     size_t total = 0;
+    bool truncated = false;
     ssize_t n;
-    while (total < output_buf_size - 1 && (n = read(pipefd[0], output_buf + total, output_buf_size - 1 - total)) > 0) {
-        total += n;
+    char tmpbuf[4096];
+    while ((n = read(pipefd[0], tmpbuf, sizeof(tmpbuf))) > 0) {
+        truncated = append_captured_output(output_buf, output_buf_size, &total, tmpbuf, (size_t)n) || truncated;
     }
-    output_buf[total] = '\0';
+    if (output_buf_size > 0) output_buf[total] = '\0';
+    report_captured_truncation(truncated);
     close(pipefd[0]);
 
     int status = 0;
@@ -499,10 +661,29 @@ bool is_safe_path_component(const char* name) {
     return true;
 }
 
-/* Run a program with its standard input connected to a block of text, and
-   capture its output. The input is written before the output is read, so the
-   program sees the whole block; the block has to fit in a pipe buffer, which
-   is far more than a test needs. */
+#ifdef _WIN32
+typedef struct {
+    HANDLE pipe;
+    char* buffer;
+    size_t size;
+    size_t total;
+    bool truncated;
+} CaptureContext;
+
+static unsigned __stdcall capture_pipe_thread(void* param) {
+    CaptureContext* context = (CaptureContext*)param;
+    DWORD n;
+    char tmpbuf[4096];
+    while (ReadFile(context->pipe, tmpbuf, sizeof(tmpbuf), &n, NULL) && n > 0) {
+        context->truncated = append_captured_output(context->buffer, context->size, &context->total,
+                                                    tmpbuf, (size_t)n) || context->truncated;
+    }
+    if (context->size > 0) context->buffer[context->total] = '\0';
+    _endthreadex(0);
+    return 0;
+}
+#endif
+
 int run_process_with_stdin(const char* program, const char* const args[], char* output_buf, size_t output_buf_size, const char* stdin_data) {
     output_buf[0] = '\0';
     if (!stdin_data) stdin_data = "";
@@ -557,26 +738,42 @@ int run_process_with_stdin(const char* program, const char* const args[], char* 
         return run_process_captured(program, args, output_buf, output_buf_size);
     }
 
+    CaptureContext context = {0};
+    context.pipe = hStdoutRead;
+    context.buffer = output_buf;
+    context.size = output_buf_size;
+    HANDLE reader = (HANDLE)_beginthreadex(NULL, 0, capture_pipe_thread, &context, 0, NULL);
+
     size_t input_len = strlen(stdin_data);
-    if (input_len > 0) {
+    size_t written_total = 0;
+    while (reader != NULL && written_total < input_len) {
+        DWORD chunk = input_len - written_total > 4096 ? 4096 : (DWORD)(input_len - written_total);
         DWORD written = 0;
-        WriteFile(hStdinWrite, stdin_data, (DWORD)input_len, &written, NULL);
+        if (!WriteFile(hStdinWrite, stdin_data + written_total, chunk, &written, NULL) || written == 0) break;
+        written_total += written;
     }
     CloseHandle(hStdinWrite);
 
-    size_t total = 0;
-    DWORD n;
-    char tmpbuf[4096];
-    while (ReadFile(hStdoutRead, tmpbuf, sizeof(tmpbuf), &n, NULL) && n > 0) {
-        if (total + n < output_buf_size - 1) {
-            memcpy(output_buf + total, tmpbuf, n);
-            total += n;
+    if (reader == NULL) {
+        size_t total = 0;
+        bool truncated = false;
+        DWORD n;
+        char tmpbuf[4096];
+        while (ReadFile(hStdoutRead, tmpbuf, sizeof(tmpbuf), &n, NULL) && n > 0) {
+            truncated = append_captured_output(output_buf, output_buf_size, &total, tmpbuf, (size_t)n) || truncated;
         }
+        if (output_buf_size > 0) output_buf[total] = '\0';
+        report_captured_truncation(truncated);
+        CloseHandle(hStdoutRead);
     }
-    output_buf[total] = '\0';
-    CloseHandle(hStdoutRead);
 
     WaitForSingleObject(pi.hProcess, INFINITE);
+    if (reader != NULL) {
+        WaitForSingleObject(reader, INFINITE);
+        CloseHandle(reader);
+        CloseHandle(hStdoutRead);
+        report_captured_truncation(context.truncated);
+    }
     DWORD exit_code = 0;
     GetExitCodeProcess(pi.hProcess, &exit_code);
     CloseHandle(pi.hProcess);
@@ -604,6 +801,7 @@ int run_process_with_stdin(const char* program, const char* const args[], char* 
         dup2(out_pipe[1], STDERR_FILENO);
         close(in_pipe[0]);
         close(out_pipe[1]);
+        signal(SIGPIPE, SIG_DFL);
         execvp(program, (char* const*)args);
         _exit(127);
     }
@@ -611,22 +809,80 @@ int run_process_with_stdin(const char* program, const char* const args[], char* 
     close(in_pipe[0]);
     close(out_pipe[1]);
 
+    void (*old_sigpipe)(int) = signal(SIGPIPE, SIG_IGN);
     size_t input_len = strlen(stdin_data);
     size_t written_total = 0;
-    while (written_total < input_len) {
-        ssize_t w = write(in_pipe[1], stdin_data + written_total, input_len - written_total);
-        if (w <= 0) break;
-        written_total += (size_t)w;
-    }
-    close(in_pipe[1]);
-
+    bool in_open = input_len > 0;
+    bool out_open = true;
+    if (!in_open) close(in_pipe[1]);
     size_t total = 0;
-    ssize_t n;
-    while (total < output_buf_size - 1 && (n = read(out_pipe[0], output_buf + total, output_buf_size - 1 - total)) > 0) {
-        total += n;
+    bool truncated = false;
+    char tmpbuf[4096];
+
+    while (in_open || out_open) {
+        if (in_open && written_total >= input_len) {
+            close(in_pipe[1]);
+            in_open = false;
+        }
+
+        struct pollfd fds[2];
+        int in_index = -1;
+        int out_index = -1;
+        nfds_t nfds = 0;
+        if (in_open) {
+            in_index = (int)nfds;
+            fds[nfds].fd = in_pipe[1];
+            fds[nfds].events = POLLOUT;
+            fds[nfds].revents = 0;
+            nfds++;
+        }
+        if (out_open) {
+            out_index = (int)nfds;
+            fds[nfds].fd = out_pipe[0];
+            fds[nfds].events = POLLIN;
+            fds[nfds].revents = 0;
+            nfds++;
+        }
+
+        int ready = poll(fds, nfds, -1);
+        if (ready < 0) {
+            if (errno == EINTR) continue;
+            break;
+        }
+
+        if (in_index >= 0 && fds[in_index].revents & (POLLOUT | POLLERR | POLLHUP | POLLNVAL)) {
+            if (fds[in_index].revents & POLLOUT) {
+                size_t remaining = input_len - written_total;
+                size_t chunk = remaining > sizeof(tmpbuf) ? sizeof(tmpbuf) : remaining;
+                ssize_t w = write(in_pipe[1], stdin_data + written_total, chunk);
+                if (w > 0) {
+                    written_total += (size_t)w;
+                } else if (w < 0 && errno != EINTR) {
+                    close(in_pipe[1]);
+                    in_open = false;
+                }
+            } else {
+                close(in_pipe[1]);
+                in_open = false;
+            }
+        }
+
+        if (out_index >= 0 && fds[out_index].revents & (POLLIN | POLLERR | POLLHUP | POLLNVAL)) {
+            ssize_t n = read(out_pipe[0], tmpbuf, sizeof(tmpbuf));
+            if (n > 0) {
+                truncated = append_captured_output(output_buf, output_buf_size, &total, tmpbuf, (size_t)n) || truncated;
+            } else if (n == 0 || (n < 0 && errno != EINTR)) {
+                close(out_pipe[0]);
+                out_open = false;
+            }
+        }
     }
-    output_buf[total] = '\0';
-    close(out_pipe[0]);
+
+    if (in_open) close(in_pipe[1]);
+    if (out_open) close(out_pipe[0]);
+    signal(SIGPIPE, old_sigpipe);
+    if (output_buf_size > 0) output_buf[total] = '\0';
+    report_captured_truncation(truncated);
 
     int status = 0;
     if (waitpid(pid, &status, 0) < 0) return 127;

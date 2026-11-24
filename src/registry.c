@@ -4,6 +4,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <errno.h>
+#include <stdint.h>
 
 extern int run_process(const char* program, const char* const args[]);
 extern int run_process_captured(const char* program, const char* const args[], char* output_buf, size_t output_buf_size);
@@ -15,9 +16,9 @@ extern int run_process_captured(const char* program, const char* const args[], c
 #endif
 
 #ifdef _WIN32
-#include <windows.h>
 #include <direct.h>
 #include <io.h>
+#include <process.h>
 #define cnext_mkdir(path) _mkdir(path)
 #define popen _popen
 #define pclose _pclose
@@ -64,67 +65,192 @@ static const char* get_cache_dir(void) {
     return registry_cache_dir;
 }
 
-static bool http_get(const char* url, char** out_body, long* out_status, long* out_size) {
-    if (!url || url[0] == '\0') { *out_status = 0; *out_body = NULL; if (out_size) *out_size = 0; return false; }
-    if (strncmp(url, "http://", 7) == 0) {
-        fprintf(stderr, "Warning: Refusing insecure HTTP download. Use HTTPS instead.\n");
-        *out_status = 0; *out_body = NULL; if (out_size) *out_size = 0; return false;
+static unsigned long cache_temp_counter = 0;
+
+static bool is_safe_registry_name(const char* name) {
+    if (!name || name[0] == '\0' || name[0] == '/' || name[strlen(name) - 1] == '/') return false;
+    if (strstr(name, "..") || strstr(name, "//")) return false;
+    for (const char* p = name; *p; p++) {
+        unsigned char c = (unsigned char)*p;
+        if (!(isalnum(c) || c == '.' || c == '_' || c == '-' || c == '/')) return false;
     }
-    char tmpfile_path[1024];
+    return true;
+}
+
+static char* encode_query(const char* query) {
+    if (!query) return NULL;
+    size_t len = strlen(query);
+    if (len > SIZE_MAX / 3 - 1) return NULL;
+    char* encoded = (char*)checked_malloc(len * 3 + 1);
+    if (!encoded) return NULL;
+    size_t out = 0;
+    for (size_t i = 0; i < len; i++) {
+        unsigned char c = (unsigned char)query[i];
+        if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
+            encoded[out++] = (char)c;
+        } else {
+            static const char hex[] = "0123456789ABCDEF";
+            encoded[out++] = '%';
+            encoded[out++] = hex[c >> 4];
+            encoded[out++] = hex[c & 0x0f];
+        }
+    }
+    encoded[out] = '\0';
+    return encoded;
+}
+
+static bool parse_http_status(const char* text, long* status) {
+    if (!status || !text || text[0] == '\0') return false;
+    long value = 0;
+    for (const char* p = text; *p; p++) {
+        if (*p < '0' || *p > '9') return false;
+        value = value * 10 + (*p - '0');
+        if (value > 999) return false;
+    }
+    *status = value;
+    return true;
+}
+
+static bool ensure_cache_dirs(void) {
+    char parent[512];
+    snprintf(parent, sizeof(parent), "%s", get_cache_dir());
+    char* sep = strrchr(parent, CNEXT_PATH_SEP);
+    if (!sep || sep == parent) return false;
+    *sep = '\0';
+    if (cnext_mkdir(parent) != 0 && errno != EEXIST) return false;
+    if (cnext_mkdir(get_cache_dir()) != 0 && errno != EEXIST) return false;
+    return true;
+}
+
+static bool make_cache_temp_path(char* dst, size_t dst_size, const char* prefix) {
 #ifdef _WIN32
-    snprintf(tmpfile_path, sizeof(tmpfile_path), "%s\\http_response.tmp", get_cache_dir());
+    unsigned long pid = (unsigned long)_getpid();
 #else
-    snprintf(tmpfile_path, sizeof(tmpfile_path), "%s/http_response.tmp", get_cache_dir());
+    unsigned long pid = (unsigned long)getpid();
 #endif
-    cnext_mkdir(get_cache_dir());
+    cache_temp_counter++;
+    int written = snprintf(dst, dst_size, "%s%c%s_%lu_%lu.tmp", get_cache_dir(), CNEXT_PATH_SEP,
+                           prefix, pid, cache_temp_counter);
+    return written >= 0 && (size_t)written < dst_size;
+}
 
-    // Use argument array instead of shell command (no shell injection)
+static bool http_get_ex(const char* url, const char* token, char** out_body, long* out_status, long* out_size) {
+    *out_status = 0;
+    *out_body = NULL;
+    if (out_size) *out_size = 0;
+    if (!url || url[0] == '\0') return false;
+    if (!is_https_url(url)) {
+        fprintf(stderr, "Warning: Refusing non-HTTPS request. Use HTTPS instead.\n");
+        return false;
+    }
+    if (token && strpbrk(token, "\r\n")) {
+        fprintf(stderr, "Invalid token.\n");
+        return false;
+    }
+    if (!ensure_cache_dirs()) return false;
+    char tmpfile_path[1024];
+    if (!make_cache_temp_path(tmpfile_path, sizeof(tmpfile_path), "http_response")) return false;
+
+    char* auth_header = NULL;
+    const char* curl_args[12];
+    int argc = 0;
+    curl_args[argc++] = "curl";
+    curl_args[argc++] = "-s";
+    curl_args[argc++] = "-w";
+    curl_args[argc++] = "%{http_code}";
+    curl_args[argc++] = "-o";
+    curl_args[argc++] = tmpfile_path;
+    if (token && token[0]) {
+        size_t cap = strlen("Authorization: Bearer ") + strlen(token) + 1;
+        auth_header = (char*)checked_malloc(cap);
+        if (!auth_header) {
+            remove(tmpfile_path);
+            return false;
+        }
+        snprintf(auth_header, cap, "Authorization: Bearer %s", token);
+        curl_args[argc++] = "-H";
+        curl_args[argc++] = auth_header;
+    }
+    curl_args[argc++] = "--";
+    curl_args[argc++] = url;
+    curl_args[argc] = NULL;
+
     char stdout_buf[64] = "";
-    const char* const curl_args[] = {"curl", "-s", "-w", "%{http_code}", "-o", tmpfile_path, "--", url, NULL};
-    run_process_captured("curl", curl_args, stdout_buf, sizeof(stdout_buf));
-
-    *out_status = atol(stdout_buf);
+    int curl_result = run_process_captured("curl", curl_args, stdout_buf, sizeof(stdout_buf));
+    free(auth_header);
+    long status = 0;
+    if (curl_result != 0 || !parse_http_status(stdout_buf, &status)) {
+        remove(tmpfile_path);
+        return false;
+    }
+    *out_status = status;
 
     FILE* f = fopen(tmpfile_path, "rb");
-    if (!f) return false;
+    if (!f) { remove(tmpfile_path); return false; }
     fseek(f, 0, SEEK_END);
     long size = ftell(f);
-    if (size < 0) { fclose(f); remove(tmpfile_path); *out_body = NULL; if (out_size) *out_size = 0; return false; }
+    if (size < 0 || size > 64L * 1024L * 1024L) {
+        fclose(f);
+        remove(tmpfile_path);
+        *out_status = 0;
+        return false;
+    }
     rewind(f);
-    *out_body = (char*)checked_malloc(size + 1);
-    if (!*out_body) { fclose(f); remove(tmpfile_path); if (out_size) *out_size = 0; return false; }
-    if (fread(*out_body, 1, size, f)) { /* read ok */ }
-    (*out_body)[size] = '\0';
+    *out_body = (char*)checked_malloc((size_t)size + 1);
+    if (!*out_body) {
+        fclose(f);
+        remove(tmpfile_path);
+        *out_status = 0;
+        return false;
+    }
+    size_t bytes_read = size > 0 ? fread(*out_body, 1, (size_t)size, f) : 0;
     fclose(f);
     remove(tmpfile_path);
+    if (size > 0 && bytes_read != (size_t)size) {
+        free(*out_body);
+        *out_body = NULL;
+        *out_status = 0;
+        return false;
+    }
+    (*out_body)[size] = '\0';
     if (out_size) *out_size = size;
     return true;
 }
 
+static bool http_get(const char* url, char** out_body, long* out_status, long* out_size) {
+    return http_get_ex(url, NULL, out_body, out_status, out_size);
+}
+
 static bool http_post(const char* url, const char* body, const char* token, long* out_status) {
-    if (!url || url[0] == '\0') { *out_status = 0; return false; }
-    if (strncmp(url, "http://", 7) == 0) {
-        fprintf(stderr, "Warning: Refusing insecure HTTP request. Use HTTPS instead.\n");
-        *out_status = 0; return false;
+    *out_status = 0;
+    if (!url || url[0] == '\0') return false;
+    if (!is_https_url(url)) {
+        fprintf(stderr, "Warning: Refusing non-HTTPS request. Use HTTPS instead.\n");
+        return false;
     }
+    if (!ensure_cache_dirs()) return false;
     char tmpfile_path[1024];
     char body_tmpfile[1024];
-#ifdef _WIN32
-    snprintf(tmpfile_path, sizeof(tmpfile_path), "%s\\http_response.tmp", get_cache_dir());
-    snprintf(body_tmpfile, sizeof(body_tmpfile), "%s\\http_body.tmp", get_cache_dir());
-#else
-    snprintf(tmpfile_path, sizeof(tmpfile_path), "%s/http_response.tmp", get_cache_dir());
-    snprintf(body_tmpfile, sizeof(body_tmpfile), "%s/http_body.tmp", get_cache_dir());
-#endif
-    cnext_mkdir(get_cache_dir());
+    if (!make_cache_temp_path(tmpfile_path, sizeof(tmpfile_path), "http_response")) return false;
+    if (!make_cache_temp_path(body_tmpfile, sizeof(body_tmpfile), "http_body")) return false;
 
     // Write body to temp file (avoids piping via shell)
     if (body) {
         FILE* bf = fopen(body_tmpfile, "wb");
-        if (bf) {
-            fwrite(body, 1, strlen(body), bf);
-            fclose(bf);
+        if (!bf) { remove(tmpfile_path); return false; }
+        size_t body_len = strlen(body);
+        size_t written = fwrite(body, 1, body_len, bf);
+        fclose(bf);
+        if (written != body_len) {
+            remove(body_tmpfile);
+            remove(tmpfile_path);
+            return false;
         }
+    }
+    if (token && strpbrk(token, "\r\n")) {
+        remove(body_tmpfile);
+        remove(tmpfile_path);
+        return false;
     }
 
     // Build curl args array (no shell interpretation)
@@ -140,15 +266,30 @@ static bool http_post(const char* url, const char* body, const char* token, long
     curl_args[argc++] = "POST";
     curl_args[argc++] = "-H";
     curl_args[argc++] = "Content-Type: application/json";
+    char* auth_header = NULL;
+    char* data_arg = NULL;
     if (token && token[0]) {
-        static char auth_header[512];
-        snprintf(auth_header, sizeof(auth_header), "Authorization: Bearer %s", token);
+        size_t cap = strlen("Authorization: Bearer ") + strlen(token) + 1;
+        auth_header = (char*)checked_malloc(cap);
+        if (!auth_header) {
+            remove(body_tmpfile);
+            remove(tmpfile_path);
+            return false;
+        }
+        snprintf(auth_header, cap, "Authorization: Bearer %s", token);
         curl_args[argc++] = "-H";
         curl_args[argc++] = auth_header;
     }
     if (body) {
-        static char data_arg[2048];
-        snprintf(data_arg, sizeof(data_arg), "-d@%s", body_tmpfile);
+        size_t cap = strlen("-d@") + strlen(body_tmpfile) + 1;
+        data_arg = (char*)checked_malloc(cap);
+        if (!data_arg) {
+            free(auth_header);
+            remove(body_tmpfile);
+            remove(tmpfile_path);
+            return false;
+        }
+        snprintf(data_arg, cap, "-d@%s", body_tmpfile);
         curl_args[argc++] = data_arg;
     }
     curl_args[argc++] = "--";
@@ -156,12 +297,16 @@ static bool http_post(const char* url, const char* body, const char* token, long
     curl_args[argc] = NULL;
 
     char stdout_buf[64] = "";
-    run_process_captured("curl", curl_args, stdout_buf, sizeof(stdout_buf));
-    *out_status = atol(stdout_buf);
+    int curl_result = run_process_captured("curl", curl_args, stdout_buf, sizeof(stdout_buf));
+    long status = 0;
+    bool ok = curl_result == 0 && parse_http_status(stdout_buf, &status);
+    if (ok) *out_status = status;
 
+    free(auth_header);
+    free(data_arg);
     remove(body_tmpfile);
     remove(tmpfile_path);
-    return true;
+    return ok;
 }
 
 bool registry_search(const char* query, RegistryResult* result) {
@@ -179,7 +324,11 @@ bool registry_search(const char* query, RegistryResult* result) {
     long status = 0;
 
     if (registry_url) {
-        snprintf(url, sizeof(url), "%s/api/search?q=%s", registry_url, query);
+        char* encoded_query = encode_query(query);
+        if (!encoded_query) return false;
+        int written = snprintf(url, sizeof(url), "%s/api/search?q=%s", registry_url, encoded_query);
+        free(encoded_query);
+        if (written < 0 || (size_t)written >= sizeof(url)) return false;
         if (http_get(url, &body, &status, NULL) && status == 200) {
             char* line = strtok(body, "\n");
             int capacity = 0;
@@ -244,6 +393,10 @@ bool registry_search(const char* query, RegistryResult* result) {
 bool registry_info(const char* package_name, RegistryResult* result) {
     result->versions = NULL;
     result->count = 0;
+    if (!is_safe_registry_name(package_name)) {
+        fprintf(stderr, "Invalid package name \"%s\".\n", package_name ? package_name : "(null)");
+        return false;
+    }
 
     const char* registry_url = get_registry_url();
     if (registry_url) {
@@ -354,10 +507,11 @@ bool registry_download(const char* url, const char* dest_path) {
         free(body);
         return false;
     }
-    fwrite(body, 1, body_size, f);
-    fclose(f);
+    size_t written = body_size > 0 ? fwrite(body, 1, (size_t)body_size, f) : 0;
+    bool ok = body_size == 0 || written == (size_t)body_size;
+    if (fclose(f) != 0) ok = false;
     free(body);
-    return true;
+    return ok;
 }
 
 bool registry_publish(const char* package_dir, const char* token) {
@@ -392,6 +546,11 @@ bool registry_publish(const char* package_dir, const char* token) {
 
     if (!name[0] || !version[0]) {
         fprintf(stderr, "cnext.toml must have name and version fields.\n");
+        return false;
+    }
+    SemVer parsed_version;
+    if (!is_safe_registry_name(name) || !semver_parse(&parsed_version, version)) {
+        fprintf(stderr, "Invalid package name or version in cnext.toml.\n");
         return false;
     }
 
@@ -484,22 +643,42 @@ const char* registry_get_token(void) {
 
 static void save_token(const char* token) {
     const char* path = get_auth_token_path();
-    // Ensure directory exists
-    char dir[512];
-    snprintf(dir, sizeof(dir), "%s", path);
-    char* last_sep = strrchr(dir, CNEXT_PATH_SEP);
-    if (last_sep) {
-        *last_sep = '\0';
-        cnext_mkdir(dir);
+    if (!token || strpbrk(token, "\r\n")) {
+        fprintf(stderr, "Invalid token.\n");
+        return;
     }
-    FILE* f = fopen(path, "w");
-    if (f) {
-        fprintf(f, "%s\n", token);
-        fclose(f);
-        fprintf(stderr, "Token saved.\n");
-    } else {
+    if (!ensure_cache_dirs()) {
         fprintf(stderr, "Could not save token to %s\n", path);
+        return;
     }
+    char tmp_path[1024];
+    if (!make_cache_temp_path(tmp_path, sizeof(tmp_path), "token")) {
+        fprintf(stderr, "Could not save token to %s\n", path);
+        return;
+    }
+    FILE* f = fopen(tmp_path, "w");
+    if (!f) {
+        fprintf(stderr, "Could not save token to %s\n", path);
+        return;
+    }
+    size_t len = strlen(token);
+    bool ok = fwrite(token, 1, len, f) == len && fputc('\n', f) != EOF;
+    if (fclose(f) != 0) ok = false;
+#ifndef _WIN32
+    if (ok && chmod(tmp_path, 0600) != 0) ok = false;
+#endif
+    if (!ok) {
+        remove(tmp_path);
+        fprintf(stderr, "Could not save token to %s\n", path);
+        return;
+    }
+    remove(path);
+    if (rename(tmp_path, path) != 0) {
+        remove(tmp_path);
+        fprintf(stderr, "Could not save token to %s\n", path);
+        return;
+    }
+    fprintf(stderr, "Token saved.\n");
 }
 
 static void remove_token(void) {
@@ -512,6 +691,10 @@ static void remove_token(void) {
 }
 
 bool registry_login(const char* registry_url) {
+    if (registry_url && !is_https_url(registry_url)) {
+        fprintf(stderr, "Registry URL must use HTTPS.\n");
+        return false;
+    }
     fprintf(stderr, "Login to %s\n", registry_url);
     fprintf(stderr, "Enter your API token: ");
 
@@ -533,12 +716,15 @@ bool registry_login(const char* registry_url) {
         snprintf(url, sizeof(url), "%s/api/me", registry_url);
         char* body = NULL;
         long status = 0;
-        if (http_get(url, &body, &status, NULL)) {
+        if (!http_get_ex(url, token, &body, &status, NULL)) {
             free(body);
-            if (status == 401 || status == 403) {
-                fprintf(stderr, "Invalid token.\n");
-                return false;
-            }
+            fprintf(stderr, "Token verification failed.\n");
+            return false;
+        }
+        free(body);
+        if (status != 200) {
+            fprintf(stderr, "Invalid token.\n");
+            return false;
         }
     }
 

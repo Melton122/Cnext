@@ -59,6 +59,11 @@ bool format_source(const char* source, char** output) {
 
     int indent = 0;
     bool need_indent = true;
+    int paren_depth = 0;
+    int bracket_depth = 0;
+    bool when_braces[256] = {false};
+    int brace_count = 0;
+    bool suppress_next_line = false;
     Token prev_token = {TOKEN_EOF, "", 0, 0, 0};
 
     for (;;) {
@@ -71,7 +76,7 @@ bool format_source(const char* source, char** output) {
         }
 
         // Handle newlines
-        if (token.line > prev_token.line) {
+        if (prev_token.type != TOKEN_EOF && token.line > prev_token.line && !suppress_next_line) {
             int newlines = token.line - prev_token.line;
             if (newlines > 2) newlines = 2; // Max 2 blank lines
             for (int i = 0; i < newlines; i++) {
@@ -79,9 +84,11 @@ bool format_source(const char* source, char** output) {
             }
             need_indent = true;
         }
+        suppress_next_line = false;
 
         // Emit indentation
-        if (need_indent) {
+        bool at_line_start = need_indent;
+        if (need_indent && token.type != TOKEN_RBRACE) {
             for (int i = 0; i < indent; i++) {
                 sb_append_str(&sb, "    "); // 4-space indent
             }
@@ -89,7 +96,7 @@ bool format_source(const char* source, char** output) {
         }
 
         // Add space before token if needed
-        if (prev_token.type != TOKEN_EOF && token.type != TOKEN_EOF) {
+        if (!at_line_start && prev_token.type != TOKEN_EOF && token.type != TOKEN_EOF) {
             bool add_space = true;
 
             // No space before these
@@ -104,6 +111,11 @@ bool format_source(const char* source, char** output) {
             if (prev_token.type == TOKEN_LPAREN || prev_token.type == TOKEN_LBRACKET ||
                 prev_token.type == TOKEN_LBRACE || prev_token.type == TOKEN_DOT ||
                 prev_token.type == TOKEN_COMMA || prev_token.type == TOKEN_SEMICOLON) {
+                add_space = false;
+            }
+
+            if (token.type == TOKEN_LPAREN &&
+                (prev_token.type == TOKEN_IDENTIFIER || prev_token.type == TOKEN_RBRACKET)) {
                 add_space = false;
             }
 
@@ -128,25 +140,44 @@ bool format_source(const char* source, char** output) {
             sb_append(&sb, token.start, token.length);
         }
 
+        if (token.type == TOKEN_LPAREN) paren_depth++;
+        if (token.type == TOKEN_RPAREN && paren_depth > 0) paren_depth--;
+        if (token.type == TOKEN_LBRACKET) bracket_depth++;
+        if (token.type == TOKEN_RBRACKET && bracket_depth > 0) bracket_depth--;
+
         // Indentation changes
         if (token.type == TOKEN_LBRACE) {
+            int slot = brace_count < 256 ? brace_count++ : 255;
+            when_braces[slot] = prev_token.type == TOKEN_WHEN;
             sb_append_char(&sb, '\n');
             indent++;
             need_indent = true;
+            suppress_next_line = true;
         } else if (token.type == TOKEN_RBRACE) {
+            if (brace_count > 0) brace_count--;
             if (indent > 0) indent--;
-            sb_append_char(&sb, '\n');
+            if (!at_line_start) sb_append_char(&sb, '\n');
             need_indent = true;
             for (int i = 0; i < indent; i++) {
                 sb_append_str(&sb, "    ");
             }
             sb_append(&sb, token.start, token.length);
+            sb_append_char(&sb, '\n');
+            suppress_next_line = true;
+        }
+
+        if (token.type == TOKEN_COMMA && paren_depth == 0 && bracket_depth == 0 &&
+            brace_count > 0 && when_braces[brace_count - 1]) {
+            sb_append_char(&sb, '\n');
+            need_indent = true;
+            suppress_next_line = true;
         }
 
         // Semicolons and newlines
         if (token.type == TOKEN_SEMICOLON) {
             sb_append_char(&sb, '\n');
             need_indent = true;
+            suppress_next_line = true;
         }
 
         prev_token = token;

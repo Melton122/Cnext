@@ -6,7 +6,7 @@ Milestone B loop is one command. Prints the mismatching file names and the
 first differing hunk per file, then the pass/fail tally.
 
 Usage:
-    python tools/parser_parity.py                 # tests/*.cn
+    python tools/parser_parity.py                 # tests/**/*.cn
     python tools/parser_parity.py --paths "examples/*.cn"
     python tools/parser_parity.py --full          # show every diff hunk
 """
@@ -28,7 +28,7 @@ def run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--paths", nargs="*", default=["tests/*.cn"])
+    parser.add_argument("--paths", nargs="*", default=["tests/**/*.cn"])
     parser.add_argument("--full", action="store_true", help="Print the complete diff output.")
     parser.add_argument("--no-build", action="store_true", help="Skip the rebuild step.")
     args = parser.parse_args()
@@ -36,9 +36,12 @@ def main() -> int:
     candidate = ROOT / "build" / "selfhost" / (
         "parser_selfhost.exe" if os.name == "nt" else "parser_selfhost"
     )
+    compiler = Path(os.environ.get("CNEXT_EXE", ROOT / ("cnext.exe" if os.name == "nt" else "cnext")))
+    if not compiler.is_absolute():
+        compiler = ROOT / compiler
     if not args.no_build:
         run([sys.executable, str(ROOT / "tools" / "bundle_src2.py")], check=True)
-        build = run([str(ROOT / "cnext.exe"), "build", str(ROOT / "src2" / "parser_bundle.cn"),
+        build = run([str(compiler), "build", str(ROOT / "src2" / "parser_bundle.cn"),
                      "-o", str(candidate)], capture_output=True, text=True)
         if build.returncode != 0:
             print(build.stdout)

@@ -53,7 +53,7 @@ make install
 ```bash
 make test                    # Run compiler built-in tests
 make check                   # Run full test suite (compiler + Python)
-python3 tests/run_tests.py   # Run Python test suite directly (Linux/macOS)
+python3 tests/run_tests.py   # Run Python test suite directly (all platforms)
 ```
 
 ### Code Formatting
@@ -66,7 +66,7 @@ make format   # Format source code with clang-format
 
 - `src/` — Compiler source code (C)
 - `include/` — Header files and runtime library
-- `tests/` — Test files (`.cn` test programs)
+- `tests/` — Categorized `.cn` test programs plus compiler fixture directories
 - `examples/` — Example Cnext programs
 - `docs/` — Documentation
 - `lsp/` — Language Server Protocol implementation
@@ -94,7 +94,7 @@ make format   # Format source code with clang-format
 
 ## Adding Tests
 
-1. Create a `.cn` file in `tests/`
+1. Create a `.cn` file in the matching `tests/<category>/` directory
 2. Add expected output comments at the top:
    ```cnext
    // EXPECT: expected output line 1
@@ -103,19 +103,22 @@ make format   # Format source code with clang-format
 3. Write your test code
 4. Verify it compiles and runs:
    ```bash
-   cnext build tests/your_test.cn
+   cnext build tests/<category>/your_test.cn
    ./out.exe
    ```
 
 ### Test Categories
 
-- **Lexer tests:** Token recognition
-- **Parser tests:** Syntax parsing
-- **Semantic tests:** Type checking
-- **Codegen tests:** Code generation
-- **Runtime tests:** Runtime behavior
-- **Optimizer tests:** Optimization passes
-- **Integration tests:** Full program tests
+- **`tests/core/`:** Language core, functions, closures, memory
+- **`tests/types/`:** Numeric, text, nullability, and type-system behavior
+- **`tests/oop/`:** Classes, generics, inheritance, interfaces, traits
+- **`tests/control/`:** Defer, try/when, async, coroutines, generators, threads
+- **`tests/collections/`:** Arrays, slices, tuples, collection modules
+- **`tests/stdlib/`:** Builtins and header-only stdlib modules
+- **`tests/io/`:** File, path, process, network, HTTP, time, OS
+- **`tests/optimization/`:** Optimizer regressions and minimal reproducers
+- **`tests/cli/`:** CLI commands, testing, packaging, integration
+- **`tests/version_features/`:** Versioned feature snapshots
 
 ## Bug Reports
 

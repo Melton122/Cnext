@@ -61,7 +61,7 @@ def compile_with_msvc(c_source, executable):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--compiler", required=True)
-    parser.add_argument("--source", type=Path, default=ROOT / "tests" / "test_defer_matrix.cn")
+    parser.add_argument("--source", type=Path, default=ROOT / "tests" / "control" / "test_defer_matrix.cn")
     args = parser.parse_args()
 
     compiler = Path(args.compiler)

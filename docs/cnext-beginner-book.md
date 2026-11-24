@@ -1,9 +1,9 @@
-<!-- Cnext: The Complete Beginner's Guide -->
+<!-- Cnext: The Complete Guide -->
 
-# Cnext: The Complete Beginner's Guide
+# Cnext: The Complete Guide
 
-*From your very first program to real applications — a friendly, practical
-introduction to Cnext, a modern language that compiles to C.*
+*From your very first program to real applications: a friendly, practical
+introduction to a modern language that compiles to C.*
 
 > Built with **definitions** (what each thing *is*), **explanations** (how it
 > works), **theory** (why it works that way), and **real-world examples**
@@ -16,13 +16,13 @@ introduction to Cnext, a modern language that compiles to C.*
 
 **Cnext** is a modern, high-level programming language that compiles down to
 **C**. That one sentence is the reason this book exists: Cnext gives you a
-clean, friendly syntax with modern features — and still lets you ship fast,
+clean, friendly syntax with modern features, and still lets you ship fast,
 portable programs the way C programmers do.
 
 ### Who this book is for
 
 - **Absolute beginners** who have never programmed. Start at Part I and go in
-  order — every new idea builds on the ones before it.
+  order, every new idea builds on the ones before it.
 - **Students** learning a second (or third) language. Skim the fundamentals and
   spend time on Parts IV and V.
 - **Working developers** evaluating Cnext. Read Part I for the pitch, then jump
@@ -32,11 +32,11 @@ portable programs the way C programmers do.
 
 The book is split into five parts. Each chapter sticks to the same rhythm:
 
-1. **Definition** — a plain-language answer to *what is this?*
-2. **Explanation** — how it works, with small, runnable examples.
-3. **Theory** — the computer-science idea underneath, so you understand *why*.
-4. **Real-world example** — code that solves a realistic problem.
-5. **Exercise** — a small task to stretch your understanding.
+1. **Definition**: a plain-language answer to *what is this?*
+2. **Explanation**: how it works, with small, runnable examples.
+3. **Theory**: the computer-science idea underneath, so you understand *why*.
+4. **Real-world example**: code that solves a realistic problem.
+5. **Exercise**: a small task to stretch your understanding.
 
 ### Callout boxes you will see
 
@@ -49,11 +49,11 @@ The book is split into five parts. Each chapter sticks to the same rhythm:
 | **Warning** | Common pitfalls to avoid. |
 | **Exercise** | A task to try yourself. |
 
-### Tips for learning placement
+### Tips for learning
 
 - **Read a little, type a lot, break things.** Typing code by hand (not
   copy-pasting) and intentionally breaking it is the fastest way to learn.
-- **Run every example.** Don't trust the book — verify with your computer.
+- **Run every example.** Don't trust the book; verify with your computer.
 - **Keep a "snippet box."** Save the tiny examples you like; you'll reuse them
   for your own projects.
 
@@ -61,13 +61,13 @@ The book is split into five parts. Each chapter sticks to the same rhythm:
 
 ## Table of Contents
 
-**PART I — Getting Started**
+**PART I: Getting Started**
 1. What Is Cnext? (and Why C?)
 2. Installing Cnext
 3. Your First Program
 4. The Basics: Comments, Variables, Input & Output
 
-**PART II — Language Fundamentals**
+**PART II: Language Fundamentals**
 5. Types & Data Types
 6. Operators: Doing Math and Comparisons
 7. Making Decisions with `if` and `match`
@@ -78,31 +78,31 @@ The book is split into five parts. Each chapter sticks to the same rhythm:
 12. Handling Errors: `throw` and `try`/`catch`
 13. Nullability: Saying "I Don't Know"
 
-**PART III — Objects & Data**
+**PART III: Objects & Data**
 14. Structs, Enums & Pattern Matching
 15. Classes & Object-Oriented Programming
 16. Generics: Code That Works with Any Type
 
-**PART IV — Modern Features**
+**PART IV: Modern Features**
 17. Closures & Higher-Order Functions
 18. Generators & Coroutines
 19. Async: Doing I/O Without Blocking
 20. Threading: Doing Two Things at Once
 
-**PART V — The Professional Toolkit**
+**PART V: The Professional Toolkit**
 21. The Tools: run, build, fmt, lint, repl, test, doctor
 22. The Standard Library & Global Built-ins
 23. Projects, Packages & Real Software
 24. Capstone: Build a Real Mini-Project
 
 **Reference & Appendices**
-- Appendix A — Glossary
-- Appendix B — Troubleshooting
-- Appendix C — Quick Keyword & Operator Reference
-- Appendix D — Your Next Steps
+- Appendix A: Glossary
+- Appendix B: Troubleshooting
+- Appendix C: Quick Keyword & Operator Reference
+- Appendix D: Your Next Steps
 
 ---
-# PART I — Getting Started
+# PART I: Getting Started
 
 > Set up the language, run your first program, and learn the core vocabulary
 > of programming.
@@ -121,11 +121,11 @@ The book is split into five parts. Each chapter sticks to the same rhythm:
   a standard C compiler (GCC or Clang) turns that into a fast, native
   executable for your machine.
 
-### 1.2 Explanation — how computers "speak"
+### 1.2 Explanation: How computers "speak"
 
 When you want a computer to do something, you must communicate in a form it can
 execute. At the very bottom, a CPU understands only small, primitive
-instructions — *move this number*, *compare two values*, *jump to another
+instructions: *move this number*, *compare two values*, *jump to another
 place in the program*. These are called **machine code**, and they differ
 between processor families (Intel, ARM, and so on).
 
@@ -136,7 +136,7 @@ how humans think, and a tool translates it for us.
 your code (hello.cn)  ──compiler──▶  executable  ──run──▶  output
 ```
 
-> **Theory — high-level vs. low-level languages**
+> **Theory: high-level vs. low-level languages**
 >
 > A **high-level language** (Python, JavaScript, Cnext) is written in words and
 > symbols close to what people mean: `if x > 0`. A **low-level language**
@@ -144,7 +144,7 @@ your code (hello.cn)  ──compiler──▶  executable  ──run──▶  o
 > executes. High-level languages are easier and safer to write; the trade-off
 > is that a **compiler** must translate them for you.
 
-### 1.3 How Cnext works — the journey of a file
+### 1.3 How Cnext works: The journey of a file
 
 Follow one file through the compiler's pipeline:
 
@@ -152,14 +152,14 @@ Follow one file through the compiler's pipeline:
 your_program.cn ──(cnext build)──▶ C source ──(gcc/clang)──▶ your_program
 ```
 
-1. **Lexing** — your text becomes meaningful *tokens* (`main`, `{`,
+1. **Lexing**: your text becomes meaningful *tokens* (`main`, `{`,
    `printin`, ...).
-2. **Parsing** — tokens are assembled into a tree that matches the language's
+2. **Parsing**: tokens are assembled into a tree that matches the language's
    grammar.
-3. **Semantic analysis** — the compiler checks that types match, names exist,
+3. **Semantic analysis**: the compiler checks that types match, names exist,
    and the rules are respected.
-4. **Code generation** — the validated tree is turned into C source code.
-5. **Native compilation** — GCC or Clang builds a native executable.
+4. **Code generation**: the validated tree is turned into C source code.
+5. **Native compilation**: GCC or Clang builds a native executable.
 
 > **Key point**
 >
@@ -173,9 +173,9 @@ C has written operating systems, databases, game engines, and much of the
 world's infrastructure. By generating C, Cnext inherits three things
 automatically:
 
-- **Portability** — any platform with a C compiler can run Cnext programs.
-- **Performance** — near-native speed without hand-writing assembly.
-- **Interoperability** — your Cnext programs can call the enormous universe of
+- **Portability**: any platform with a C compiler can run Cnext programs.
+- **Performance**: near-native speed without hand-writing assembly.
+- **Interoperability**: your Cnext programs can call the enormous universe of
   C libraries.
 
 ### 1.5 What Cnext looks like
@@ -198,7 +198,7 @@ optional.
 
 > **Real world**
 >
-> The exact pipeline you are learning here — *source → C → executable* — powers
+> The exact pipeline you are learning here, *source → C → executable*, powers
 > the Linux kernel, Python, and Git. Understanding this skill will serve you
 > for your entire career.
 
@@ -246,7 +246,7 @@ make
 This builds the `cnext` executable in the project root. You can also download a
 pre-built package for Windows (for example `cnext-windows-x64-10.0.0.zip`).
 
-> **Tip — pip / package helpers**
+> **Tip: pip / package helpers**
 >
 > Later releases may offer installers (`install.sh`, `install.ps1`,
 > `install.bat`). Check the project's README for the current recommended way.
@@ -270,9 +270,9 @@ cnext help
 
 You should see a list of commands (`run`, `build`, `fmt`, `repl`, `test`,
 `doctor`, and more). If you see `command not found` or `not recognized`, the
-`cnext` executable is not on your PATH yet — see Appendix B.
+`cnext` executable is not on your PATH yet; see Appendix B.
 
-> **Theory — what a "terminal" and "PATH" are**
+> **Theory: what a "terminal" and "PATH" are**
 >
 > A **terminal** is a text-based window where you type commands. The **PATH**
 > is a list of folders your operating system searches whenever you type a
@@ -287,7 +287,7 @@ You should see a list of commands (`run`, `build`, `fmt`, `repl`, `test`,
 
 > **Exercise 2.1**
 >
-> Run `cnext version`. Write down the version number — you'll want it handy when
+> Run `cnext version`. Write down the version number; you'll want it handy when
 > you ask for help or report a bug later.
 
 ---
@@ -334,16 +334,16 @@ Hello, World!
 |-------|---------|
 | `// ...` | A **comment**. The compiler ignores it; it's a note for humans. |
 | `main` | The entry-point function, run automatically. |
-| `{ ... }` | A **block** — groups statements together. |
+| `{ ... }` | A **block**: groups statements together. |
 | `printin(...)` | A built-in function that prints text and then a new line. |
-| `"Hello, World!"` | A **string literal** — a sequence of characters. |
+| `"Hello, World!"` | A **string literal**: a sequence of characters. |
 
-> **Theory — what "running" a program means**
+> **Theory: what "running" a program means**
 >
 > When you type `cnext run hello.cn`, the compiler does the five jobs from
 > Chapter 1 (lex, parse, analyze, generate C, compile to native) and then
 > executes the result. Your operating system loads the program into memory,
-> hands it to the CPU, and the instructions in `main` run in order — exactly
+> hands it to the CPU, and the instructions in `main` run in order, exactly
 > once.
 
 ### 3.4 Create a real project folder
@@ -356,15 +356,15 @@ cd my_first_app
 cnext run src/main.cn
 ```
 
-This creates a tidy layout — source code in `src/`, a `cnext.toml`
+This creates a tidy layout: source code in `src/`, a `cnext.toml`
 configuration file, and space for packages and tests. Professional codebases
 organize files like this from day one.
 
 ### 3.5 `run` vs. `build`
 
-- `cnext run file.cn` — **compile and immediately run** your program. Perfect
+- `cnext run file.cn`: **compile and immediately run** your program. Perfect
   for iterating while you learn.
-- `cnext build file.cn` — **compile only**, producing a standalone executable
+- `cnext build file.cn`: **compile only**, producing a standalone executable
   you can ship or run later. This is what release software does.
 
 ```bash
@@ -375,7 +375,7 @@ cnext build hello.cn      # compile only, produce an executable
 ### 3.6 The REPL: try before you write files
 
 A **REPL** is an interactive prompt that *reads* your input, *evaluates* it,
-and *prints* the result — great for experimenting:
+and *prints* the result, which is great for experimenting:
 
 ```
 cnext repl
@@ -421,7 +421,7 @@ Every program is built from a small set of ideas: named containers
 rules for structuring files (**comments**, **blocks**). This chapter covers
 them all.
 
-### 4.2 Comments — notes for humans
+### 4.2 Comments: Notes for humans
 
 A **comment** is text in your code that the compiler ignores. There are two
 styles:
@@ -522,7 +522,7 @@ main {
 >
 > Separating *input*, *processing*, and *output* is the oldest software
 > pattern. Programs like a grade calculator read data, compute, and write
-> results — exactly what this tiny greeting program does with text.
+> results, which is exactly what this tiny greeting program does with text.
 
 > **Exercise 4.1**
 >
@@ -545,9 +545,9 @@ main {
 </details>
 
 ---
-# PART II — Language Fundamentals
+# PART II: Language Fundamentals
 
-> Types, operators, control flow, functions, and collections — the toolkit of
+> Types, operators, control flow, functions, and collections: the toolkit of
 > every program.
 
 ---
@@ -559,7 +559,7 @@ main {
 ### 5.1 Definition
 
 - A **type** describes what kind of value a variable holds and what you can do
-  with it — for example, whether it's a whole number, a decimal, text, or a
+  with it, for example, whether it's a whole number, a decimal, text, or a
   true/false flag. Cnext is **statically typed**, meaning every variable's type
   is known *at compile time*.
 
@@ -591,10 +591,10 @@ var anything = 100        // var: Cnext infers this is an int
 var also_text = "Hi"      // var: inferred as str
 ```
 
-> **Theory — "signed" vs. "unsigned" and why sizes matter**
+> **Theory: "signed" vs. "unsigned" and why sizes matter**
 >
 > A computer stores values in fixed-size chunks of **bits**. A 32-bit integer
-> uses 32 bits, so it can represent 2³² different values — roughly 4.3
+> uses 32 bits, so it can represent 2³² different values, roughly 4.3
 > billion. **Signed** types split that range between negative and positive
 > (about −2.1 billion to +2.1 billion); **unsigned** types use the whole range
 > for positive numbers. Bigger sizes hold bigger numbers but use more memory.
@@ -604,13 +604,13 @@ var also_text = "Hi"      // var: inferred as str
 > **Key point**
 >
 > **Strings** use double quotes `"..."`. **Characters** use single quotes
-> `'...'`. Mixing them up — `'hello'` or `"a"` — is one of the most common
+> `'...'`. Mixing them up (`'hello'` or `"a"`) is one of the most common
 > beginner mistakes.
 
 ### 5.3 Type inference with `var`
 
 `var` asks Cnext to figure out the type from the value. It's still statically
-typed — the type is fixed once inferred.
+typed; the type is fixed once inferred.
 
 ```cnext
 var x = 42          // int
@@ -678,7 +678,7 @@ var e = 10 % 3   // 1   remainder (modulo)
 - `+` adds, `-` subtracts, `*` multiplies, `/` divides, and `%` gives the
   **remainder** of a division (great for "is it even?" checks).
 
-> **Theory — operator precedence**
+> **Theory: operator precedence**
 >
 > Just like in school, some operations happen before others. In Cnext (as in
 > almost every language), **multiplication, division, and modulo** bind tighter
@@ -804,14 +804,14 @@ one that is true. If none match, it runs the `else` block (if present).
 
 > **Key point**
 >
-> The condition inside `if ( ... )` must be a `bool` — that is, something that
+> The condition inside `if ( ... )` must be a `bool`; that is, something that
 > is either `true` or `false`. `if score { }` won't compile if `score` is an
 > `int`; you must write `if score > 0 { }`.
 
 ### 7.3 The `match` expression
 
-When you want to compare one value against many possibilities — like an exact
-choice — **`match`** is cleaner than a long chain of `if/else if`. A `match`
+When you want to compare one value against many possibilities, like an exact
+choice, **`match`** is cleaner than a long chain of `if/else if`. A `match`
 *produces a value*:
 
 ```cnext
@@ -831,15 +831,15 @@ func describe(Color c): str {
 }
 ```
 
-The `_` is a **wildcard** that matches anything — it's `match`'s version of
+The `_` is a **wildcard** that matches anything; it is `match`'s version of
 `else`.
 
-> **Theory — why `match` is better than `if` chains**
+> **Theory: why `match` is better than `if` chains**
 >
 > When a value can take one of a few known choices, writing `if/else if` for
 > each is repetitive and error-prone (you might miss a case). `match` forces
 > you to list the cases in one place and makes the possible outcomes obvious at
-> a glance. In compiler jargon this is called **exhaustive branching** — if a
+> a glance. In compiler jargon this is called **exhaustive branching**: if a
 > `match` is exhaustive, every possible input is handled.
 
 > **Real world**
@@ -884,7 +884,8 @@ main {
 ### 8.1 Definition
 
 - A **loop** repeats a block of code. Loops are used whenever you need to do
-  something many times — count, walk through a list, or wait for a condition.
+  something many times: whether to count, walk through a list, or wait for a
+  condition.
 
 ### 8.2 The `while` loop
 
@@ -907,10 +908,10 @@ count: 1
 count: 2
 ```
 
-> **Warning — infinite loops**
+> **Warning: infinite loops**
 >
 > If you forget to update the counter (`i = i + 1`), the condition stays true
-> forever and the program never stops. This is the **infinite loop** — one of
+> forever and the program never stops. This is the **infinite loop**, one of
 > the most common beginner bugs.
 
 ### 8.3 The `for` loop
@@ -929,7 +930,7 @@ Read it as: "start with `i = 0`; keep going while `i < 5`; after each run do
 
 ### 8.4 The `for-in` loop
 
-`for ... in` walks through **each item** of a collection — no counting needed:
+`for ... in` walks through **each item** of a collection; no counting needed:
 
 ```cnext
 int[] nums = {10, 20, 30}
@@ -963,12 +964,12 @@ for int i = 0; i < 10; i = i + 1 {
 }
 ```
 
-> **Theory — loops and the CPU**
+> **Theory: loops and the CPU**
 >
 > A loop doesn't physically repeat code on disk; the CPU runs the same
 > instructions multiple times by *jumping back* to the start of the block each
 > time the condition holds. This is why loops are sometimes called **iteration**
-> or **looping constructs** — the machine is literally obeying "go back and do
+> or **looping constructs**: the machine is literally obeying "go back and do
 > that again."
 
 > **Real world**
@@ -1019,7 +1020,7 @@ printin(nums[2])      // 3   third item
 printin(nums[4])      // 5   last item
 ```
 
-> **Key point — indexes start at 0**
+> **Key point: indexes start at 0**
 >
 > The first element is at index **0**, not 1. An array with 5 items has valid
 > indexes `0, 1, 2, 3, 4`. Accessing `nums[5]` is **out of bounds** and will
@@ -1057,7 +1058,7 @@ int[] fromTwo = nums[2:]    // {3, 4, 5}
 int[] upToThree = nums[:3]  // {1, 2, 3}
 ```
 
-> **Theory — arrays and memory**
+> **Theory: arrays and memory**
 >
 > An array stores its values in **one continuous strip** of memory, one right
 > after the other. That's why indexing is fast: to reach element `i`, the
@@ -1099,7 +1100,7 @@ main {
 
 ### 10.1 Definition
 
-- A **string** (`str`) is text — a sequence of characters. In Cnext you write a
+- A **string** (`str`) is text: a sequence of characters. In Cnext you write a
   string with double quotes: `"hello"`.
 
 ### 10.2 String basics
@@ -1141,7 +1142,7 @@ Hello, Ada!
 
 ### 10.4 Handy string helpers
 
-Cnext ships many small string functions. You don't need to memorize them — just
+Cnext ships many small string functions. You don't need to memorize them; just
 know they exist and look them up (see the Standard Library chapter):
 
 ```cnext
@@ -1156,11 +1157,11 @@ str_reverse("hello")             // "olleh"
 str_title("hello world")         // "Hello World"
 ```
 
-> **Theory — strings in memory**
+> **Theory: strings in memory**
 >
 > A string is really just an array of characters plus a length. Under the hood,
 > Cnext manages the memory so you don't have to. This is one of the comforts of
-> a high-level language — in plain C, handling text is famously fiddly.
+> a high-level language. In plain C, handling text is famously fiddly.
 
 > **Real world**
 >
@@ -1221,7 +1222,7 @@ How to read `func add(int a, int b): int { ... }`:
 | `func` | "I'm defining a function." |
 | `add` | The function's name. |
 | `(int a, int b)` | The **parameters** (inputs) and their types. |
-| `: int` | The **return type** — the type of the value it hands back. |
+| `: int` | The **return type**: the type of the value it hands back. |
 | `return a + b` | Hands the result back to whoever called it. |
 
 ### 11.3 A function with no return value
@@ -1293,7 +1294,7 @@ main {
 }
 ```
 
-> **Warning — when to use `=>`**
+> **Warning: when to use `=>`**
 >
 > The `=>` arrow is for **lambda-style** functions assigned to a variable. A
 > `func` declaration always uses `{ ... }`:
@@ -1304,14 +1305,14 @@ main {
 > }
 > ```
 >
-> Don't write `func add(int a, int b): int => a + b` — that form is not valid.
+> Don't write `func add(int a, int b): int => a + b`. That form is not valid.
 > Use `{ ... }`, or assign a lambda to a variable.
 
-> **Theory — why functions matter**
+> **Theory: why functions matter**
 >
 > Functions are the fundamental tool for managing **complexity**. Instead of
 > one giant wall of code, you split a problem into named, testable pieces.
-> This idea — breaking problems into reusable, named units — is called
+> This idea of breaking problems into reusable, named units is called
 > **abstraction**, and it's the single most important design skill in software.
 
 > **Real world**
@@ -1385,7 +1386,7 @@ caught: Division by zero
 Without the `try`/`catch`, calling `divide(10, 0)` would crash the program.
 With it, the program recovers and keeps running.
 
-### 12.3 `finally` — code that always runs
+### 12.3 `finally`: Code that always runs
 
 Add a `finally` block for code that must run whether the attempt succeeded or
 failed (closing a file, releasing a resource, printing "done"):
@@ -1407,7 +1408,7 @@ try {
 > code reads cleanly in `try`; the error handling lives in `catch`. This is far
 > easier to read than scattering error checks everywhere.
 
-> **Theory — errors vs. just returning a bad value**
+> **Theory: errors vs. just returning a bad value**
 >
 > A function could "return a special value" to signal failure (like `-1`), but
 > that is easy to forget and easy to confuse with a real result. **Exceptions**
@@ -1418,14 +1419,14 @@ try {
 >
 > Errors are reality in software: a file that's missing, a server that's down,
 > an empty string where a number was expected. A real app always wraps such
-> operations — it should *never* crash on one bad input; it should catch, log,
+> operations; it should *never* crash on one bad input. It should catch, log,
 > and let the user retry.
 
 > **Exercise 12.1**
 >
 > Write `func safe_sqrt(float x): float` that throws `"negative input"` if `x`
-> is negative, otherwise returns `x * x`. Call it from `try`/`catch` with `9`
-> and with `-4`, printing a friendly message either way.
+> is negative, otherwise returns its square root with `math_sqrt`. Call it from
+> `try`/`catch` with `9` and with `-4`, printing a friendly message either way.
 
 <details><summary>Suggested solution</summary>
 
@@ -1434,7 +1435,7 @@ func safe_sqrt(float x): float {
     if x < 0 {
         throw "negative input"
     }
-    return x * x
+    return math_sqrt(x)
 }
 
 main {
@@ -1457,7 +1458,7 @@ main {
 
 ## 13. Nullability: Saying "I Don't Know"
 
-<!-- Difficulty: INTERMEDIATE -->
+> **Difficulty: BEGINNER–INTERMEDIATE**
 
 ### 13.1 Definition
 
@@ -1501,12 +1502,12 @@ str city = user?.address?.city ?? "Unknown"
 If `user` or `user.address` is `null`, the whole chain safely becomes `null`,
 and `??` turns it into `"Unknown"`.
 
-> **Theory — null bugs and how types help**
+> **Theory: null bugs and how types help**
 >
 > "Null pointer" crashes are among the most famous bugs in programming.
 > In languages where almost any value can silently be null, these bugs only
 > surface at runtime. Cnext's `?` types make "this might be null" explicit to
-> the compiler, so it can check that you handle the "no value" case — catching
+> the compiler, so it can check that you handle the "no value" case, catching
 > many bugs before the program even runs.
 
 > **Real world**
@@ -1517,8 +1518,8 @@ and `??` turns it into `"Unknown"`.
 
 > **Exercise 13.1**
 >
-> Declare a nullable `int?`, set it to `null`, then print either its value or a
-> fallback using `?? ` when a default for one case.
+> Declare a nullable `int?` and set it to `null`. Print it using `??` with a
+> fallback of `0`, then assign it a number and print it again.
 
 <details><summary>Suggested solution</summary>
 
@@ -1534,7 +1535,7 @@ main {
 </details>
 
 ---
-# PART III — Objects & Data
+# PART III: Objects & Data
 
 > The tools for modeling the real world: structs, enums, classes, and generics.
 
@@ -1551,7 +1552,7 @@ main {
 - **Pattern matching** (`match`) picks which code to run based on which choice
   a value is.
 
-### 14.2 Structs — a bundle of data
+### 14.2 Structs: A bundle of data
 
 ```cnext
 struct Point {
@@ -1583,10 +1584,10 @@ u.age = 36
 > **Key point**
 >
 > Use a **struct** for a small group of plain data values. Use a **class**
-> (next chapter) when that data also needs *behavior* — methods, inheritance,
+> (next chapter) when that data also needs *behavior*: methods, inheritance,
 > and more.
 
-### 14.3 Enums — a fixed set of choices
+### 14.3 Enums: A fixed set of choices
 
 An **enum** lists the possible values something can hold:
 
@@ -1628,9 +1629,9 @@ func describe(Shape s): str {
 }
 ```
 
-The `_` wildcard catches anything not matched — like `else`.
+The `_` wildcard catches anything not matched, like `else`.
 
-> **Theory — data modeling**
+> **Theory: data modeling**
 >
 > Real systems are modeled with these building blocks: a struct is a *record*
 > (this order has a number, a total, a status), and an enum is a *closed set of
@@ -1641,7 +1642,7 @@ The `_` wildcard catches anything not matched — like `else`.
 > **Real world**
 >
 > Every user-facing choice set is an enum in disguise: notification types,
-> payment methods, product categories. And structs are everywhere — a record in
+> payment methods, product categories. And structs are everywhere: a record in
 > a database, a row in a spreadsheet, one message in a chat.
 
 > **Exercise 14.1**
@@ -1715,10 +1716,10 @@ main {
 ```
 
 Key terms:
-- **Class** — the blueprint (`class Counter { ... }`).
-- **Object** — one instance created from the blueprint (`new Counter(10)`).
-- **Constructor** — the special `new` method that sets up a new object.
-- **`self`** — inside a method, `self` refers to the object the method was
+- **Class**: the blueprint (`class Counter { ... }`).
+- **Object**: one instance created from the blueprint (`new Counter(10)`).
+- **Constructor**: the special `new` method that sets up a new object.
+- **`self`**: inside a method, `self` refers to the object the method was
   called on.
 
 ### 15.3 A class with behavior
@@ -1789,14 +1790,14 @@ class Square implements Drawable {
 }
 ```
 
-> **Theory — abstraction, encapsulation, inheritance**
+> **Theory: abstraction, encapsulation, inheritance**
 >
 > OOP rests on three big ideas:
-> - **Encapsulation** — keep an object's data and its rules inside the object;
+> - **Encapsulation**: keep an object's data and its rules inside the object;
 >   outsiders use its methods, not its internals.
-> - **Abstraction** — an interface promises *what* an object can do without
+> - **Abstraction**: an interface promises *what* an object can do without
 >   saying *how*.
-> - **Inheritance** — reuse common behavior by building new classes on top of
+> - **Inheritance**: reuse common behavior by building new classes on top of
 >   existing ones.
 > Together they let large programs be built from small, predictable pieces.
 
@@ -1874,17 +1875,17 @@ printin(int_box.get())   // 42
 printin(str_box.get())   // hello
 ```
 
-Here `T` is a **type parameter** — a stand-in that becomes `int` for
+Here `T` is a **type parameter**: a stand-in that becomes `int` for
 `Box<int>` and `str` for `Box<str>` when you create them.
 
 ### 16.3 Why generics matter
 
 Without generics, you'd write a separate `IntBox`, `StrBox`, `FloatBox`, and so
-on — one for each type. Generics let you write the logic **once**.
+on, one for each type. Generics let you write the logic **once**.
 
-> **Theory — "code once, use for many types"**
+> **Theory: "code once, use for many types"**
 >
-> Generics are a form of **polymorphism** (Greek for "many shapes") — the same
+> Generics are a form of **polymorphism** (Greek for "many shapes"): the same
 > code *shape* adapts to different concrete types. This removes duplication,
 > and because Cnext is statically typed, the right concrete type is checked at
 > compile time.
@@ -1913,7 +1914,7 @@ printin(price_box.get())   // 9.99
 </details>
 
 ---
-# PART IV — Modern Features
+# PART IV: Modern Features
 
 > The features that make Cnext powerful: closures, generators, async, and
 > threading.
@@ -1947,7 +1948,7 @@ printin(apply(5, double_it))   // 10
 printin(apply(5, triple_it))   // 15
 ```
 
-`apply` doesn't care *which* function it gets — it just calls `f(x)`.
+`apply` doesn't care *which* function it gets; it just calls `f(x)`.
 
 ### 17.3 A closure captures its surroundings
 
@@ -1976,7 +1977,7 @@ printin(apply_to_price(100.0, student)) // 90.0
 printin(apply_to_price(100.0, member))  // 80.0
 ```
 
-> **Theory — functions as values**
+> **Theory: functions as values**
 >
 > Treating functions as data is a cornerstone of **functional programming**.
 > It's powerful because you can *parametrize* behavior: the same code runs with
@@ -1986,7 +1987,7 @@ printin(apply_to_price(100.0, member))  // 80.0
 
 > **Real world**
 >
-> Gui buttons take a "what to do when clicked" callback. Sorting takes a
+> GUI buttons take a "what to do when clicked" callback. Sorting takes a
 > "which is smaller" comparator. Web routes take a "handle this request"
 > handler. Everywhere you see a function handed to another function as a
 > setting, you're seeing closures and higher-order functions in action.
@@ -2023,7 +2024,7 @@ main {
 
 - A **generator** is a function that *yields* a sequence of values one at a
   time, pausing between each. You consume it with a `for` loop.
-- A **coroutine** is a resumable function — it can pause (`yield`) and later be
+- A **coroutine** is a resumable function: it can pause (`yield`) and later be
   resumed right where it left off.
 
 ### 18.2 A generator with `yield`
@@ -2045,7 +2046,7 @@ turn of the loop continues one step further.
 
 ### 18.3 An infinite generator with a break
 
-Fibonacci is a famous generator — there's no upper bound, and the *consumer*
+Fibonacci is a famous generator, with no upper bound, and the *consumer*
 decides when to stop:
 
 ```cnext
@@ -2073,10 +2074,10 @@ sequence in memory:
 > **Key point**
 >
 > Generators are **lazy**: values are produced on demand. That's why you can
-> make a Fibonacci sequence that is effectively infinite — nothing is stored,
+> make a Fibonacci sequence that is effectively infinite; nothing is stored,
 > and nothing runs until the loop asks for the next value.
 
-> **Theory — the "what runs when" behind lazy iteration**
+> **Theory: the "what runs when" behind lazy iteration**
 >
 > A generator is compiled into a small state machine. Each `yield` saves the
 > position and local variables; each resume reloads them and continues just
@@ -2123,7 +2124,7 @@ main {
 
 - **Asynchronous programming** lets a program *start* a slow operation (like a
   network request or a file read) and **keep doing other work** while it
-  finishes — instead of freezing until it's done.
+  finishes, instead of freezing until it's done.
 
 ### 19.2 `async func` and `await`
 
@@ -2143,7 +2144,7 @@ async func main_async() {
 ```
 
 The key point is that while `fetch_page` is waiting, the rest of your program
-is **not** frozen — the runtime can service other work.
+is **not** frozen, so the runtime can service other work.
 
 ### 19.3 A mental model
 
@@ -2155,11 +2156,11 @@ that can choose to *pause and let others run* at every `await`.
 > `async` marks a function that can wait; `await` is where it actually pauses.
 > Between `await` points, the function runs normally and synchronously.
 
-> **Theory — why async beats blocking for I/O**
+> **Theory: why async beats blocking for I/O**
 >
 > Blocking I/O wastes time: a CPU sitting idle waiting for a network response
 > does nothing useful. Async keeps the CPU busy by running other tasks in the
-> gaps. This is how one thread can handle thousands of in-flight requests —
+> gaps. This is how one thread can handle thousands of in-flight requests,
 > not by doing them all at once, but by never *idle-waiting*.
 
 > **Real world**
@@ -2198,7 +2199,7 @@ async func main_async() {
 ### 20.1 Definition
 
 - **Threading** runs multiple pieces of code **at the same time** on different
-  CPU cores, using multiple **threads** — separate execution paths inside one
+  CPU cores, using multiple **threads**, separate execution paths inside one
   program.
 
 ### 20.2 Why threads are risky: shared data
@@ -2209,20 +2210,20 @@ threads change the *same* variable at once, they can corrupt each other.
 
 > **Key point**
 >
-> When several threads read/write shared data, you need **synchronization** —
+> When several threads read/write shared data, you need **synchronization**:
 > rules that only one thread touches a piece of data at a time. Cnext provides
 > `Mutex` (a mutual-exclusion lock) and `Channel` (a safe way to pass messages
 > between threads).
 
 ### 20.3 The two safe patterns
 
-1. **Channels** — threads *send* and *receive* messages, never sharing
+1. **Channels**: threads *send* and *receive* messages, never sharing
    variables.
-2. **Mutex** — guard a shared variable so only one thread enters a critical
+2. **Mutex**: guard a shared variable so only one thread enters a critical
    section at a time.
 
 ```cnext
-// Conceptual sketch — a Mutex guards a shared counter.
+// Conceptual sketch: a Mutex guards a shared counter.
 Mutex m = new Mutex()
 int shared = 0
 
@@ -2232,10 +2233,10 @@ shared = shared + 1
 m.unlock()
 ```
 
-> **Theory — race conditions & deadlocks**
+> **Theory: race conditions & deadlocks**
 >
-> Two threads updating the same value without a lock can interleave badly —
-> a **race condition** that produces wrong results only sometimes. A `Mutex`
+> Two threads updating the same value without a lock can interleave badly and
+> produce a **race condition** that returns wrong results only sometimes. A `Mutex`
 > prevents that by making the update atomic. The matching danger is a
 > **deadlock**: thread A waits for B while B waits for A, and both freeze.
 > The safe guiding design principles are: share via messages (channels) when
@@ -2253,7 +2254,7 @@ m.unlock()
 > give one task each is good for. (There's no code to run for this one.)
 
 ---
-# PART V — The Professional Toolkit
+# PART V: The Professional Toolkit
 
 > The tools and library that turn "I can write programs" into "I can build
 > real software."
@@ -2289,8 +2290,8 @@ m.unlock()
 
 - **`cnext fmt`** makes everyone's code look the same, which makes teams (and
   your future self) able to diff and review changes easily.
-- **`cnext lint`** catches real bug patterns — unused variables, unreachable
-  code, suspicious comparisons — *before* you even run the program.
+- **`cnext lint`** catches real bug patterns such as unused variables, unreachable
+  code, and suspicious comparisons *before* you even run the program.
 
 > **Key point**
 >
@@ -2298,17 +2299,17 @@ m.unlock()
 > you want an artifact, **fmt** + **lint** before committing, and **test** to
 > prove your code works.
 
-> **Theory — compilers vs. toolchains**
+> **Theory: compilers vs. toolchains**
 >
 > A **compiler** only translates code. A **toolchain** adds the surrounding
-> quality-of-life tools — formatters, linters, testers — that turn "it
+> quality-of-life tools such as formatters, linters, and testers that turn "it
 > compiles" into "it is correct and maintainable." Mature languages all ship
 > these; Cnext bundles them in one command.
 
 > **Real world**
 >
 > In any real project, "it builds" is the bare minimum. Continuous integration
-> (CI) runs `fmt`, `lint`, and `test` on every change — automated quality
+> (CI) runs `fmt`, `lint`, and `test` on every change: automated quality
 > gates. Learning these commands *now* means you already understand what CI
 > checks.
 
@@ -2326,7 +2327,7 @@ m.unlock()
 ### 22.1 Definition
 
 - The **standard library** is the set of ready-made functions and types that
-  ship with the language — you don't have to write them yourself.
+  ship with the language, you don't have to write them yourself.
 
 ### 22.2 Built-in categories
 
@@ -2380,18 +2381,18 @@ str home = home_dir()
 
 The standard library also covers bigger areas:
 
-- **Files** — read/write/check files and paths.
-- **JSON** — parse and build JSON data (the format APIs use).
-- **Networking** — make HTTP requests and even run a small HTTP server.
-- **Encoding & crypto** — base64, hashing, and friends.
+- **Files**: read/write/check files and paths.
+- **JSON**: parse and build JSON data (the format APIs use).
+- **Networking**: make HTTP requests and even run a small HTTP server.
+- **Encoding & crypto**: base64, hashing, and friends.
 
 > **Key point**
 >
-> You almost never need to re-invent common tasks — the standard library has
+> You almost never need to re-invent common tasks; the standard library has
 > them. The skill is *knowing what exists* and looking it up, not memorizing
 > every name.
 
-> **Theory — why a good stdlib matters**
+> **Theory: why a good stdlib matters**
 >
 > "Not invented here" is a classic failure: teams re-building basics badly.
 > A rich standard library lets programmers compose *well-tested, consistent*
@@ -2401,7 +2402,7 @@ The standard library also covers bigger areas:
 > **Real world**
 >
 > Reading a config file, saving user data, talking to a weather API, hashing a
-> password — every real app leans on these libraries constantly.
+> password: every real app leans on these libraries constantly.
 
 > **Exercise 22.1**
 >
@@ -2475,9 +2476,9 @@ Cnext includes a built-in **package manager**:
 | `cnext search <q>` | Search the registry. |
 | `cnext info <pkg>` | Show package details. |
 
-> **Theory — dependencies & why they're double-edged**
+> **Theory: dependencies & why they're double-edged**
 >
-> Pulling in well-maintained packages saves huge amounts of time — you reuse
+> Pulling in well-maintained packages saves huge amounts of time: you reuse
 > solutions instead of re-inventing them. The catch: every dependency is code
 > you *trust*, so real projects version-pin dependencies and review what they
 > add. This is why `cnext.toml` records versions precisely.
@@ -2628,75 +2629,74 @@ main {
 
 ---
 
-## Appendix A — Glossary
+## Appendix A: Glossary
 
-**Compiler** — a tool that turns source code into an executable program. Cnext
+**Compiler**: a tool that turns source code into an executable program. Cnext
 turns `.cn` into C, then GCC/Clang finish the job.
 
-**Variable** – a named container that stores a value.
+**Variable**: a named container that stores a value.
 
-**Type** – describes what kind of value a variable holds (number, text, etc.).
+**Type**: describes what kind of value a variable holds (number, text, etc.).
 
-**`var`** – lets Cnext infer (guess) a variable's type from its value.
+**`var`**: lets Cnext infer (guess) a variable's type from its value.
 
-**Constant (`const`)** – a value that cannot be changed after being set.
+**Constant (`const`)**: a value that cannot be changed after being set.
 
-**String (`str`)** – text, written with double quotes.
+**String (`str`)**: text, written with double quotes.
 
-**Character (`char`)** – one character, written with single quotes.
+**Character (`char`)**: one character, written with single quotes.
 
-**Boolean (`bool`)** – a value that is either `true` or `false`.
+**Boolean (`bool`)**: a value that is either `true` or `false`.
 
-**Array** – an ordered list of values of the same type; indexes start at 0.
+**Array**: an ordered list of values of the same type; indexes start at 0.
 
-**Loop** – a way to repeat a block of code (`while`, `for`, `for-in`).
+**Loop**: a way to repeat a block of code (`while`, `for`, `for-in`).
 
-**Condition** – a true/false check used by `if` and `while`.
+**Condition**: a true/false check used by `if` and `while`.
 
-**Operator** – a symbol that performs a calculation (`+`, `-`, `==`, etc.).
+**Operator**: a symbol that performs a calculation (`+`, `-`, `==`, etc.).
 
-**Function** – a named, reusable block of code.
+**Function**: a named, reusable block of code.
 
-**Lambda** – a short anonymous function written with `=>`.
+**Lambda**: a short anonymous function written with `=>`.
 
-**Class** – a blueprint for objects that bundle data and behavior together.
+**Class**: a blueprint for objects that bundle data and behavior together.
 
-**Object** – one instance created from a class.
+**Object**: one instance created from a class.
 
-**`self`** – inside a method, refers to the object the method was called on.
+**`self`**: inside a method, refers to the object the method was called on.
 
-**Struct** – a small group of plain data values bundled under one name.
+**Struct**: a small group of plain data values bundled under one name.
 
-**Enum** – a named set of fixed choices.
+**Enum**: a named set of fixed choices.
 
-**`match`** – an expression that runs the case matching a value; `_` is the
+**`match`**: an expression that runs the case matching a value; `_` is the
 "anything else" wildcard.
 
-**`main`** – the special function where every program starts running.
+**`main`**: the special function where every program starts running.
 
-**`throw` / `try` / `catch`** – signaling a problem and handling it gracefully.
+**`throw` / `try` / `catch`**: signaling a problem and handling it gracefully.
 
-**`null`** – "no value"; nullable types (`str?`) allow it.
+**`null`**: "no value"; nullable types (`str?`) allow it.
 
-**`??`** – null-coalescing: use a default value when something is `null`.
+**`??`**: the null-coalescing operator. It supplies a default value when
+something is `null`.
 
-**Generics** – code written once that works with many types (`Box<T>`).
+**Generics**: code written once that works with many types (`Box<T>`).
 
-**Closure** – a lambda that captures variables from where it was created.
+**Closure**: a lambda that captures variables from where it was created.
 
-**Generator** – a function that `yield`s a sequence lazily.
+**Generator**: a function that `yield`s a sequence lazily.
 
-**Async/await** – doing slow I/O without blocking the rest of the program.
+**Async/await**: doing slow I/O without blocking the rest of the program.
 
-**Threading** – running code simultaneously on multiple CPU cores.
+**Threading**: running code simultaneously on multiple CPU cores.
 
-**REPL** – an interactive prompt that reads, evaluates, and prints.
-
-**`main`** — where every program begins.
+**REPL**: an interactive prompt that reads, evaluates, and prints.
 
 ---
 
-## Appendix B — Troubleshooting
+## Appendix B: Troubleshooting
 
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
@@ -2706,11 +2706,11 @@ turns `.cn` into C, then GCC/Clang finish the job.
 | Program never stops | Infinite loop | Make sure the counter is updated. |
 | Unexpected `out of bounds` crash | Accessing `arr[idx]` beyond length | Check indexes; remember they start at 0. |
 | `var` inferred the wrong type | Value implied a different type | Use an explicit type annotation. |
-| Still stuck | – | See the repos's issues / community; include your `cnext version`. |
+| Still stuck | Other | See the repository's issues and community; include your `cnext version`. |
 
 ---
 
-## Appendix C — Quick Keyword & Operator Reference
+## Appendix C: Quick Keyword & Operator Reference
 
 **Declaring:** `var x = ...`, `int y = 5`, `const int N = 3`,
 `type Alias = ...`.
@@ -2737,28 +2737,28 @@ closures, extension methods, operator overloading.
 
 ---
 
-## Appendix D — Your Next Steps
+## Appendix D: Your Next Steps
 
 You have finished the fundamentals. Here is a path to keep growing:
 
-1. **Practice** – redo every exercise and extend the capstone (add a
+1. **Practice**: redo every exercise and extend the capstone (add a
    delete-a-student feature, save results to a file with `write_file`).
-2. **Read the official docs** – types, functions, classes, and the standard
+2. **Read the official docs**: types, functions, classes, and the standard
    library reference in the `docs/` folder of the repo.
-3. **Study the `examples/` programs** — calculator, to-do CLI, HTTP server,
+3. **Study the `examples/` programs**: calculator, to-do CLI, HTTP server,
    threading, and more are all in the repo.
-4. **Build your own tool** — a to-do list that saves to disk, a small
+4. **Build your own tool**: a to-do list that saves to disk, a small
    temperature-to-Celsius converter, or a text-based number game.
-5. **Learn testing** – write small programs that verify each function.
-6. **Read other code** – open-source Cnext projects teach real-world layout.
-7. **Explore advanced topics** – generics, closures, async, threading (see
+5. **Learn testing**: write small programs that verify each function.
+6. **Read other code**: open-source Cnext projects teach real-world layout.
+7. **Explore advanced topics**: generics, closures, async, threading (see
    the ADVANCED chapters and the repo's `docs/`).
 
 > **Final thought**
 >
 > You now understand what a compiler is, how variables, functions, loops, and
 > classes work, and how to build and run real programs. Read a little, type a
-> lot, and break things — that is how a language becomes yours.
+> lot, and break things, and that is how a language becomes yours.
 
 ---
 

@@ -82,4 +82,3 @@ t1.txt
 t2.txt
 tests/_test_builtin_minimal.cn
 tests/_test_optimizer_temp.c
-tests/test_opt_*.cn

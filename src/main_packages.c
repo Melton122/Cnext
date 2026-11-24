@@ -13,10 +13,53 @@ static bool is_safe_url(const char* url) {
     if (!url || url[0] == '\0') return false;
     if (url[0] == '-') return false;
     for (const char* p = url; *p; p++) {
+        if ((unsigned char)*p < 0x20 || (unsigned char)*p == 0x7f) return false;
         if (*p == '"' || *p == '\'' || *p == '`' || *p == '$' || *p == '\\')
             return false;
     }
     return true;
+}
+
+static bool is_allowed_dependency_url(const char* url) {
+    return url && (strncmp(url, "https://", 8) == 0 || strncmp(url, "file://", 7) == 0);
+}
+
+static bool is_safe_local_file_path(const char* path) {
+    if (!path || path[0] == '\0' || strstr(path, "..")) return false;
+    for (const char* p = path; *p; p++) {
+        unsigned char c = (unsigned char)*p;
+        if (c < 0x20 || c == 0x7f || c == '\\') return false;
+    }
+    return true;
+}
+
+static bool make_package_parent(const char* name) {
+    const char* sep = strchr(name, '/');
+    if (!sep) return true;
+    char dir[CNEXT_PATH_MAX];
+    int len = (int)(sep - name);
+    if (len <= 0 || len >= (int)sizeof(dir)) return false;
+    int written = snprintf(dir, sizeof(dir), "packages%c%.*s", CNEXT_PATH_SEP, len, name);
+    if (written < 0 || (size_t)written >= sizeof(dir)) return false;
+    if (make_dir(dir) == 0) return true;
+    return errno == EEXIST;
+}
+
+static bool package_temp_path(const char* out_path, char* tmp_path, size_t tmp_path_size) {
+#ifdef _WIN32
+    unsigned long pid = (unsigned long)_getpid();
+#else
+    unsigned long pid = (unsigned long)getpid();
+#endif
+    int written = snprintf(tmp_path, tmp_path_size, "%s.%lu.tmp", out_path, pid);
+    return written >= 0 && (size_t)written < tmp_path_size;
+}
+
+static bool finalize_package_file(const char* tmp_path, const char* out_path) {
+    remove(out_path);
+    if (rename(tmp_path, out_path) == 0) return true;
+    remove(tmp_path);
+    return false;
 }
 
 /* The package name is embedded in a filesystem path, so it must stay inside the
@@ -104,10 +147,20 @@ bool download_package(const char* name, const char* url) {
         fprintf(stderr, "Invalid package name '%s'.\n", name ? name : "(null)");
         return false;
     }
+    if (!is_safe_url(url)) {
+        fprintf(stderr, "URL contains unsafe characters for package '%s'.\n", name);
+        return false;
+    }
+    if (!make_package_parent(name)) {
+        fprintf(stderr, "Invalid package scope for '%s'.\n", name);
+        return false;
+    }
     make_dir("packages");
     char out_path[CNEXT_PATH_MAX];
     int w = snprintf(out_path, sizeof(out_path), "packages%c%s.cn", CNEXT_PATH_SEP, name);
     if (w < 0 || (size_t)w >= sizeof(out_path)) return false;
+    char tmp_path[CNEXT_PATH_MAX];
+    if (!package_temp_path(out_path, tmp_path, sizeof(tmp_path))) return false;
 
     if (strncmp(url, "file://", 7) == 0) {
         const char* local_path = url + 7;
@@ -116,12 +169,21 @@ bool download_package(const char* name, const char* url) {
             local_path++;
         }
 #endif
+        if (!is_safe_local_file_path(local_path)) {
+            fprintf(stderr, "Unsafe local package path for '%s'.\n", name);
+            return false;
+        }
         printf("Copying %s to %s...\n", local_path, out_path);
-        return copy_file(local_path, out_path);
+        bool copied = copy_file(local_path, tmp_path);
+        if (!copied) {
+            remove(tmp_path);
+            return false;
+        }
+        return finalize_package_file(tmp_path, out_path);
     }
 
-    if (!is_safe_url(url)) {
-        fprintf(stderr, "URL contains unsafe characters for package '%s'.\n", name);
+    if (strncmp(url, "https://", 8) != 0) {
+        fprintf(stderr, "Refusing insecure package URL for '%s'.\n", name);
         return false;
     }
 
@@ -129,16 +191,18 @@ bool download_package(const char* name, const char* url) {
 
     // Try curl with safe argument array (no shell injection)
     {
-        const char* const curl_args[] = {"curl", "-fsSL", "-o", out_path, "--", url, NULL};
+        const char* const curl_args[] = {"curl", "-fsSL", "-o", tmp_path, "--", url, NULL};
         int res = run_process("curl", curl_args);
-        if (res == 0) return true;
+        if (res == 0 && finalize_package_file(tmp_path, out_path)) return true;
+        remove(tmp_path);
     }
 
     // Try wget
     {
-        const char* const wget_args[] = {"wget", "-q", "-O", out_path, "--", url, NULL};
+        const char* const wget_args[] = {"wget", "-q", "-O", tmp_path, "--", url, NULL};
         int res = run_process("wget", wget_args);
-        if (res == 0) return true;
+        if (res == 0 && finalize_package_file(tmp_path, out_path)) return true;
+        remove(tmp_path);
     }
 
 #ifdef _WIN32
@@ -151,12 +215,13 @@ bool download_package(const char* name, const char* url) {
         char ps_uri[CNEXT_PATH_MAX * 2 + 128];
         char ps_out[CNEXT_PATH_MAX * 2 + 128];
         ps_quote(q_uri, sizeof(q_uri), url);
-        ps_quote(q_out, sizeof(q_out), out_path);
+        ps_quote(q_out, sizeof(q_out), tmp_path);
         snprintf(ps_uri, sizeof(ps_uri), "Invoke-WebRequest -Uri %s", q_uri);
         snprintf(ps_out, sizeof(ps_out), "-OutFile %s", q_out);
         const char* const ps_args[] = {"powershell", "-NoProfile", "-Command", ps_uri, ps_out, NULL};
         int res = run_process("powershell", ps_args);
-        if (res == 0) return true;
+        if (res == 0 && finalize_package_file(tmp_path, out_path)) return true;
+        remove(tmp_path);
     }
 #endif
 
@@ -225,7 +290,7 @@ void install_packages_from_toml(const char* argv0) {
                 if (is_standard_module(name)) {
                     printf("Package '%s' is a standard module (no install needed).\n", name);
                     installed++;
-                } else if (strncmp(value, "http", 4) == 0 || strncmp(value, "file://", 7) == 0) {
+                } else if (is_allowed_dependency_url(value)) {
                     if (download_package(name, value)) {
                         installed++;
                     } else {

@@ -30,12 +30,15 @@ The self-hosted generator now collects nested-block locals and shares the
 native compiler's helper placement and variable ordering. Generic prototypes
 and specialization definitions also share the native compiler's order.
 
-The wider code-generation comparison is **100/109 byte-identical**. The 9
+The wider code-generation comparison is **118/128 byte-identical**. The 10
 remaining differences involve closure-heavy programs
-(`test_closures_full.cn`, `test_lambdas.cn`, `test_opt_closure_mutate.cn`,
-`test_opt_minimal_closure.cn`) and programs combining closures with other
-features. All 9 compile with both stages; sampled programs pass their existing
-runtime expectations with stage 2. A fixed point
+(`tests/core/test_closures_full.cn`, `tests/core/test_lambdas.cn`,
+`tests/optimization/test_opt_closure_mutate.cn`,
+`tests/optimization/test_opt_minimal_closure.cn`) and programs combining closures
+with other features. All 10 compile with both stages; sampled programs pass their
+existing runtime expectations with stage 2, though native `-O2` runs of
+`test_capture_cells.cn` currently crash intermittently during `longjmp` unwinding.
+A fixed point
 does not establish full language equivalence or complete semantic diagnostics.
 The self-hosted driver supports native build/run commands and C linking, while
 the complete development CLI remains unfinished.
@@ -117,7 +120,7 @@ needed, including closure and generator snapshots.
 The sections below retain earlier milestone snapshots. Milestone A (lexer parity) is
 **verified on Windows**: `src2/lexer.cn` compiles with the v10.0.4 compiler and
 `tests/parity_lexer.py` reports zero diff against the C lexer over all 158
-corpus files (`tests/*.cn`, `examples/*.cn`, `src2/*.cn`). The port needed five
+corpus files (`tests/**/*.cn`, `examples/*.cn`, `src2/*.cn`). The port needed five
 fixes to reach parity: type-first parameter declaration, avoiding the reserved
 word `type` as an identifier, the missing `advance()` method, `str_substring`
 taking an end index (not a length), and echoing the input path like
@@ -144,9 +147,9 @@ taking an end index (not a length), and echoing the input path like
   string literal for an interpolated expression. Both were fixed in the port.
   The stage-2 binary is not yet identical to stage-1, so the bootstrap fixpoint
   is not reached.
-- **Codegen parity across `tests/*.cn` is 0/100 byte-identical now.** The bundle
+- **Codegen parity across `tests/**/*.cn` is 0/100 byte-identical now.** The bundle
   compiles and the stage-2 C it produces also compiles, but when the stage-1
-  binary personally rewrites each `tests/*.cn` file, none of the 100 outputs
+  binary personally rewrites each `tests/**/*.cn` file, none of the 100 outputs
   match the stage-0 output byte for byte. Comparing the documents directly,
   the failures fall into a small number of recurring patterns: `for` loops
   written with C-style syntax that stage 0 turns into `while` and stage 1 keeps
@@ -169,7 +172,7 @@ taking an end index (not a length), and echoing the input path like
 
 - **Milestone B (parser parity) is done.** `python tools/parser_parity.py`
   produces byte-identical AST dumps to `tools/astdump` for all 100
-  `tests/*.cn` files. The last two diffs were a self-hosted-only copy of
+  `tests/**/*.cn` files. The last two diffs were a self-hosted-only copy of
   `is_pointer` in `assign_type_from_node` (the C parser leaves the nullable
   flag to semantic analysis) and a stale reference `astdump.exe` that hung;
   the harness now rebuilds it every run and times out each parser process.
@@ -222,7 +225,7 @@ instances now work, as locals and as class fields:
 - `arr = { ... }` builds a whole array value rather than a bare braced list,
   which is not an expression in C.
 
-Covered by `tests/test_class_field_arrays.cn`.
+Covered by `tests/oop/test_class_field_arrays.cn`.
 
 **Resolved: constructor bodies are semantically analyzed.** Assigning a brace
 literal to a field from inside a constructor emitted a bare `{}`, which is not
@@ -256,13 +259,13 @@ was fixed by three coordinated changes:
   than `.`. `x == null` is likewise a plain pointer test and no longer routes
   through the (usually nonexistent) `Node_operator_eq` overload.
 
-Covered by `tests/test_class_selfref.cn`, which asserts nullable assignment,
+Covered by `tests/oop/test_class_selfref.cn`, which asserts nullable assignment,
 null checks, and recursive traversal.
 
 **Input typing:** uncontextualized `input()` returns `str`; when assigned to an
 explicitly typed variable or existing typed variable, it uses the corresponding
 numeric or boolean reader. `var num: int = input()` therefore reads an integer,
-while `var text = input()` reads a string. Covered by `tests/test_input_inference.cn`.
+while `var text = input()` reads a string. Covered by `tests/core/test_input_inference.cn`.
 
 `docs/generics.md` documents `class List<T> { T[] items }` with
 `self.items = {}` and `self.items[index]`. That example now compiles and runs;
@@ -275,14 +278,14 @@ it previously failed for two separate reasons, both fixed:
   array struct. It now resolves the element type through the substitution map
   first.
 
-Covered by `tests/test_generic_class_field_array.cn`.
+Covered by `tests/oop/test_generic_class_field_array.cn`.
 
 What *does* work, and is what `src2/lexer.cn` relies on: `str` plus
 `str_char_at` / `str_substring`, classes with mutable fields and methods,
 `new Klass(...)` construction, locals, and **local** arrays (`int[] a = {1,2,3}`,
 `a[i]`, `a[i] = v`, `push(a, v)`) and array parameters. Class field arrays are
-now supported too and are exercised by `tests/test_class_field_arrays.cn` and
-`tests/test_class_selfref.cn`.
+now supported too and are exercised by `tests/oop/test_class_field_arrays.cn` and
+`tests/oop/test_class_selfref.cn`.
 
 ### One fix already landed
 
@@ -349,7 +352,7 @@ classes already used, which is what makes the duplicate typedefs legal.
 
 Generics and generators are excluded: generic declarations are instantiated into
 specialized functions that already get prototypes alongside them, and generators
-rewrite their own signature. `tests/test_forward_calls.cn` pins this down with
+rewrite their own signature. `tests/core/test_forward_calls.cn` pins this down with
 upward calls, mutual recursion, and a `main` that calls later definitions.
 
 Effect on the port: the forward-declaration errors in `src2/parser_bundle.cn`
@@ -375,21 +378,21 @@ investigation warrants.
 
 ### Independent fixes made during this investigation
 
-These came out of writing `tests/test_parser_shape.cn` and are genuine bugs
+These came out of writing `tests/oop/test_parser_shape.cn` and are genuine bugs
 regardless of the forward-reference question. Each has a regression test:
 
 - Instances are zeroed before the constructor runs. Previously an unset `str`
   or array field held garbage, so `Node[]` fields crashed on `push` and
-  `field == ""` was false. (`tests/test_class_zero_init.cn`)
+  `field == ""` was false. (`tests/oop/test_class_zero_init.cn`)
 - Classes with no declared constructor now get an empty one, plain and generic.
-  (`tests/test_class_zero_init.cn`)
+  (`tests/oop/test_class_zero_init.cn`)
 - Class returns from top-level functions *and* methods are emitted as
   `Node*`, and `var` infers the type from the initializer's class name.
-  (`tests/test_class_return.cn`)
+  (`tests/oop/test_class_return.cn`)
 - Constructor and operator parameters of class type are emitted as pointers.
-  (`tests/test_class_ctor_params.cn`)
+  (`tests/oop/test_class_ctor_params.cn`)
 
-`tests/test_parser_shape.cn` remains useful as the parser's class/array layout
+`tests/oop/test_parser_shape.cn` remains useful as the parser's class/array layout
 regression, but it does **not** test forward calls — its chain runs downward.
 
 ### The compiler now builds `src2/parser_bundle.cn`
@@ -407,7 +410,7 @@ Fixed along the way:
   ordinary function parameters. `func new(Node n)` disagreed with its own body
   and call sites. Both paths now consult `param->is_pointer`, via a shared
   `define_parameter` in `src/semantics_analyze.c`.
-  (`tests/test_class_ctor_params.cn`)
+  (`tests/oop/test_class_ctor_params.cn`)
 - **An array parameter whose element type is a class was declared as a pointer.**
   The class check keyed off the element type, so `ASTNode[] params` became
   `CnextArrayObj*` while every caller passed the struct. `define_parameter` now
@@ -417,7 +420,7 @@ Fixed along the way:
   picks `==` vs `cnext_str_eq` from the operand types, and member access recorded
   only the field's name, so `a.text == b.text` emitted raw C `==` on two
   `CnextString` structs. Comparing against a literal had worked by accident
-  because the literal side carried the type. (`tests/test_str_field_compare.cn`)
+  because the literal side carried the type. (`tests/types/test_str_field_compare.cn`)
 - **`<`, `<=`, `>`, `>=` did not exist for `str`.** Only `==`/`!=` were defined,
   so `c >= "A" && c <= "Z"` failed. Added `cnext_str_cmp` and the four
   comparators to `include/runtime.h` and routed string relationals to them. A
@@ -427,7 +430,7 @@ Fixed along the way:
   filled in `type_name` but left `expr_type` unset, so the declaration stayed
   untyped and fell back to `__auto_type`; C then resolved it to `Num*` from the
   cast, but the declaration was never marked as a class, so `cur.v` emitted
-  `cur.v` on a pointer. (`tests/test_obj_array_element_var.cn`)
+  `cur.v` on a pointer. (`tests/types/test_obj_array_element_var.cn`)
 - **Assigning to an object-array element was not a modifiable lvalue.** A read
   yields the stored element pointer so a following `->field` works, and that
   pointer cannot be assigned through. Reaching the slot was not an option either:
@@ -442,7 +445,7 @@ Fixed along the way:
 - **A blank `{ }` in a string literal was treated as an interpolation.** The
   scanner accepted a whitespace-only placeholder, so `{ }` generated
   `cnext_to_string()` with no argument, which does not compile. A placeholder now
-  has to contain an expression. (`tests/test_interp_blank_placeholder.cn`)
+  has to contain an expression. (`tests/core/test_interp_blank_placeholder.cn`)
 - **Globals could not be initialized with `new`.** The allocation is a GCC
   statement expression, which is not a constant expression and is not legal at
   file scope at all. Such globals are now declared uninitialized and filled in
@@ -463,7 +466,7 @@ first thing to look at. `tests/parity_parser.py` becomes usable once
 
 - **Member access on a call result.** `obj.bump().kind` emits `.` against a
   pointer. Bind the result to a local first. Found while writing
-  `tests/test_class_return.cn`.
+  `tests/oop/test_class_return.cn`.
 - **Generic specializations using a class type argument.** `identity<Node>(n)`
   emits its prototype before any class definition, so C reports *unknown type
   name*, and the specialization path does not add the class-return `*`.
@@ -489,7 +492,7 @@ first thing to look at. `tests/parity_parser.py` becomes usable once
   refcounting) is exactly what a compiler needs.
 - The C core is ~12.5k lines of compiler C across 38 files, plus ~7k lines of headers; the lexer (~340 lines) is a
   self-contained module and a good first parity target.
-- Harness infrastructure exists: `cnext test` (86 tests), `tests/run_tests.py`,
+- Harness infrastructure exists: `cnext test` (128 tests), `tests/run_tests.py`,
   `make bench`, `--verbose` generated-C dump.
 - The `include/runtime.h` C runtime stays C. It is the generated-code
   harness, not part of the transpiler; every transpiled language keeps its
@@ -542,7 +545,7 @@ no blocker from §3. Codegen ports fastest once parser/semantics exist.
 
 - (a) ~~Object-reference model for class fields~~ **Decided and implemented:**
   class-typed fields are pointers, and a class can name its own type. Both
-  choices are now exercised by `tests/test_class_selfref.cn`.
+  choices are now exercised by `tests/oop/test_class_selfref.cn`.
 - (b) ~~Class-element arrays~~ **Decided and implemented:** they reuse the same
   array layout as local arrays, so `length`, indexing, `push` and literal init
   behave identically on fields and locals. This also fixed the
@@ -559,7 +562,7 @@ no blocker from §3. Codegen ports fastest once parser/semantics exist.
 
 ## 8. Milestone A acceptance
 
-- `tests/parity_lexer.py`: zero diff on `tests/*.cn`, `examples/*.cn`,
+- `tests/parity_lexer.py`: zero diff on `tests/**/*.cn`, `examples/*.cn`,
   `src2/*.cn` for:
   - token type, line, column, text
   - error tokens (unterminated string/char/comment, unexpected char)

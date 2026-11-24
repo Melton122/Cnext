@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Codegen parity sweep: stage0 (C compiler) vs stage1 (self-hosted).
 
-Compiles every tests/*.cn file with both stages, normalizes line endings,
+Compiles every tests/**/*.cn file with both stages, normalizes line endings,
 and reports which files produce identical generated C.
 """
 
@@ -41,7 +41,7 @@ def main():
         default=Path("build/selfhost") / ("stage2_exe.exe" if os.name == "nt" else "stage2_exe"),
     )
     parser.add_argument("--out", type=Path, default=Path("out_parity"))
-    parser.add_argument("--paths", nargs="*", default=["tests/*.cn"])
+    parser.add_argument("--paths", nargs="*", default=["tests/**/*.cn"])
     parser.add_argument("--check", action="store_true", help="Fail if any output differs or compilation fails")
     args = parser.parse_args()
     if not args.stage0.is_absolute():
@@ -50,8 +50,17 @@ def main():
         args.stage1 = ROOT / args.stage1
 
     files = []
+    seen = set()
+    excluded = {"bootstrap", "optimizer"}
     for pattern in args.paths:
-        files.extend(sorted(ROOT.glob(pattern)))
+        for match in sorted(ROOT.glob(pattern)):
+            if not match.is_file() or match in seen:
+                continue
+            relative = match.relative_to(ROOT)
+            if relative.parts[0] == "tests" and any(part in excluded for part in relative.parts[1:-1]):
+                continue
+            seen.add(match)
+            files.append(match)
     if not files:
         print("No input files matched", file=sys.stderr)
         return 1
@@ -61,8 +70,10 @@ def main():
     stage1 = str(args.stage1)
     results = []
     for source in files:
-        print(f"checking {source}", flush=True)
-        stem = source.stem
+        relative = source.relative_to(ROOT)
+        display = relative.as_posix()
+        print(f"checking {display}", flush=True)
+        stem = "__".join(relative.with_suffix("").parts)
         out_s0 = args.out / f"{stem}_s0.c"
         out_s1 = args.out / f"{stem}_s1.c"
         out_s0.unlink(missing_ok=True)
@@ -81,7 +92,7 @@ def main():
                 status = "identical"
             else:
                 status = "diff"
-        results.append((source.name, out_s0, out_s1, status))
+        results.append((display, out_s0, out_s1, status))
 
     identical = 0
     diffs = []

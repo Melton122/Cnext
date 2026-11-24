@@ -1,0 +1,7 @@
+// Test closure where captured variable is mutated AFTER closure creation
+main {
+    var x = 10
+    var add_x = (int a) => a + x
+    x = 20
+    printin(add_x(5))
+}

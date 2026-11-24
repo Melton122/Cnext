@@ -49,11 +49,20 @@ def build_reference(binary: Path, repo_root: Path) -> None:
 def list_files(patterns: list[str], repo_root: Path) -> list[Path]:
     files: list[Path] = []
     seen: set[Path] = set()
+    excluded = {"bootstrap", "optimizer"}
     for pattern in patterns:
         for match in glob.glob(str(repo_root / pattern), recursive=True):
             path = Path(match)
             if path.is_file() and path.suffix in {".cn", ".c", ".h"}:
                 resolved = path.resolve()
+                try:
+                    relative = resolved.relative_to(repo_root.resolve())
+                except ValueError:
+                    relative = Path()
+                if relative.parts and relative.parts[0] == "tests" and any(
+                    part in excluded for part in relative.parts[1:-1]
+                ):
+                    continue
                 if resolved not in seen:
                     seen.add(resolved)
                     files.append(resolved)
@@ -131,7 +140,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ref-binary", type=Path, default=None)
     parser.add_argument("--cand-cmd", type=str, default=None,
                         help="Command template used to produce candidate dumps; use {file} as placeholder.")
-    parser.add_argument("--paths", nargs="*", default=["tests/*.cn", "examples/*.cn"],
+    parser.add_argument("--paths", nargs="*", default=["tests/**/*.cn", "examples/*.cn"],
                         help="Glob patterns relative to repo root")
     parser.add_argument("--fail-fast", action="store_true")
     return parser.parse_args()
