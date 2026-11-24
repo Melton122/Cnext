@@ -249,6 +249,7 @@ release: $(EXEC)
 	@cp -r include dist/ 2>/dev/null || true
 	@cp -r examples dist/ 2>/dev/null || true
 	@cp README.md dist/ 2>/dev/null || true
+	@cp logo.png dist/ 2>/dev/null || true
 	@cp LICENSE dist/ 2>/dev/null || true
 	@cp install.sh dist/ 2>/dev/null || true
 	@chmod +x dist/install.sh 2>/dev/null || true

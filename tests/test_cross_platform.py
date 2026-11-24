@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -115,6 +116,21 @@ main {
         self.assertIn("median_ms", bench)
         self.assertIn("results.json", bench)
         self.assertIn("baseline.json", bench)
+
+    def test_vscode_extension_maps_cn_files_to_cnext_icon(self):
+        package = json.loads((ROOT / "vscode-extension" / "package.json").read_text(encoding="utf-8"))
+        contributes = package["contributes"]
+        self.assertEqual(contributes["configurationDefaults"]["workbench.iconTheme"], "cnext")
+        self.assertTrue(any(language.get("id") == "cnext" and ".cn" in language.get("extensions", [])
+                            for language in contributes["languages"]))
+        theme = json.loads((ROOT / "vscode-extension" / "icon-themes" / "cnext-icon-theme.json").read_text(encoding="utf-8"))
+        self.assertEqual(theme["fileExtensions"]["cn"], "_cnext_brand")
+        self.assertEqual(theme["languageIds"]["cnext"], "_cnext_brand")
+
+    def test_release_archive_includes_readme_logo(self):
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        self.assertIn("@cp README.md dist/", makefile)
+        self.assertIn("@cp logo.png dist/", makefile)
 
     def test_install_scripts_quote_temp_paths_and_cleanup(self):
         shell = (ROOT / "install.sh").read_text(encoding="utf-8")

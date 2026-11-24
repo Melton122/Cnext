@@ -26,6 +26,9 @@
     "onLanguage:cnext"
   ],
   "contributes": {
+    "configurationDefaults": {
+      "workbench.iconTheme": "cnext"
+    },
     "languages": [
       {
         "id": "cnext",

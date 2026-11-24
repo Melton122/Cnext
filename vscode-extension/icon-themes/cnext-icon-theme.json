@@ -10,6 +10,9 @@
     "cn": "_cnext_brand",
     "cnext": "_cnext_brand"
   },
+  "languageIds": {
+    "cnext": "_cnext_brand"
+  },
   "folder": "_cnext_folder",
   "folderExpanded": "_cnext_folder_open"
 }

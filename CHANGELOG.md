@@ -54,11 +54,14 @@ All notable changes to Cnext will be documented in this file.
   `make bench` with repeated medians, fixed job counts, and JSON baseline/result
   artifacts; lean Windows headers and cache helpers cut clean builds ~20% and
   incremental builds ~50%
+- **Baby Otter branding:** the README logo is refreshed, and release archives now
+  include `logo.png` so the README renders correctly outside the repository
 
 ### Fixed
 - **Package manager and installers are hardened:** HTTPS-only downloads, name/URL validation, scoped temp files, atomic token saves, auth-bearing login verification, safe cache parents, unique cache temp files, query encoding, and quoted installer cleanup
 - **Captured process output is bounded and drains to EOF:** Windows stdin capture uses a reader thread, POSIX polling avoids early-close/SIGPIPE failures, and truncation is reported instead of hanging or silently losing output
 - **MinGW `-O2` closure regression is fixed:** `__USE_MINGW_SETJMP_NON_SEH` avoids SEH `longjmp` unwinding crashes, with a preprocessor guard and a repeated Windows regression run
+- **VS Code `.cn` file icons:** the Cnext icon theme now matches `.cn` files by language ID and is the default icon theme for fresh installs, so source files no longer show a generic text icon
 - **Diagnostic output is bounded:** source excerpts and caret padding are
   capped, so an error on a very long line no longer floods the terminal or
   exhausts memory. `tests/test_diagnostics.py` covers the long-line case
