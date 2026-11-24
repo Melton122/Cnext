@@ -718,6 +718,7 @@ int main(int argc, char** argv) {
             FILE* target = generated ? fopen(opts.emit_c, "wb") : NULL;
             if (!target) {
                 if (generated) fclose(generated);
+                remove(CNEXT_TEMP_C);
                 fprintf(stderr, "Could not write generated C to %s.\n", opts.emit_c);
                 return 74;
             }
@@ -813,6 +814,7 @@ int main(int argc, char** argv) {
         char gcc_output[65536];
         int gcc_status = run_process_captured("gcc", gcc_args, gcc_output, sizeof(gcc_output));
         if (gcc_status != 0) {
+            remove(CNEXT_TEMP_C);
             report_backend_output(gcc_output);
             return 65;
         }

@@ -25,7 +25,7 @@ static inline CnextString read_file(CnextString path) {
 }
 
 static inline bool write_file(CnextString path, CnextString content) {
-    FILE* file = fopen(path.data, "w");
+    FILE* file = fopen(path.data, "wb");
     if (!file) return false;
     fwrite(content.data, 1, content.length, file);
     fclose(file);
@@ -33,7 +33,7 @@ static inline bool write_file(CnextString path, CnextString content) {
 }
 
 static inline bool append_file(CnextString path, CnextString content) {
-    FILE* file = fopen(path.data, "a");
+    FILE* file = fopen(path.data, "ab");
     if (!file) return false;
     fwrite(content.data, 1, content.length, file);
     fclose(file);

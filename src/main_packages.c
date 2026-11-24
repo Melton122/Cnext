@@ -129,14 +129,14 @@ bool download_package(const char* name, const char* url) {
 
     // Try curl with safe argument array (no shell injection)
     {
-        const char* const curl_args[] = {"curl", "-fsSL", "--", url, "-o", out_path, NULL};
+        const char* const curl_args[] = {"curl", "-fsSL", "-o", out_path, "--", url, NULL};
         int res = run_process("curl", curl_args);
         if (res == 0) return true;
     }
 
     // Try wget
     {
-        const char* const wget_args[] = {"wget", "-q", "--", url, "-O", out_path, NULL};
+        const char* const wget_args[] = {"wget", "-q", "-O", out_path, "--", url, NULL};
         int res = run_process("wget", wget_args);
         if (res == 0) return true;
     }

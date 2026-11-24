@@ -360,37 +360,6 @@ bool registry_download(const char* url, const char* dest_path) {
     return true;
 }
 
-static int run_process_registry(const char* program, const char* const args[]) {
-#ifdef _WIN32
-    intptr_t result = _spawnvp(_P_WAIT, program, (const char* const*)args);
-    if (result == -1) {
-        fprintf(stderr, "Could not start %s: %s\n", program, strerror(errno));
-        return 127;
-    }
-    return (int)result;
-#else
-    pid_t pid = fork();
-    if (pid < 0) {
-        fprintf(stderr, "Could not start %s: %s\n", program, strerror(errno));
-        return 127;
-    }
-    if (pid == 0) {
-        execvp(program, (char* const*)args);
-        fprintf(stderr, "Could not start %s: %s\n", program, strerror(errno));
-        _exit(127);
-    }
-
-    int status = 0;
-    if (waitpid(pid, &status, 0) < 0) {
-        fprintf(stderr, "Could not wait for %s: %s\n", program, strerror(errno));
-        return 127;
-    }
-    if (WIFEXITED(status)) return WEXITSTATUS(status);
-    if (WIFSIGNALED(status)) return 128 + WTERMSIG(status);
-    return 127;
-#endif
-}
-
 bool registry_publish(const char* package_dir, const char* token) {
     char toml_path[1024];
     snprintf(toml_path, sizeof(toml_path), "%s/cnext.toml", package_dir);
@@ -432,7 +401,7 @@ bool registry_publish(const char* package_dir, const char* token) {
     strncpy(pkg_dir_buf, package_dir, sizeof(pkg_dir_buf) - 1);
     pkg_dir_buf[sizeof(pkg_dir_buf) - 1] = '\0';
     const char* const tar_args[] = {"tar", "-czf", tarball, "-C", pkg_dir_buf, ".", NULL};
-    int status = run_process_registry("tar", tar_args);
+    int status = run_process("tar", tar_args);
     if (status != 0) {
         fprintf(stderr, "Failed to create package tarball.\n");
         return false;

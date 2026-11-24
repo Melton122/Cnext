@@ -1,24 +1,4 @@
-#include "repl.h"
-#include "lexer.h"
-#include "parser.h"
-#include "codegen.h"
-#include "semantics.h"
-#include "ast.h"
-#include "checked_alloc.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <errno.h>
-
-#ifdef _WIN32
-#include <windows.h>
-#include <io.h>
-#define popen _popen
-#define pclose _pclose
-#else
-#include <sys/wait.h>
-#include <unistd.h>
-#endif
+#include "main_internal.h"
 
 #ifdef _WIN32
 #define CNEXT_TEMP_REPL_C "cnext_repl_temp.c"
@@ -43,39 +23,8 @@ static void print_help(void) {
     printf("\n");
 }
 
-static int run_process_repl(const char* program, char* const args[]) {
-#ifdef _WIN32
-    intptr_t result = _spawnvp(_P_WAIT, program, (const char* const*)args);
-    if (result == -1) {
-        fprintf(stderr, "Could not start %s: %s\n", program, strerror(errno));
-        return 127;
-    }
-    return (int)result;
-#else
-    pid_t pid = fork();
-    if (pid < 0) {
-        fprintf(stderr, "Could not start %s: %s\n", program, strerror(errno));
-        return 127;
-    }
-    if (pid == 0) {
-        execvp(program, args);
-        fprintf(stderr, "Could not start %s: %s\n", program, strerror(errno));
-        _exit(127);
-    }
-
-    int status = 0;
-    if (waitpid(pid, &status, 0) < 0) {
-        fprintf(stderr, "Could not wait for %s: %s\n", program, strerror(errno));
-        return 127;
-    }
-    if (WIFEXITED(status)) return WEXITSTATUS(status);
-    if (WIFSIGNALED(status)) return 128 + WTERMSIG(status);
-    return 127;
-#endif
-}
-
 static bool compile_and_run(const char* c_code) {
-    FILE* f = fopen(CNEXT_TEMP_REPL_C, "w");
+    FILE* f = fopen(CNEXT_TEMP_REPL_C, "wb");
     if (!f) {
         fprintf(stderr, "Could not create temp file.\n");
         return false;
@@ -83,16 +32,18 @@ static bool compile_and_run(const char* c_code) {
     fwrite(c_code, 1, strlen(c_code), f);
     fclose(f);
 
-    char* gcc_args[] = {"gcc", "-std=gnu11", "-iquote", "include", "-o", CNEXT_TEMP_REPL_EXE, CNEXT_TEMP_REPL_C, NULL};
-    int compile_status = run_process_repl("gcc", gcc_args);
+    const char* const gcc_args[] = {"gcc", "-std=gnu11", "-iquote", "include", "-o", CNEXT_TEMP_REPL_EXE, CNEXT_TEMP_REPL_C, NULL};
+    int compile_status = run_process("gcc", gcc_args);
     if (compile_status != 0) {
         fprintf(stderr, "Compilation failed.\n");
         remove(CNEXT_TEMP_REPL_C);
         return false;
     }
 
-    char* run_args[] = {CNEXT_TEMP_REPL_EXE, NULL};
-    run_process_repl(CNEXT_TEMP_REPL_EXE, run_args);
+    char executable_buffer[CNEXT_PATH_MAX];
+    const char* executable = executable_command(CNEXT_TEMP_REPL_EXE, executable_buffer, sizeof(executable_buffer));
+    const char* const run_args[] = {executable, NULL};
+    run_process(executable, run_args);
 
     remove(CNEXT_TEMP_REPL_C);
     remove(CNEXT_TEMP_REPL_EXE);

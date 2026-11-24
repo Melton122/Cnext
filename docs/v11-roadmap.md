@@ -1,7 +1,7 @@
 # Cnext v11 — Audit & Stabilization Roadmap
 
-> Status: **Phases 1–12 committed; Phases 13–15 complete locally and ready to commit**. Native suite **128 passed, 0 failed**, parser parity **128/128**, `make check` and `make self-build` pass to a fixed point. Codegen parity is **118/128**, with the remaining diffs limited to known closure-naming/lifetime differences. Phase 13 makes the remaining canonical modules callable, adds deterministic per-module edge tests, and fixes SHA-256 padding, absolute path normalization, NULL-valued hashmap membership, binary log files, and the `fmt.join` array contract. Phase 14 fixes optimizer constant-folding/peephole semantics, adds an `--optimize` vs `--no-optimize` regression harness, and removes unsafe loop strength reduction. Phase 15 audits `--emit-c`: native/selfhost now reject `-o` consistently, raw strings are escaped in generated C, `main` returns share one cleanup path, and runtime print macros no longer shadow user locals. `process_spawn(argv)` runs a program with no shell, and `docs/process-safety.md` describes the injectable vs argv-safe APIs.
-> Head: `e0b4aa9` (Phase 12). **The working tree contains uncommitted Phase 13–15 WIP** (module call prefixes, stdlib bug fixes, optimizer semantics fixes, generated-C fixes, 13 new native regression tests, optimizer fixtures/harness, runner/roadmap updates) — see §“Uncommitted Working-Tree Changes”.
+> Status: **Phases 1–16 committed; Phase 17 next**. Native suite **128 passed, 0 failed**, parser parity **128/128**, `make check` and `make self-build` pass to a fixed point. Codegen parity is **118/128**, with the remaining diffs limited to known closure-naming/lifetime differences. Phase 13 makes the remaining canonical modules callable, adds deterministic per-module edge tests, and fixes SHA-256 padding, absolute path normalization, NULL-valued hashmap membership, binary log files, and the `fmt.join` array contract. Phase 14 fixes optimizer constant-folding/peephole semantics, adds an `--optimize` vs `--no-optimize` regression harness, and removes unsafe loop strength reduction. Phase 15 audits `--emit-c`: native/selfhost now reject `-o` consistently, raw strings are escaped in generated C, `main` returns share one cleanup path, and runtime print macros no longer shadow user locals. Phase 16 hardens cross-platform process/file behavior: downloader options precede `--`, registry/REPL use the shared argv process helper, generated C and stdlib file writes are byte-exact, and failed `--emit-c` runs remove their temp source. `process_spawn(argv)` runs a program with no shell, and `docs/process-safety.md` describes the injectable vs argv-safe APIs.
+> Head: Phase 16 cross-platform audit (cross-platform process/file fixes and `tests/test_cross_platform.py`).
 
 ---
 
@@ -28,32 +28,27 @@ This document is the audit+plan. It classifies the state of every major subsyste
 
 ---
 
-## 3. Uncommitted Working-Tree Changes
+## 3. Committed Phase 13–16 Changes
 
-These exist on top of `e0b4aa9` and are part of the Phase 13–15 audit pass:
+Phases 13–15 are committed as `f3b2714 V11 audit: harden optimizer, modules, and generated C` (44 files changed, 944 insertions, 180 deletions):
 
-- `src/codegen_expr.c`, `src2/codegen_expr.cn`: dotted-call prefixes now include `fmt`, `http`, `log`, and `args`, so module-qualified calls reach the matching stdlib functions in both compilers.
-- `src/semantics_types.c`: registered `fmt`, `http`, `log`, `args`, and the `hashmap_*` API so imports do not report false undeclared identifiers.
-- `include/args.h`: removed duplicate `_cnext_argc`/`_cnext_argv` declarations; `args_init` delegates to `cnext_init_args`.
-- `include/fmt.h`: `fmt_join` accepts `CnextArrayString`, validates empty inputs, clamps `count` to `parts.length`, and indexes `parts.data[i]`.
-- `include/log.h`: file logging opens in binary append mode so newline bytes are identical on Windows and POSIX.
-- `include/crypto.h`: fixed SHA-256 padding for inputs congruent to 55 modulo 64 and added the missing `calloc` failure guard.
-- `include/path.h`: `path_normalize` preserves the leading `/` for absolute paths.
-- `include/collections.h`: `hashmap_contains` now searches entries directly, so keys with NULL values are reported as present.
-- `docs/stdlib.md`: corrected HTTP module examples and documented the `fmt`, `log`, and `args` modules.
-- `tests/test_fmt_module.cn`, `test_http_status_text.cn`, `test_log_module.cn`, `test_args_module.cn`: cover the four previously unreachable modules.
-- `tests/test_collections_edges.cn`, `test_crypto_edges.cn`, `test_path_edges.cn`, `test_random_edges.cn`, `test_file_io_edges.cn`, `test_net_edges.cn`, `test_thread_edges.cn`, `test_time_edges.cn`: add deterministic edge coverage for the remaining thin modules and the three stdlib bug fixes.
-- `tests/run_tests.py`: positive list expanded with all 12 new tests; `src2/parser_bundle.cn` regenerated.
-- `src/optimizer.c`: integer folding widened to `int64_t`, float folding preserves decimal literals and rejects non-finite results, identity elimination is restricted to plain numeric operands, parameter shadowing disables unsafe constant/copy propagation, branch folding parses ints as `int64_t`, and unsafe loop strength reduction was removed.
-- `tests/test_optimizer_semantics.py`, `tests/optimizer/*.cn`, `Makefile`: added an `--optimize` vs `--no-optimize` output-equivalence harness and wired it into `make check`.
-- `include/runtime.h`: `print_raw`/`printin` use `_cnext_print_value` instead of shadowing a user local `_x`.
-- `src/main.c`: `--emit-c` rejects an explicit `-o`, matching the selfhosted compiler's refusal to combine `--emit-c` with output/run options.
-- `src/codegen_expr.c`, `src2/codegen_expr.cn`, `src2/semantics_expr.cn`: raw-string literals are typed correctly in selfhost semantics and escaped/normalized before being emitted as C string literals.
-- `include/codegen_internal.h`, `src/codegen.c`, `src/codegen_node.c`, `src/codegen_emit_utils.c`, `src2/codegen_node.cn`, `src2/codegen_closure.cn`: `main` returns store a result and jump to a cleanup label; the label is emitted only when used, functions/generators/lambdas restore main state, and both compilers match.
-- `tests/test_raw_string_edges.cn`, `tests/test_native_linking.py`: new raw-string and generated-C regression coverage; `src2/parser_bundle.cn` regenerated.
-- `make check`, `make self-build`, bundle check, parser parity, parity sweep, and bootstrap tests pass.
+- Phase 13: canonical module call prefixes, stdlib bug fixes, 12 deterministic module/edge tests, docs updates.
+- Phase 14: optimizer int/float/string/shadowing/branch fixes, unsafe loop strength reduction removal, `tests/test_optimizer_semantics.py`, and six `tests/optimizer/*.cn` fixtures.
+- Phase 15: `--emit-c`/`-o` rejection in both compilers, raw-string C escaping, shared `main` cleanup path, collision-resistant print temporary, `tests/test_raw_string_edges.cn`, and `tests/test_native_linking.py`.
 
-Phase 13 is complete locally: all 20 canonical modules now have callable test paths or explicit deterministic edge coverage. Phase 14 is complete locally: optimizer semantics regressions are fixed and guarded. Phase 15 is complete locally: generated-C regressions are fixed and guarded. All gates have been re-run green. Commit this work when requested.
+Phase 16 is committed:
+
+- `src/main_packages.c`: `curl -fsSL -o <out> -- <url>` and `wget -q -O <out> -- <url>` keep output options before the argument terminator.
+- `src/registry.c`: removed the duplicate raw `run_process_registry`; tarball creation uses shared `run_process("tar", ...)`.
+- `src/repl.c`: includes `main_internal.h`, uses shared `run_process`/`executable_command`, and writes its temp C with `"wb"`.
+- `src/codegen.c`: final generated-C output opens with `"wb"` so emitted bytes are identical across Windows and POSIX.
+- `src2/main.cn`: removed Windows CRLF pre-normalization before `driver_write`; `src2/parser_bundle.cn` regenerated.
+- `include/cnext_io.h`: `write_file`/`append_file` open with `"wb"`/`"ab"` to preserve exact newline bytes.
+- `src/main.c`: failed `--emit-c` target open and gcc failures remove `CNEXT_TEMP_C`.
+- `Makefile`: `check` now runs `tests/test_cross_platform.py`.
+- `tests/test_cross_platform.py`: guards downloader argv order, sole `_spawnvp` caller, LF-only generated C, exact newline IO writes, and temp-source cleanup.
+
+Phase 16 verification is green: 5 targeted cross-platform tests pass; native suite 128/128, optimizer semantics 6/6, parser parity 128/128, bootstrap fixed point, and codegen parity 118/128.
 
 ---
 
@@ -122,11 +117,11 @@ Windows stdin deadlock fixed (`os.read(0,4096)`), compiler path honored via `ini
 - No lexer/parser/semantics/type unit tests, **no fuzzing**, **no regression/ dir**. No ASan/MSan in CI.
 - Test discovery cap 512; `TestEntry[512]` stack arrays.
 
-### 4.16 Cross-platform — Partial → Phase 16
-Windows paths are first-class (`CNEXT_PATH_SEP`). The WIN32 argv→cmdline quoting breakout is fixed: `run_process`, `run_process_captured` and `process_spawn` all serialize argv with `CommandLineToArgvW` rules (§6.3). POSIX paths exercised in CI (Ubuntu/macOS); macOS `continue-on-error` for Python tests.
+### 4.16 Cross-platform — Core paths audited in Phase 16
+Windows paths are first-class (`CNEXT_PATH_SEP`). The WIN32 argv→cmdline quoting breakout is fixed: `run_process`, `run_process_captured` and `process_spawn` all serialize argv with `CommandLineToArgvW` rules (§6.3), and registry/REPL no longer bypass that helper with raw `_spawnvp`. Downloader output options now precede `--`, generated C and stdlib file writes are byte-exact, and failed `--emit-c` runs remove their temp source. `tests/test_cross_platform.py` guards these paths and runs from `make check`. Still deferred: captured-process truncation/bounded-output failures, registry cache parent creation and unique temp names, static shell-string CLI call sites, installer script quoting/cleanup, and the broader Phase 20 package-manager security pass. POSIX paths are exercised in CI (Ubuntu/macOS); macOS `continue-on-error` for Python tests.
 
 ### 4.17 Generated C — Audited in Phase 15
-`cnext build --verbose` prints generated C; `--emit-c <path>` writes generated C and is used by self-build/parity tooling. Native `--emit-c` now rejects explicit `-o`, matching selfhost behavior. Raw-string literals are escaped and CRLF-normalized before emission in both compilers. `main` returns store a result and jump to a shared cleanup label before `_cnext_free_all()`; the label is emitted only when a return needs it. Runtime print macros use a collision-resistant temporary. Debug info via `--debug`; sourcemap exists (`sourcemap.c`) but integration is minimal.
+`cnext build --verbose` prints generated C; `--emit-c <path>` writes generated C and is used by self-build/parity tooling. Native `--emit-c` now rejects explicit `-o`, matching selfhost behavior. Raw-string literals are escaped before emission in both compilers, and Phase 16 removed the Windows CRLF pre-normalization so emitted C uses LF bytes on every platform. Failed `--emit-c` runs remove their temp source. `main` returns store a result and jump to a shared cleanup label before `_cnext_free_all()`; the label is emitted only when a return needs it. Runtime print macros use a collision-resistant temporary. Debug info via `--debug`; sourcemap exists (`sourcemap.c`) but integration is minimal.
 
 ---
 
@@ -175,10 +170,10 @@ All paths now follow the rule: optimizer-allocated text is duplicated into `owne
 ### 6.3 Process execution & package-manager security (Phases 2–4 — fixed; Phase 20 keeps the review open)
 - ~~**Highest-severity (WIN32)**: the PowerShell download fallback interpolated the package name verbatim~~ — fixed. `download_package` validates the name with `is_safe_package_name` (no traversal, no `\ : ; & | < > ( ) { } * ? !`, no control characters) and the URL with `is_safe_url`, and `ps_quote` emits both operands as PowerShell single-quoted literals with `'` doubled, so neither can end the script. The fallback still exists (Phases 2–4 hardened it rather than dropping it); removing it entirely remains an option for Phase 20.
 - ~~**`run_process_captured` WIN32 quoting**: args flattened with `"%s"` and no `"` escaping~~ — fixed. `append_quoted_arg` implements the `CommandLineToArgvW` rules (quote each token, double backslash runs, add one backslash before a literal quote), and `run_process` now re-serializes its vector the same way instead of letting `_spawnvp` join it.
-- ~~**`is_safe_url`/dash-leading URL**: curl parsed a dash-leading URL as options~~ — fixed. All `curl`/`wget` invocations pass `--` before the URL, and `is_safe_url` still rejects a leading `-`, `"`, `'`, backtick, `$` and `\`.
+- ~~**`is_safe_url`/dash-leading URL**: curl parsed a dash-leading URL as options~~ — fixed. All `curl`/`wget` invocations pass `--` before the URL; Phase 16 corrected the option order so output flags precede the terminator (`curl -fsSL -o <out> -- <url>`, `wget -q -O <out> -- <url>`). `is_safe_url` still rejects a leading `-`, `"`, `'`, backtick, `$` and `\`.
 - ~~No argv-based process API exists~~ — added: `process_spawn(str[] argv)` in `include/cnext_process.h` (fork/`execvp` on POSIX, quoted `CreateProcessA` on Windows). It returns the exit status, `127` when the program cannot start, `-1` for an unusable vector. Registered for the `process` module in `src/semantics_types.c` and covered by `tests/test_process_spawn.cn`. It waits for the child and does not wire stdin or detach — those stay open.
 - Shell-string builtins `sys_exec/sys_shell/os_exec*/process_run*` remain shell APIs by design; `docs/process-safety.md` documents both families, the Windows quoting rules, and the `cmd.exe` re-parsing caveat.
-- Compiler’s own gcc/curl/tar/test invocations are argv-based (good; `main.c:572` comment confirms deliberate hardening).
+- Compiler’s own gcc/curl/tar/test invocations are argv-based (good; `main.c:572` comment confirms deliberate hardening). Phase 16 removed duplicate raw `_spawnvp` helpers from `registry.c` and `repl.c`; `main_utils.c` is now the only `_spawnvp` caller, guarded by `tests/test_cross_platform.py`.
 
 ### 6.4 Diagnostics (Phase 9 — fixed)
 Parser, semantics, codegen, and GCC backend failures now share one emitter. Codes are explicit instead of enum ordinals, source excerpts and carets point at the reported token, expected/found pairs cover parser and type mismatches, each code has stable help text and `CN-Exxx` rule metadata, and GCC diagnostics are parsed back into line/column/note fields. `tests/test_diagnostics.py` checks the native format; `tests/test_native_linking.py` checks normalized backend failure output.
@@ -186,8 +181,9 @@ Parser, semantics, codegen, and GCC backend failures now share one emitter. Code
 ### 6.5 Type system & language consistency (Phases 10–11 — fixed)
 Assignments now check text/non-text compatibility in both compilers, so `int x = 1; x = "hello"` fails with `E101` before C generation instead of producing accidental C conversions. Numeric assignment, initializer, and return checks use a widen-only matrix: same-type and lossless widening are implicit; narrowing, signedness changes, and floating-point/integer crossings require `as`. `option(...)`, `ok(...)`, `err(...)`, `expr?`, and `when { ... }` operands reach semantic analysis in both compilers, statement-form try propagation from a typed function is rejected, and `when` expressions infer the common arm type. `for (x in ...)` bindings now infer element types from arrays, strings, ranges, `str_split`, and generator calls in both compilers. The self-hosted code generator also emits `when` expressions and statement-form `expr?` propagation. Regression cases live in `tests/run_tests.py`, `tests/test_diagnostics.py`, and `tests/test_bootstrap_codegen.py` (native and stage 2).
 
-### 6.6 Cross-platform / hygiene (Phase 16)
-- Windows quoting issue §6.3. `DEV_NULL` handled. `system()` static-command uses in `doctor`/`cache clear/status` are literal-only today (safe, fragile).
+### 6.6 Cross-platform / hygiene (Phase 16 — core paths fixed)
+- Windows quoting issue §6.3 fixed; `DEV_NULL` handled. Phase 16 routed registry/REPL through the shared argv helper, corrected downloader option order, made generated C and stdlib file writes byte-exact, and cleaned temp C on `--emit-c` failure. `system()` static-command uses in `doctor`/`cache clear/status` remain literal-only today (safe, fragile).
+- Still deferred to later phases: captured-process truncation/bounded-output failures, registry cache parent creation and unique temp names, static shell-string CLI call sites, and installer script quoting/cleanup.
 - Committed `.o`/`.d` in `src/` remain historical noise; the PE binary `tests/_test_methods_temp.c`, `tests/_test_list.txt`, stray `_test_out*.exe`, `_p*.c`, `_probe*`, and `out_parity/` are now ignored and purged by `clean`.
 - No ASan/UBSan/Valgrind automation; `make coverage` runs gcov on Linux only.
 
@@ -203,7 +199,7 @@ Assignments now check text/non-text compatibility in both compilers, so `int x =
 - [x] Defer fully tested + documented
 - [x] Parser/semantics/codegen/backend diagnostics hardened (`tests/test_diagnostics.py`)
 - [ ] Type system, runtime, generated C, builtins, stdlib audited
-- [ ] Cross-platform reviewed (WIN32 quoting fix)
+- [x] Cross-platform core paths reviewed (WIN32 quoting, shared argv helpers, byte-exact writes; remaining gaps noted in §6.6)
 - [ ] Invalid input does not crash compiler (fuzzing)
 - [ ] Tooling functional (fmt/lint/repl/doctor/LSP/ext) — working, needs feature-parity checks
 - [ ] Package manager security reviewed (§6.3 findings to fix)
@@ -216,22 +212,23 @@ Assignments now check text/non-text compatibility in both compilers, so `int x =
 
 1. **Phase 1 — done** — optimizer ownership: applied ownership rule, fixed §6.2 leaks, and added the repeated-compile regression harness (`make leaktest`).
 2. **Phases 2–4 — done** — process-execution sweep: §6.3 injection bugs fixed (PowerShell quoting + name/URL validation, WIN32 argv quoting in `run_process`/`run_process_captured`, curl/wget `--`), `process_spawn(argv)` added and tested, `docs/process-safety.md` written.
-3. **Phases 5–7 — done locally** — defer: MSVC lowering rewired, invalid top-level and control-transfer cases rejected in both compilers, `docs/defer.md` updated, matrix tests added. `make msvc-defer-test` generates the MSVC form and compiles/runs the defer matrix with `cl` when Visual Studio Build Tools are installed.
-4. **Phases 8–9 — done locally** — correctness cleanup removed the dead `AST_GUARD` node and committed test artifacts; diagnostics now use stable IDs, rule metadata, source excerpts, expected/found fields, help text, and normalized GCC output.
-5. **Phases 10–11 — done locally** — assignment compatibility, widen-only numeric conversions, `for-in` element typing, expression-node semantic coverage, and `when`/try codegen are consistent across native and self-hosted compilers.
-6. **Phases 12–13 — done locally** — stdlib + builtin audit (array contracts, JSON-array/encoding edges, runner expansion) and remaining per-module tests (canonical module call paths, stdlib bug regressions, deterministic edge coverage).
-7. **Phase 14 — done locally** — optimizer semantic audit: literal/fold overflow guards, float and string-identity fixes, parameter-shadowing guards, removal of unsafe loop strength reduction, and an `--optimize` output-equivalence harness.
-8. **Phase 15 — done locally** — generated-C audit: consistent `--emit-c`/`-o` rejection, raw-string C escaping in both compilers, shared cleanup path for `main` returns, and collision-resistant runtime print temporaries.
-9. **Phases 16–18** — cross-platform (WIN32 quoting), test reorg to `tests/<category>/` (+ native runner subdir support; stale artifact removal already done), fuzz for invalid input.
-10. **Phases 19–20** — tooling parity (fmt/lint know defer/when), package-manager security fixes.
-11. **Phases 21–22** — measure-then-optimize (`make bench` baseline vs reorg), docs that match the code.
-12. **Always:** per-change Understand → Design → Implement → Test → Measure → Document; every bug fix gets a regression test; run the full suite after every phase.
+3. **Phases 5–7 — done (committed)** — defer: MSVC lowering rewired, invalid top-level and control-transfer cases rejected in both compilers, `docs/defer.md` updated, matrix tests added. `make msvc-defer-test` generates the MSVC form and compiles/runs the defer matrix with `cl` when Visual Studio Build Tools are installed.
+4. **Phases 8–9 — done (committed)** — correctness cleanup removed the dead `AST_GUARD` node and committed test artifacts; diagnostics now use stable IDs, rule metadata, source excerpts, expected/found fields, help text, and normalized GCC output.
+5. **Phases 10–11 — done (committed)** — assignment compatibility, widen-only numeric conversions, `for-in` element typing, expression-node semantic coverage, and `when`/try codegen are consistent across native and self-hosted compilers.
+6. **Phases 12–13 — done (committed)** — stdlib + builtin audit (array contracts, JSON-array/encoding edges, runner expansion) and remaining per-module tests (canonical module call paths, stdlib bug regressions, deterministic edge coverage).
+7. **Phase 14 — done (committed)** — optimizer semantic audit: literal/fold overflow guards, float and string-identity fixes, parameter-shadowing guards, removal of unsafe loop strength reduction, and an `--optimize` output-equivalence harness.
+8. **Phase 15 — done (committed)** — generated-C audit: consistent `--emit-c`/`-o` rejection, raw-string C escaping in both compilers, shared cleanup path for `main` returns, and collision-resistant runtime print temporaries.
+9. **Phase 16 — done (committed)** — cross-platform core paths: downloader argv order, registry/REPL shared process helper, LF-only generated C, byte-exact stdlib file writes, temp cleanup, and `tests/test_cross_platform.py` wired into `make check`.
+10. **Phases 17–18** — test reorg to `tests/<category>/` (+ native runner subdir support; stale artifact removal already done), fuzz for invalid input.
+11. **Phases 19–20** — tooling parity (fmt/lint know defer/when), package-manager security fixes plus remaining cross-platform gaps (captured output bounds, cache temp handling, installer scripts).
+12. **Phases 21–22** — measure-then-optimize (`make bench` baseline vs reorg), docs that match the code.
+13. **Always:** per-change Understand → Design → Implement → Test → Measure → Document; every bug fix gets a regression test; run the full suite after every phase.
 
 ---
 
 ## 9. Open decisions
 
-- **Commit the current WIP** (Phase 13 module/stdlib fixes and tests, Phase 14 optimizer semantics fixes/harness, Phase 15 generated-C fixes/tests, runner and roadmap updates, earlier optimizer ownership/closure/os.h work) up-front, or fold into phase commits?
+- **Phase 16 commit:** Phases 13–16 are committed (`f3b2714` plus the Phase 16 cross-platform audit); Phase 17 is next.
 - Test reorg: move `.cn` files into `tests/<category>/` requires native-runner recursion (`main.c`) + `run_tests.py` list rewrite — do it in Phase 17. The stale `_test_list.txt`/`_test_methods_temp.c` artifacts were already deleted in Phase 8.
 - `run_tests.py` runs only on non-Windows CI today; Phase 17 should enable it on Windows too.
 - Keep the in-order EXPECT runner (set the 3 legacy files fixed already). Also consider expecting the raw byte case (`printin(byte)`) via a byte-aware EXPECT marker — out of scope for now; note it.

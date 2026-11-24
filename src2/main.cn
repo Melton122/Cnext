@@ -237,7 +237,6 @@ main {
     str generated = codegen_flush_output()
     if mode == "emit" {
         if len(output_path) > 0 {
-            if platform() == "windows" { generated = str_replace(generated, "\n", "\r\n") }
             driver_write(output_path, generated)
         } else { print(generated) }
     } else {

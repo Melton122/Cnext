@@ -457,7 +457,7 @@ bool generate_c_code(ASTNode* program, const char* output_filename, bool test_mo
     }
 
     // Combine final output from temporary streams
-    out = fopen(output_filename, "w");
+    out = fopen(output_filename, "wb");
     if (!out) {
         char message[512];
         snprintf(message, sizeof(message), "Could not open output file \"%s\".", output_filename);
