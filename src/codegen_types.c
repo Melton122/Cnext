@@ -56,6 +56,38 @@ const char* lookup_class_var(const char* var_name, int var_len) {
     return NULL;
 }
 
+// Track file-scope typedefs emitted for struct-element value arrays
+
+typedef struct StructArrayTypedef {
+    char* name;
+    struct StructArrayTypedef* next;
+} StructArrayTypedef;
+
+static StructArrayTypedef* struct_array_typedefs = NULL;
+
+bool has_struct_array_typedef(const char* name) {
+    for (StructArrayTypedef* st = struct_array_typedefs; st; st = st->next) {
+        if (strcmp(st->name, name) == 0) return true;
+    }
+    return false;
+}
+
+void add_struct_array_typedef(const char* name) {
+    StructArrayTypedef* st = (StructArrayTypedef*)checked_malloc(sizeof(StructArrayTypedef));
+    st->name = checked_strdup(name);
+    st->next = struct_array_typedefs;
+    struct_array_typedefs = st;
+}
+
+void clear_struct_array_typedefs(void) {
+    while (struct_array_typedefs) {
+        StructArrayTypedef* st = struct_array_typedefs;
+        struct_array_typedefs = st->next;
+        free(st->name);
+        free(st);
+    }
+}
+
 // Track generated generic specializations to avoid duplication
 
 bool has_gen_spec(const char* name) {

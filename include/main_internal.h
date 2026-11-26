@@ -38,6 +38,7 @@ int _mkdir(const char* path);
 #include "repl.h"
 #include "registry.h"
 #include "docgen.h"
+#include "origin_map.h"
 
 #define CNEXT_VERSION "10.0.5"
 #define CNEXT_TEMP_C "temp_out.c"
@@ -78,8 +79,18 @@ bool find_registry_path(const char* argv0, char* registry_path, size_t registry_
 bool resolve_package_url(const char* name, const char* registry_path, char* url, size_t url_size);
 bool download_package(const char* name, const char* url);
 bool install_single_package(const char* name, const char* argv0);
-void install_packages_from_toml(const char* argv0);
+bool install_packages_from_toml(const char* argv0);
 char* build_source_with_packages(const char* source, const char* project_dir);
+/* Expands `import "path.cn"` declarations by merging the imported files into
+   the translation unit ahead of `source` (so their type definitions are
+   complete first). `source_dir` is the directory of `source`; imported paths
+   are resolved relative to it, and each file is merged at most once.
+   `file_path` is how `source` is named in diagnostics; when `map` is non-NULL
+   it receives the mapping from merged lines back to their real files, so the
+   caller can keep reporting accurate `file:line` positions. Returns NULL
+   after printing an error. */
+char* build_source_with_local_imports(const char* source, const char* source_dir,
+                                      const char* file_path, OriginMap* map);
 
 /* --- Compilation (main_compiler.c) --- */
 int compile_file(const char* input_path, const char* output_c_path, bool test_mode, bool run_optimizer, bool emit_debug_lines);

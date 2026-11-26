@@ -37,6 +37,8 @@ from pathlib import Path
 MODULES = [
     "lexer.cn",
     "parser_types.cn",
+    "originmap.cn",
+    "privatenames.cn",
     "parser_core.cn",
     "parser_type.cn",
     "parser_macro.cn",

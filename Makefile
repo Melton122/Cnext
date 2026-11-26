@@ -80,8 +80,8 @@ SRCS = src/main.c src/main_utils.c src/main_packages.c src/main_compiler.c \
        src/codegen_generic.c src/codegen_classspec.c src/codegen_emit_utils.c \
        src/codegen_expr.c src/codegen_node.c \
        src/semantics.c src/semantics_scope.c src/semantics_types.c \
-       src/semantics_predeclare.c src/semantics_analyze.c src/semantics_expr.c \
-       src/diagnostics.c \
+       src/semantics_predeclare.c src/semantics_analyze.c src/semantics_expr.c src/lifetimes.c \
+       src/diagnostics.c src/origin_map.c src/private_names.c \
        src/optimizer.c src/formatter.c src/linter.c src/repl.c \
        src/docgen.c src/registry.c src/semver.c src/sourcemap.c src/moduleresolver.c
 OBJS = $(SRCS:.c=.o)
@@ -108,11 +108,15 @@ test: $(EXEC)
 check: $(EXEC)
 	./$(EXEC) test
 	$(PARITY_PY) tests/test_native_linking.py
+	$(PARITY_PY) tests/test_native_manifest.py
 	$(PARITY_PY) tests/test_diagnostics.py
 	$(PARITY_PY) tests/test_fuzz_invalid_input.py
 	$(PARITY_PY) tests/test_optimizer_semantics.py
 	$(PARITY_PY) tests/test_cross_platform.py
 	$(PARITY_PY) tests/test_package_security.py
+	$(PARITY_PY) tests/test_language_contracts.py
+	$(PARITY_PY) tests/test_allocators.py
+	$(PARITY_PY) tests/test_lifetimes.py
 	$(MAKE) msvc-defer-test
 	@echo "Running Python test suite..."
 	$(PARITY_PY) tests/run_tests.py
@@ -242,6 +246,17 @@ self-build: $(EXEC)
 bench: $(EXEC)
 	$(PARITY_PY) tools/bench.py --make "$(MAKE)" --compiler "$(EXEC)" --runs 3
 
+.PHONY: selfhost-check
+selfhost-check: self-build
+	$(PARITY_PY) tests/test_optimizer_semantics.py --compiler "$(STAGE1_EXE)"
+	$(PARITY_PY) tests/test_selfhost_optimizer.py --compiler "$(STAGE1_EXE)"
+	$(PARITY_PY) tests/test_selfhost_test_runner.py --compiler "$(STAGE1_EXE)"
+	$(PARITY_PY) tests/test_optimizer_semantics.py --compiler "$(STAGE2_EXE)"
+	$(PARITY_PY) tests/test_selfhost_optimizer.py --compiler "$(STAGE2_EXE)"
+	$(PARITY_PY) tests/test_selfhost_test_runner.py --compiler "$(STAGE2_EXE)"
+	$(PARITY_PY) tests/test_selfhost_cli.py --compiler "$(STAGE2_EXE)"
+	$(PARITY_PY) tests/test_compiler_parity.py --native "./$(EXEC)" --selfhost "$(STAGE2_EXE)"
+
 release: $(EXEC)
 	@echo "Packaging Cnext $(VERSION) release..."
 	@mkdir -p dist
@@ -255,13 +270,13 @@ release: $(EXEC)
 	@chmod +x dist/install.sh 2>/dev/null || true
 ifdef WINDOWS_BUILD
 	@echo "Creating Windows ZIP archive..."
-	@powershell -NoProfile -Command "Compress-Archive -Path 'dist/*' -DestinationPath 'cnext-windows-x64-$(VERSION).zip' -Force"
-	@echo "Release archive: cnext-windows-x64-$(VERSION).zip"
+	@powershell -NoProfile -Command "Compress-Archive -Path 'dist/*' -DestinationPath 'cnext-windows-x64-v$(VERSION).zip' -Force"
+	@echo "Release archive: cnext-windows-x64-v$(VERSION).zip"
 	@rm -rf dist
 else
-	@cd dist && tar -czf "$(CURDIR)/cnext-$(shell uname -s | tr A-Z a-z)-$(shell uname -m)-$(VERSION).tar.gz" *
+	@cd dist && tar -czf "$(CURDIR)/cnext-$(shell uname -s | tr A-Z a-z)-$(shell uname -m)-v$(VERSION).tar.gz" *
 	@rm -rf dist
-	@echo "Release archive: cnext-$(shell uname -s | tr A-Z a-z)-$(shell uname -m)-$(VERSION).tar.gz"
+	@echo "Release archive: cnext-$(shell uname -s | tr A-Z a-z)-$(shell uname -m)-v$(VERSION).tar.gz"
 endif
 	@echo ""
 	@echo "To create a full multi-platform release, push a tag:"

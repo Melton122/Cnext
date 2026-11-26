@@ -1,0 +1,13 @@
+// Aggregates defined in a module must be complete before the importing file's
+// code that uses them, so imported sources are placed before the importer.
+export struct Point {
+    int x
+    int y
+}
+
+export func make_point(int x, int y): Point {
+    var p: Point
+    p.x = x
+    p.y = y
+    return p
+}

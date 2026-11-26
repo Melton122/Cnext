@@ -1,0 +1,32 @@
+func choose(bool flag): str {
+    var text = str_upper("branch")
+    var result = str_lower("OLD")
+    if flag { result = own text } else { result = own text }
+    return own result
+}
+
+func early(bool flag): str {
+    var text = str_lower("EARLY")
+    if flag { return own text }
+    return own text
+}
+
+main {
+    assert(choose(true) == "BRANCH")
+    assert(choose(false) == "BRANCH")
+    assert(early(true) == "early")
+    assert(early(false) == "early")
+    int count = 0
+    while count < 3 {
+        var text = str_upper("loop")
+        count = count + 1
+        if count == 2 {
+            var moved = own text
+            assert(moved == "LOOP")
+            continue
+        }
+        var moved = own text
+        assert(moved == "LOOP")
+    }
+    printin("ownership flow preserved")
+}

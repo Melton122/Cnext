@@ -77,6 +77,44 @@ class PackageSecurityTests(unittest.TestCase):
         self.assertEqual(info.returncode, 0)
         self.assertIn("Invalid package name", info.stderr)
 
+    def test_manifest_install_and_update_report_failures(self):
+        for command in ("install", "update"):
+            with self.subTest(command=command):
+                result = self.command(CNEXT, command)
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.write("cnext.toml", '[dependencies]\nmissing = "file://does-not-exist.cn"\n')
+        for command in ("install", "update"):
+            with self.subTest(command=command):
+                result = self.command(CNEXT, command)
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("1 failed", result.stdout + result.stderr)
+
+    def test_update_replaces_package_content(self):
+        package = self.write("pkg.cn", "func version(): int { return 1 }\n")
+        self.write("cnext.toml", '[dependencies]\nsafe = "file://pkg.cn"\n')
+        result = self.command(CNEXT, "install")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        package.write_text("func version(): int { return 2 }\n", encoding="utf-8")
+        result = self.command(CNEXT, "update")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((self.work / "packages" / "safe.cn").read_text(), package.read_text())
+
+    def test_malformed_dependencies_do_not_succeed_silently(self):
+        for entry in ('missing = 123', 'missing = "file://pkg.cn', 'not a dependency'):
+            self.write("cnext.toml", '[dependencies]\n' + entry + '\n')
+            with self.subTest(entry=entry):
+                result = self.command(CNEXT, "install")
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("Invalid dependency declaration", result.stderr)
+
+    def test_scoped_package_install_in_fresh_project(self):
+        self.write("pkg.cn", "func helper(): int { return 42 }\n")
+        self.write("cnext.toml", '  [dependencies]\n  vendor/lib = "file://pkg.cn" # local fixture\n')
+        result = self.command(CNEXT, "install")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((self.work / "packages" / "vendor" / "lib.cn").read_text(),
+                         (self.work / "pkg.cn").read_text())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -6,10 +6,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SRC2 = ROOT / 'src2'
 BUNDLES = {
-    'parser': ['lexer.cn','parser_types.cn','parser_core.cn','parser_type.cn','parser_macro.cn','parser_expr.cn','parser_stmt.cn','parser_decl.cn','parser.cn'],
-    'semantics': ['lexer.cn','parser_types.cn','parser_core.cn','parser_type.cn','parser_macro.cn','parser_expr.cn','parser_stmt.cn','parser_decl.cn','parser.cn','semantics_scope.cn','semantics_types.cn','semantics_predeclare.cn','semantics_expr.cn','semantics_analyze.cn','semantics.cn'],
-    'full': ['lexer.cn','parser_types.cn','parser_core.cn','parser_type.cn','parser_macro.cn','parser_expr.cn','parser_stmt.cn','parser_decl.cn','parser.cn','semantics_scope.cn','semantics_types.cn','semantics_predeclare.cn','semantics_expr.cn','semantics_analyze.cn','semantics.cn'],
-    'codegen': ['lexer.cn','parser_types.cn','parser_core.cn','parser_type.cn','parser_macro.cn','parser_expr.cn','parser_stmt.cn','parser_decl.cn','parser.cn','semantics_scope.cn','semantics_types.cn','semantics_predeclare.cn','semantics_expr.cn','semantics_analyze.cn','semantics.cn','codegen_types.cn','codegen_emit_utils.cn','codegen_node.cn','codegen_expr.cn','codegen_generic.cn','codegen_classspec.cn','codegen_closure.cn','codegen_gen.cn','codegen.cn','main.cn'],
+    'parser': ['lexer.cn','parser_types.cn','originmap.cn','privatenames.cn','parser_core.cn','parser_type.cn','parser_macro.cn','parser_expr.cn','parser_stmt.cn','parser_decl.cn','parser.cn'],
+    'semantics': ['lexer.cn','parser_types.cn','originmap.cn','privatenames.cn','parser_core.cn','parser_type.cn','parser_macro.cn','parser_expr.cn','parser_stmt.cn','parser_decl.cn','parser.cn','semantics_scope.cn','semantics_types.cn','semantics_predeclare.cn','semantics_expr.cn','semantics_analyze.cn','lifetimes.cn','semantics.cn'],
+    'full': ['lexer.cn','parser_types.cn','originmap.cn','privatenames.cn','parser_core.cn','parser_type.cn','parser_macro.cn','parser_expr.cn','parser_stmt.cn','parser_decl.cn','parser.cn','semantics_scope.cn','semantics_types.cn','semantics_predeclare.cn','semantics_expr.cn','semantics_analyze.cn','lifetimes.cn','semantics.cn'],
+    'codegen': ['lexer.cn','parser_types.cn','originmap.cn','privatenames.cn','parser_core.cn','parser_type.cn','parser_macro.cn','parser_expr.cn','parser_stmt.cn','parser_decl.cn','parser.cn','semantics_scope.cn','semantics_types.cn','semantics_predeclare.cn','semantics_expr.cn','semantics_analyze.cn','lifetimes.cn','semantics.cn','optimizer.cn','codegen_types.cn','codegen_emit_utils.cn','codegen_node.cn','codegen_expr.cn','codegen_generic.cn','codegen_classspec.cn','codegen_closure.cn','codegen_gen.cn','codegen.cn','main.cn'],
 }
 def strip_main(body):
     lines = body.split('\n')

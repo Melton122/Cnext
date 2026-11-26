@@ -310,7 +310,7 @@ footer a:hover{color:var(--accent-ink)}
 <h1 class="cover-title">Cnext</h1>
 <p class="subtitle">A Modern Language That Compiles to C</p>
 <p class="tagline">From your very first program to real applications: a friendly, practical introduction to a modern language that compiles to C.</p>
-<div class="cover-meta"><span>24 chapters</span><span>5 parts</span><span>4 appendices</span><span>Edition v10</span></div>
+<div class="cover-meta"><span>24 chapters</span><span>5 parts</span><span>4 appendices</span><span>Edition v10.0.5 — Baby Otter</span></div>
 <p class="cover-actions"><a class="btn" href="#ch1">Start reading</a><a class="btn ghost" href="#toc">Browse contents</a></p>
 </div>
 </header>
@@ -481,6 +481,7 @@ main {
 <li><p>On <strong>Windows</strong>, install <strong>MinGW (MSYS2/UCRT64)</strong> or another toolchain that provides <code>gcc</code>.</p></li>
 <li><p>On <strong>macOS</strong>, install <strong>Xcode Command Line Tools</strong> (<code>xcode-select --install</code>).</p></li>
 </ul>
+<p>For VS Code, install the <strong>Cnext Language Support</strong> extension so <code>.cn</code> files get syntax highlighting, the Cnext file icon, snippets, and build commands.</p>
 <h3 id="sec-2-3">2.3 Install Cnext from source<a class="anchor" href="#sec-2-3" aria-label="Link to this section">#</a></h3>
 <div class="codeblock">
 <div class="codebar"><span class="lang">Shell</span><button type="button" class="copy">Copy</button></div>
@@ -488,9 +489,17 @@ main {
 cd cnext
 make</code></pre>
 </div>
-<p>This builds the <code>cnext</code> executable in the project root. You can also download a pre-built package for Windows (for example <code>cnext-windows-x64-10.0.0.zip</code>).</p>
-<aside class="callout tip"><span class="cl"><span class="cl-kind">Tip</span><span class="cl-detail">pip / package helpers</span></span>
-<p>Later releases may offer installers (<code>install.sh</code>, <code>install.ps1</code>, <code>install.bat</code>). Check the project's README for the current recommended way.</p>
+<p>This builds the <code>cnext</code> executable in the project root. For v10.0.5 you can also use the installers, which download the Windows release asset <code>cnext-windows-x64-v10.0.5.zip</code>:</p>
+<div class="codeblock">
+<div class="codebar"><span class="lang">Shell</span><button type="button" class="copy">Copy</button></div>
+<pre><code class="language-bash"># Windows (PowerShell)
+iwr -useb https://raw.githubusercontent.com/Melton122/Cnext/main/install.ps1 | iex
+
+# Linux/macOS
+curl -fsSL https://raw.githubusercontent.com/Melton122/cnext/main/install.sh | bash</code></pre>
+</div>
+<aside class="callout tip"><span class="cl"><span class="cl-kind">Tip</span><span class="cl-detail">package helpers</span></span>
+<p>The release ships <code>install.sh</code>, <code>install.ps1</code>, and <code>install.bat</code>. Check the project's README for the current recommended way.</p>
 </aside>
 <h3 id="sec-2-4">2.4 Put <code>cnext</code> on your PATH<a class="anchor" href="#sec-2-4" aria-label="Link to this section">#</a></h3>
 <p>So you can type <code>cnext</code> from any folder:</p>
@@ -674,30 +683,52 @@ line 2
 no newline here -&gt; continues on same line</code></pre>
 </div>
 <h3 id="sec-4-7">4.7 Reading input<a class="anchor" href="#sec-4-7" aria-label="Link to this section">#</a></h3>
-<p>Ask the user for text with <code>input</code> (or <code>input("prompt: ")</code>):</p>
+<p><code>input()</code> reads one line. Without a typed destination it returns text (<code>str</code>):</p>
 <div class="codeblock">
 <div class="codebar"><span class="lang">Cnext</span><button type="button" class="copy">Copy</button></div>
 <pre><code class="language-cnext">main {
-    print("Enter your name: ")
-    var name = input()
+    var name = input("Enter your name: ")
     printin("Hello, " + name + "!")
 }</code></pre>
 </div>
+<p>A typed destination selects a typed reader, so the same call can read a number or a boolean:</p>
+<div class="codeblock">
+<div class="codebar"><span class="lang">Cnext</span><button type="button" class="copy">Copy</button></div>
+<pre><code class="language-cnext">main {
+    var age: int = input("Age: ")
+    var ratio: float = input()
+    var active: bool = input("Active? ")
+    printin(age)
+    printin(ratio)
+    printin(active)
+}</code></pre>
+</div>
+<p>When a whole expression names its type, use an explicit reader such as <code>input_int()</code>, <code>input_float()</code>, or <code>input_bool()</code>:</p>
+<div class="codeblock">
+<div class="codebar"><span class="lang">Cnext</span><button type="button" class="copy">Copy</button></div>
+<pre><code class="language-cnext">main {
+    var count = input_int("Count: ")
+    var score = input_float("Score: ")
+    var again = input_bool("Again? ")
+    printin(count)
+    printin(score)
+    printin(again)
+}</code></pre>
+</div>
+<p>Typed reads ignore surrounding spaces. Invalid or out-of-range text reads as the type's zero value instead of stopping the program.</p>
 <aside class="callout realworld"><span class="cl"><span class="cl-kind">Real world</span></span>
 <p>Separating <em>input</em>, <em>processing</em>, and <em>output</em> is the oldest software pattern. Programs like a grade calculator read data, compute, and write results, which is exactly what this tiny greeting program does with text.</p>
 </aside>
 <aside class="callout exercise"><span class="cl"><span class="cl-kind">Exercise</span><span class="cl-detail">4.1</span></span>
-<p>Write a program that asks for a user's name and favorite number, then prints a sentence such as <code>Hello, Ada! 7 is a great choice.</code> Use variables and string concatenation.</p>
+<p>Write a program that asks for a user's name and favorite number, then prints a sentence such as <code>Hello, Ada! 7 is a great choice.</code> Use variables and string interpolation.</p>
 </aside>
 <details class="solution"><summary>Suggested solution</summary>
 <div class="codeblock">
 <div class="codebar"><span class="lang">Cnext</span><button type="button" class="copy">Copy</button></div>
 <pre><code class="language-cnext">main {
-    print("Name: ")
-    var name = input()
-    print("Favorite number: ")
-    var num = input()
-    printin("Hello, " + name + "! " + num + " is a great choice.")
+    var name = input("Name: ")
+    var num = input_int("Favorite number: ")
+    printin("Hello, {name}! {num} is a great choice.")
 }</code></pre>
 </div>
 </details>
@@ -810,6 +841,18 @@ var e = 10 % 3   // 1   remainder (modulo)</code></pre>
 10 &gt;= 10   // true   greater than or equal
 10 &lt;= 5    // false  less than or equal</code></pre>
 </div>
+<aside class="callout tip"><span class="cl"><span class="cl-kind">Tip</span><span class="cl-detail">= stores, == asks</span></span>
+<p>Don't confuse <code>=</code> with <code>==</code>. One equals sign <em>stores</em> a value: <code>x = 5</code> puts 5 into x. Two equals signs <em>asks a question</em>: <code>x == 5</code> checks whether x is 5 and produces a <code>bool</code>, without changing anything. Mixing these up is the most common beginner bug in every C-family language, so it's worth memorizing now: <strong>= changes, == checks</strong>.</p>
+</aside>
+<aside class="callout note"><span class="cl"><span class="cl-kind">Note</span><span class="cl-detail">how bools display</span></span>
+<p>A <code>bool</code> stored in a variable (or returned from a function) prints as <code>true</code>/<code>false</code>; a comparison written directly inside <code>printin(...)</code> may display as <code>1</code>/<code>0</code>. Both mean the same thing, and inside <code>if</code> and <code>while</code> you use the comparison directly, so the display never matters there:</p>
+<div class="codeblock">
+<div class="codebar"><span class="lang">Cnext</span><button type="button" class="copy">Copy</button></div>
+<pre><code class="language-cnext">var same = (10 == 10)
+printin(same)        // true
+printin(10 == 10)    // 1  (same answer, shorter display)</code></pre>
+</div>
+</aside>
 <h3 id="sec-6-4">6.4 Logical operators<a class="anchor" href="#sec-6-4" aria-label="Link to this section">#</a></h3>
 <p>Combine conditions into one <code>true</code>/<code>false</code> answer:</p>
 <div class="codeblock">
@@ -890,7 +933,7 @@ if temp &gt; 35 {
 </div>
 <p>Cnext checks conditions <strong>top to bottom</strong> and runs the code for the <em>first</em> one that is true. If none match, it runs the <code>else</code> block (if present).</p>
 <aside class="callout key"><span class="cl"><span class="cl-kind">Key point</span></span>
-<p>The condition inside <code>if ( ... )</code> must be a <code>bool</code>; that is, something that is either <code>true</code> or <code>false</code>. <code>if score { }</code> won't compile if <code>score</code> is an <code>int</code>; you must write <code>if score &gt; 0 { }</code>.</p>
+<p>The condition after <code>if</code> must be a <code>bool</code>; that is, something that is either <code>true</code> or <code>false</code>. <code>if score { }</code> won't compile if <code>score</code> is an <code>int</code>; you must write <code>if score &gt; 0 { }</code>.</p>
 </aside>
 <h3 id="sec-7-3">7.3 The <code>match</code> expression<a class="anchor" href="#sec-7-3" aria-label="Link to this section">#</a></h3>
 <p>When you want to compare one value against many possibilities, like an exact choice, <strong><code>match</code></strong> is cleaner than a long chain of <code>if/else if</code>. A <code>match</code> <em>produces a value</em>:</p>
@@ -1375,14 +1418,13 @@ main {
 <li><p><strong><code>null</code></strong> means "no value." Some types can hold <code>null</code> to express "this is missing or unknown." <strong>Nullable types</strong> let you mark exactly where this is possible, so the compiler can help you avoid crashes.</p></li>
 </ul>
 <h3 id="sec-13-2">13.2 Nullable types<a class="anchor" href="#sec-13-2" aria-label="Link to this section">#</a></h3>
-<p>By default, a type doesn't allow <code>null</code>. Add a <code>?</code> to make it nullable:</p>
+<p>Strings and class references can hold <code>null</code>; <code>?</code> documents that intent. Cnext does not yet enforce non-null references. Nullable scalars and arrays are not supported and produce a compiler error.</p>
 <div class="codeblock">
 <div class="codebar"><span class="lang">Cnext</span><button type="button" class="copy">Copy</button></div>
 <pre><code class="language-cnext">str? maybe_name = null      // may or may not hold text
-int? maybe_age = 25         // optional number
 
-if maybe_age != null {
-    printin(maybe_age)      // safe to use here
+if maybe_name != null {
+    printin(maybe_name)
 }</code></pre>
 </div>
 <h3 id="sec-13-3">13.3 The null-coalescing operator <code>??</code><a class="anchor" href="#sec-13-3" aria-label="Link to this section">#</a></h3>
@@ -1400,22 +1442,22 @@ if maybe_age != null {
 </div>
 <p>If <code>user</code> or <code>user.address</code> is <code>null</code>, the whole chain safely becomes <code>null</code>, and <code>??</code> turns it into <code>"Unknown"</code>.</p>
 <aside class="callout theory"><span class="cl"><span class="cl-kind">Theory</span><span class="cl-detail">null bugs and how types help</span></span>
-<p>"Null pointer" crashes are among the most famous bugs in programming. In languages where almost any value can silently be null, these bugs only surface at runtime. Cnext's <code>?</code> types make "this might be null" explicit to the compiler, so it can check that you handle the "no value" case, catching many bugs before the program even runs.</p>
+<p>"Null pointer" crashes are among the most famous bugs in programming. In languages where almost any value can silently be null, these bugs only surface at runtime. Cnext's <code>?</code> syntax documents nullable references, but does not yet prove that every use handles null. Use <code>??</code> defaults and check references before dereferencing them.</p>
 </aside>
 <aside class="callout realworld"><span class="cl"><span class="cl-kind">Real world</span></span>
 <p>"No value" situations are everywhere: a user has no middle name, a searched record wasn't found, a setting isn't configured yet. Representing these clearly with nullable types and <code>??</code> defaults writes code that stays predictable instead of crashing on surprise empty values.</p>
 </aside>
 <aside class="callout exercise"><span class="cl"><span class="cl-kind">Exercise</span><span class="cl-detail">13.1</span></span>
-<p>Declare a nullable <code>int?</code> and set it to <code>null</code>. Print it using <code>??</code> with a fallback of <code>0</code>, then assign it a number and print it again.</p>
+<p>Declare a nullable <code>str?</code> and set it to <code>null</code>. Print it using <code>??</code> with a fallback of <code>"Guest"</code>, then assign it a name and print it again.</p>
 </aside>
 <details class="solution"><summary>Suggested solution</summary>
 <div class="codeblock">
 <div class="codebar"><span class="lang">Cnext</span><button type="button" class="copy">Copy</button></div>
 <pre><code class="language-cnext">main {
-    int? c = null
-    printin(c ?? 0)      // prints 0 because c is null
-    c = 7
-    printin(c ?? 0)      // prints 7
+    str? name = null
+    printin(name ?? "Guest")
+    name = "Alice"
+    printin(name ?? "Guest")
 }</code></pre>
 </div>
 </details>
@@ -1439,14 +1481,13 @@ if maybe_age != null {
     int y
 }
 
-Point p = Point { x: 10, y: 20 }
+Point p
+p.x = 10
+p.y = 20
 printin(p.x)  // 10
-printin(p.y)  // 20
-
-p.y = 35               // you can change a field
-printin(p.y)           // 35</code></pre>
+printin(p.y)  // 20</code></pre>
 </div>
-<p>You can also set fields after creation:</p>
+<p>You declare a struct variable, then set each field. You can also change fields after creation:</p>
 <div class="codeblock">
 <div class="codebar"><span class="lang">Cnext</span><button type="button" class="copy">Copy</button></div>
 <pre><code class="language-cnext">struct User {
@@ -1718,7 +1759,7 @@ printin(str_box.get())   // hello</code></pre>
 <pre><code class="language-cnext">var flag_box = new Box&lt;bool&gt;(true)
 var price_box = new Box&lt;double&gt;(9.99)
 printin(flag_box.get())    // true
-printin(price_box.get())   // 9.99</code></pre>
+printin(price_box.get())   // 9.990000</code></pre>
 </div>
 </details>
 <h1 id="part-iv" class="part"><span class="part-label">Part IV</span><span class="part-title">Modern Features</span></h1>
@@ -1766,8 +1807,8 @@ printin(add_x(5))              // 15   (5 + 10)</code></pre>
 var student = (float p) =&gt; p * 0.9      // 10% off
 var member  = (float p) =&gt; p * 0.8      // 20% off
 
-printin(apply_to_price(100.0, student)) // 90.0
-printin(apply_to_price(100.0, member))  // 80.0</code></pre>
+printin(apply_to_price(100.0, student)) // 90.000000
+printin(apply_to_price(100.0, member))  // 80.000000</code></pre>
 </div>
 <aside class="callout theory"><span class="cl"><span class="cl-kind">Theory</span><span class="cl-detail">functions as values</span></span>
 <p>Treating functions as data is a cornerstone of <strong>functional programming</strong>. It's powerful because you can <em>parametrize</em> behavior: the same code runs with different rules swapped in. Under the hood, a closure bundles the function with the captured variables' values, so the combination can be passed around as one unit.</p>
@@ -1818,7 +1859,8 @@ for var val in count_to(5) {
 <div class="codeblock">
 <div class="codebar"><span class="lang">Cnext</span><button type="button" class="copy">Copy</button></div>
 <pre><code class="language-cnext">func fibonacci(): iter&lt;int&gt; {
-    var a = 0, b = 1
+    var a = 0
+    var b = 1
     while true {
         yield a
         var temp = a + b
@@ -2013,7 +2055,7 @@ math_fibonacci(10)            // 55</code></pre>
 <div class="codeblock">
 <div class="codebar"><span class="lang">Cnext</span><button type="button" class="copy">Copy</button></div>
 <pre><code class="language-cnext">to_int(3.14)                  // 3
-to_float(42)                  // 42.0
+to_float(42)                  // 42.000000
 to_str(42)                    // "42"
 to_bool(1)                    // true
 ord("A")                      // 65</code></pre>
@@ -2027,7 +2069,9 @@ str_contains("hello", "ell")  // true
 str_replace("hello", "l", "r")// "herro"
 str_substring("hello", 1, 3)  // "el"
 str_split("a,b,c", ",")       // ["a", "b", "c"]
-str_join(["a","b"], ", ")     // "a, b"</code></pre>
+
+str[] letters = {"a", "b"}
+str_join(letters, ", ")       // "a, b"</code></pre>
 </div>
 <p><strong>File &amp; system</strong></p>
 <div class="codeblock">
@@ -2125,7 +2169,7 @@ cd my_app</code></pre>
 <p>Let's combine many chapters into one genuinely useful program: a <strong>grade book</strong> that</p>
 <ol>
 <li><p>stores several students (struct/class) with scores,</p></li>
-<li><p>reads input with <code>input</code>,</p></li>
+<li><p>reads input with <code>input()</code> and typed readers,</p></li>
 <li><p>decides pass/fail with <code>if</code> (Chapter 7),</p></li>
 <li><p>loops over the list (Chapter 8),</p></li>
 <li><p>uses functions (Chapter 11),</p></li>
@@ -2182,8 +2226,7 @@ Cy: 92 -&gt; PASS</code></pre>
 <div class="codeblock">
 <div class="codebar"><span class="lang">Cnext</span><button type="button" class="copy">Copy</button></div>
 <pre><code class="language-cnext">main {
-    print("Enter a score (0-100): ")
-    var raw = input()
+    var raw = input("Enter a score (0-100): ")
     try {
         var n = to_int(raw)
         printin(n &gt;= 60 ? "PASS" : "FAIL")
@@ -2192,6 +2235,9 @@ Cy: 92 -&gt; PASS</code></pre>
     }
 }</code></pre>
 </div>
+<blockquote>
+<p><code>input_int()</code> is simpler when invalid input should become <code>0</code>. Keep <code>to_int(input())</code> here because this exercise deliberately catches bad text.</p>
+</blockquote>
 <aside class="callout exercise"><span class="cl"><span class="cl-kind">Exercise</span><span class="cl-detail">24.1</span></span>
 <p>Extend the grade book: read several student names+scores from the user, store them in the <code>Student[]</code> array, then print the class <strong>average</strong> score. Use a loop to sum the scores and divide by the count.</p>
 </aside>
@@ -2214,14 +2260,11 @@ main {
     var more = "yes"
 
     while more == "yes" {
-        print("Student name: ")
-        var name = input()
-        print("Score: ")
-        var score = to_int(input())
+        var name = input("Student name: ")
+        var score = to_int(input("Score: "))
         total = total + score
         count = count + 1
-        print("Another? (yes/no): ")
-        more = input()
+        more = input("Another? (yes/no): ")
     }
 
     if count &gt; 0 {

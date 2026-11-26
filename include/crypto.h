@@ -83,6 +83,47 @@ static void _sha256(const uint8_t* data, uint64_t len, uint8_t out[32]) {
     free(buf);
 }
 
+static uint32_t _cnext_sha1_rotl(uint32_t value, unsigned bits) {
+    return (value << bits) | (value >> (32 - bits));
+}
+
+static void _sha1(const uint8_t* data, uint64_t len, uint8_t out[20]) {
+    uint32_t h[5] = {0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476, 0xc3d2e1f0};
+    uint64_t blocks = len / 64 + 1 + (len % 64 >= 56);
+    for (uint64_t block = 0; block < blocks; block++) {
+        uint8_t bytes[64] = {0};
+        uint64_t offset = block * 64;
+        if (offset < len) {
+            size_t count = len - offset < 64 ? (size_t)(len - offset) : 64;
+            memcpy(bytes, data + offset, count);
+        }
+        if (offset <= len && len - offset < 64) bytes[len - offset] = 0x80;
+        if (block == blocks - 1) {
+            for (int i = 0; i < 8; i++) bytes[56 + i] = (uint8_t)((len * 8) >> (56 - 8 * i));
+        }
+        uint32_t w[80];
+        for (int i = 0; i < 16; i++) {
+            w[i] = (uint32_t)bytes[i*4] << 24 | (uint32_t)bytes[i*4+1] << 16 |
+                   (uint32_t)bytes[i*4+2] << 8 | (uint32_t)bytes[i*4+3];
+        }
+        for (int i = 16; i < 80; i++) w[i] = _cnext_sha1_rotl(w[i-3] ^ w[i-8] ^ w[i-14] ^ w[i-16], 1);
+        uint32_t a = h[0], b = h[1], c = h[2], d = h[3], e = h[4];
+        for (int i = 0; i < 80; i++) {
+            uint32_t f, k;
+            if (i < 20) { f = (b & c) | (~b & d); k = 0x5a827999; }
+            else if (i < 40) { f = b ^ c ^ d; k = 0x6ed9eba1; }
+            else if (i < 60) { f = (b & c) | (b & d) | (c & d); k = 0x8f1bbcdc; }
+            else { f = b ^ c ^ d; k = 0xca62c1d6; }
+            uint32_t next = _cnext_sha1_rotl(a, 5) + f + e + k + w[i];
+            e = d; d = c; c = _cnext_sha1_rotl(b, 30); b = a; a = next;
+        }
+        h[0] += a; h[1] += b; h[2] += c; h[3] += d; h[4] += e;
+    }
+    for (int i = 0; i < 5; i++) {
+        for (int j = 0; j < 4; j++) out[i*4+j] = (uint8_t)(h[i] >> (24 - 8 * j));
+    }
+}
+
 static const char _b64c[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 static signed char _b64d[256];
 static int _b64_init = 0;
@@ -119,6 +160,13 @@ static CnextString crypto_sha256(CnextString input) {
     uint8_t hash[32];
     _sha256((const uint8_t*)input.data, input.length, hash);
     return _hex_str(hash, 32, 0);
+}
+
+static CnextString crypto_sha1(CnextString input) {
+    if (!input.data) return (CnextString){NULL, 0};
+    uint8_t hash[20];
+    _sha1((const uint8_t*)input.data, input.length, hash);
+    return _hex_str(hash, 20, false);
 }
 
 static CnextString crypto_base64_encode(CnextString input) {

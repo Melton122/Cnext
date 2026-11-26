@@ -79,6 +79,7 @@ void write_indent(void);
 void track_source_line(int src_line);
 char* copy_token_text(Token token);
 void generate_type(Token token, bool is_pointer);
+void generate_return_type(ASTNode* node);
 void generate_node_type(ASTNode* node, bool is_pointer);
 bool node_array_is_object(ASTNode* node);
 bool is_array_literal_assignment(ASTNode* node);
@@ -93,6 +94,16 @@ void generate_function_prototype(ASTNode* node);
 void emit_line_directive(int src_line);
 ASTNode* find_func_decl(ASTNode* prog, const char* name);
 ASTNode* find_class_decl(ASTNode* prog, const char* name);
+ASTNode* find_struct_decl(ASTNode* prog, const char* name);
+bool type_is_struct(const char* name);
+void emit_struct_array_type(ASTNode* node);
+bool has_struct_array_typedef(const char* name);
+void add_struct_array_typedef(const char* name);
+void clear_struct_array_typedefs(void);
+bool type_token_is_int_abi_safe(CnextTokenType type);
+CnextTokenType lambda_body_result_type(ASTNode* lambda);
+bool lambda_signature_is_int_abi_safe(ASTNode* lambda);
+bool emit_func_param_adapter_value(ASTNode* call, ASTNode* fdecl, int arg_index);
 
 /* --- String Interpolation (codegen_emit.c) --- */
 bool is_valid_interpolation(const char* start, const char* end);

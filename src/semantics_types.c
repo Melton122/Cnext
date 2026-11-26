@@ -45,6 +45,7 @@ static bool numeric_assignment_allowed(CnextTokenType expected, CnextTokenType a
 }
 
 char* type_name_from_token(Token token) {
+    if (token.type == TOKEN_NULL) return copy_cstring("null");
     if (token.type == TOKEN_STR_TYPE) return copy_cstring("str");
     if (token.type == TOKEN_INT_TYPE) return copy_cstring("int");
     if (token.type == TOKEN_LONG_TYPE) return copy_cstring("long");
@@ -62,7 +63,23 @@ char* type_name_from_token(Token token) {
     return sem_copy_token_text(token);
 }
 
-bool assignment_types_compatible(Token expected, CnextTokenType actual) {
+static bool sem_null_assignment_allowed(Token type) {
+    for (int depth = 0; depth < 64; depth++) {
+        if (type.type == TOKEN_STR_TYPE) return true;
+        if (type.type != TOKEN_IDENTIFIER) return false;
+        if (token_matches_name(type, "CStr")) return true;
+        Symbol* sym = resolve_symbol(type);
+        if (!sym || !sym->decl_node) return false;
+        if (sym->decl_node->type == AST_TYPE_ALIAS && sym->decl_node->left) {
+            if (sym->decl_node->left->is_array) return false;
+            type = sym->decl_node->left->token;
+        } else return sym->decl_node->type == AST_CLASS_DECL;
+    }
+    return false;
+}
+
+static bool assignment_types_compatible_depth(Token expected, CnextTokenType actual, int depth) {
+    if (depth >= 64) return false;
     if (expected.type == TOKEN_VAR || actual == TOKEN_EOF) return true;
     if (expected.type == actual) return true;
     // Numeric conversions must be provably lossless unless the source spells
@@ -72,12 +89,7 @@ bool assignment_types_compatible(Token expected, CnextTokenType actual) {
     }
 
     if (actual == TOKEN_NULL) {
-        if (expected.type == TOKEN_STR_TYPE) return true;
-        if (expected.type == TOKEN_IDENTIFIER) {
-            Symbol* type_symbol = resolve_symbol(expected);
-            return type_symbol && (type_symbol->type == TOKEN_CLASS || type_symbol->type == TOKEN_STRUCT || type_symbol->type == TOKEN_INTERFACE);
-        }
-        return false;
+        return sem_null_assignment_allowed(expected);
     }
 
     if (expected.type == TOKEN_IDENTIFIER) {
@@ -87,13 +99,29 @@ bool assignment_types_compatible(Token expected, CnextTokenType actual) {
         if (type_symbol->decl_node && type_symbol->decl_node->type == AST_TYPE_ALIAS &&
             type_symbol->decl_node->left) {
             Token underlying = type_symbol->decl_node->left->token;
-            return assignment_types_compatible(underlying, actual);
+            return assignment_types_compatible_depth(underlying, actual, depth + 1);
         }
         if (type_symbol->type == TOKEN_ENUM && actual == TOKEN_INT_TYPE) return true;
         return false;
     }
 
     return false;
+}
+
+bool assignment_types_compatible(Token expected, CnextTokenType actual) {
+    return assignment_types_compatible_depth(expected, actual, 0);
+}
+
+void sem_validate_alias(ASTNode* node) {
+    Token target = node->token;
+    for (int depth = 0; depth < 64; depth++) {
+        Symbol* sym = resolve_symbol(target);
+        if (!sym || !sym->decl_node || sym->decl_node->type != AST_TYPE_ALIAS || !sym->decl_node->left) return;
+        target = sym->decl_node->left->token;
+        if (target.type != TOKEN_IDENTIFIER) return;
+        if (target.length == node->token.length && !strncmp(target.start, node->token.start, target.length)) break;
+    }
+    report_token_error(ERR_SEM_TYPE_MISMATCH, node->token, "Cyclic or overly deep type alias:");
 }
 
 bool sem_is_cstr_type(Token type) {
@@ -112,29 +140,256 @@ static bool sem_is_text_type(CnextTokenType type) {
     return type == TOKEN_STR_TYPE;
 }
 
+static Token sem_unalias(Token type) {
+    for (int depth = 0; depth < 64 && type.type == TOKEN_IDENTIFIER; depth++) {
+        Symbol* sym = resolve_symbol(type);
+        if (!sym || !sym->decl_node || sym->decl_node->type != AST_TYPE_ALIAS ||
+            !sym->decl_node->left) break;
+        type = sym->decl_node->left->token;
+    }
+    return type;
+}
+
+static bool sem_concrete_record(Symbol* sym) {
+    return sym && sym->decl_node && (sym->decl_node->type == AST_CLASS_DECL ||
+                                      sym->decl_node->type == AST_STRUCT_DECL);
+}
+
+static ASTNode* sem_array_declaration(ASTNode* value) {
+    if (!value) return NULL;
+    if (value->type == AST_LITERAL_ARRAY) return value;
+    if (value->type == AST_SLICE) return sem_array_declaration(value->left);
+    if (value->type == AST_IDENTIFIER) {
+        Symbol* sym = resolve_symbol(value->token);
+        if (sym && sym->decl_node && sym->decl_node->is_array) return sym->decl_node;
+    }
+    ASTNode* field = resolve_field_decl(value);
+    if (field && field->is_array) return field;
+    return value->is_array ? value : NULL;
+}
+
+bool sem_value_is_array(ASTNode* value) { return sem_array_declaration(value) != NULL; }
+
+void sem_check_value_assignment(Token expected, bool array, ASTNode* value) {
+    if (!value || expected.type == TOKEN_VAR || expected.type == TOKEN_EOF) return;
+    ASTNode* actual_array = sem_array_declaration(value);
+    bool known = actual_array || (value->expr_type != TOKEN_EOF && value->expr_type != TOKEN_VAR) ||
+                 value->type == AST_IDENTIFIER || value->type == AST_NULL_LITERAL;
+    if (known && array != (actual_array != NULL)) {
+        report_token_error(ERR_SEM_TYPE_MISMATCH, value->token, "Array/scalar shape mismatch:");
+        return;
+    }
+    if (array && actual_array) {
+        if (value->type == AST_LITERAL_ARRAY) {
+            value->var_type = expected;
+            value->is_array = true;
+            for (int i = 0; i < value->child_count; i++) {
+                ASTNode* item = value->children[i];
+                sem_apply_expected_type(item, expected.type);
+                analyze_expression(item);
+                sem_check_value_assignment(expected, false, item);
+            }
+        } else {
+            Token want = sem_unalias(expected);
+            Token got = sem_unalias(actual_array->var_type);
+            Symbol* generic = want.type == TOKEN_IDENTIFIER ? resolve_symbol(want) : NULL;
+            if (want.type == TOKEN_IDENTIFIER && (!generic ||
+                (generic->decl_node && generic->decl_node->type == AST_TYPE_PARAM))) return;
+            bool same = want.type == got.type;
+            if (same && want.type == TOKEN_IDENTIFIER) {
+                same = want.length == got.length && want.start && got.start &&
+                       strncmp(want.start, got.start, want.length) == 0;
+            }
+            if (!same && got.type != TOKEN_EOF && got.type != TOKEN_VAR) {
+                report_token_error(ERR_SEM_TYPE_MISMATCH, value->token,
+                                   "Array element types must match exactly:");
+            }
+        }
+        return;
+    }
+    if (!array) sem_check_assignment_type(expected, value, value->expr_type);
+}
+
+void sem_validate_nullable_type(Token type, bool nullable) {
+    if (!nullable) return;
+    Token alias = type;
+    for (int depth = 0; depth < 64 && alias.type == TOKEN_IDENTIFIER; depth++) {
+        Symbol* sym = resolve_symbol(alias);
+        if (!sym || !sym->decl_node || sym->decl_node->type != AST_TYPE_ALIAS || !sym->decl_node->left) break;
+        if (sym->decl_node->left->is_array) {
+            report_token_error(ERR_SEM_TYPE_MISMATCH, type,
+                               "Nullable type requires a string or class reference:");
+            return;
+        }
+        alias = sym->decl_node->left->token;
+    }
+    Token actual = sem_unalias(type);
+    if (actual.type == TOKEN_STR_TYPE || sem_is_cstr_type(actual)) return;
+    Symbol* sym = actual.type == TOKEN_IDENTIFIER ? resolve_symbol(actual) : NULL;
+    if (sym && sym->decl_node && sym->decl_node->type == AST_CLASS_DECL) return;
+    report_token_error(ERR_SEM_TYPE_MISMATCH, type,
+                       "Nullable type requires a string or class reference:");
+}
+
+static bool sem_record_assignment_allowed(Token expected, ASTNode* value, CnextTokenType actual) {
+    expected = sem_unalias(expected);
+    Token found = {.type = actual};
+    if (value->type_name) {
+        found.start = value->type_name;
+        found.length = (int)strlen(value->type_name);
+    } else if (value->type == AST_NEW_EXPR) {
+        found = value->token;
+        found.type = TOKEN_IDENTIFIER;
+    } else if (value->type == AST_CAST) {
+        found = value->var_type;
+    }
+    found = sem_unalias(found);
+    Symbol* want_sym = expected.type == TOKEN_IDENTIFIER ? resolve_symbol(expected) : NULL;
+    Symbol* got_sym = found.type == TOKEN_IDENTIFIER && found.start ? resolve_symbol(found) : NULL;
+    if (!sem_concrete_record(want_sym) && !sem_concrete_record(got_sym)) return true;
+    // Unresolved type parameters are checked when specialized; they are not
+    // concrete classes and must not be mistaken for unrelated records.
+    if (expected.type == TOKEN_IDENTIFIER && !want_sym) return true;
+    if (found.type == TOKEN_IDENTIFIER && !got_sym) return true;
+    if (want_sym && want_sym->decl_node && want_sym->decl_node->type == AST_TYPE_PARAM) return true;
+    if (got_sym && got_sym->decl_node && got_sym->decl_node->type == AST_TYPE_PARAM) return true;
+    for (int depth = 0; depth < 64 && sem_concrete_record(got_sym); depth++) {
+        if (want_sym == got_sym) {
+            if (depth > 0) value->upcast_type = expected;
+            return true;
+        }
+        const char* parent = got_sym->decl_node->parent_name;
+        if (!parent) break;
+        Token parent_token = {TOKEN_IDENTIFIER, parent, (int)strlen(parent), value->token.line};
+        got_sym = resolve_symbol(parent_token);
+    }
+    return false;
+}
+
+static Token sem_branch_type(ASTNode* value) {
+    if (value->type == AST_NULL_LITERAL) return (Token){.type = TOKEN_NULL};
+    ASTNode* array = sem_array_declaration(value);
+    Token type = array ? array->var_type : (Token){.type = value->expr_type};
+    if (!array && type.type == TOKEN_IDENTIFIER) {
+        if (value->type_name) type = (Token){TOKEN_IDENTIFIER, value->type_name, (int)strlen(value->type_name), value->token.line};
+        else if (value->var_type.type == TOKEN_IDENTIFIER) type = value->var_type;
+    }
+    type = sem_unalias(type);
+    if (type.type == TOKEN_IDENTIFIER && type.start) {
+        Symbol* sym = resolve_symbol(type);
+        if (sym && sym->decl_node) { type = sym->decl_node->token; type.type = TOKEN_IDENTIFIER; }
+        else if (token_matches_name(type, "CStr")) type = (Token){TOKEN_IDENTIFIER, "CStr", 4, value->token.line};
+    }
+    return type;
+}
+
+void sem_coerce_branch(ASTNode* value, Token result, bool array) {
+    if (array) { sem_check_value_assignment(result, true, value); return; }
+    if (value->type == AST_NULL_LITERAL) {
+        value->expr_type = result.type;
+        free(value->type_name);
+        value->type_name = type_name_from_token(result);
+    } else if (IS_BUILTIN_NUMERIC(result.type) && value->expr_type != result.type) {
+        value->upcast_type = result;
+    } else if (result.type == TOKEN_IDENTIFIER && value->expr_type == TOKEN_IDENTIFIER) {
+        sem_record_assignment_allowed(result, value, value->expr_type);
+    }
+}
+
+static CnextTokenType sem_set_join_type(ASTNode* owner, Token type, bool array) {
+    char* name = type_name_from_token(type);
+    free(owner->type_name);
+    owner->type_name = name;
+    owner->var_type = type;
+    owner->expr_type = type.type;
+    owner->is_array = array;
+    Symbol* sym = type.type == TOKEN_IDENTIFIER && type.start ? resolve_symbol(type) : NULL;
+    owner->is_class = !array && sym && sym->decl_node && sym->decl_node->type == AST_CLASS_DECL;
+    return type.type;
+}
+
+CnextTokenType sem_join_branch_types(ASTNode* owner, ASTNode* left, ASTNode* right) {
+    bool a_array = sem_value_is_array(left), b_array = sem_value_is_array(right);
+    Token a = sem_branch_type(left), b = sem_branch_type(right), result = a;
+    if (a_array && right->type == AST_LITERAL_ARRAY && b.type == TOKEN_EOF) {
+        sem_check_value_assignment(a, true, right);
+        b = sem_branch_type(right);
+    } else if (b_array && left->type == AST_LITERAL_ARRAY && a.type == TOKEN_EOF) {
+        sem_check_value_assignment(b, true, left);
+        a = sem_branch_type(left); result = a;
+    }
+    if (a_array != b_array) goto incompatible;
+    if (a.type == TOKEN_EOF || a.type == TOKEN_VAR || b.type == TOKEN_EOF || b.type == TOKEN_VAR)
+        return sem_set_join_type(owner, (Token){.type = TOKEN_EOF}, false);
+    if (a.type == TOKEN_NULL || b.type == TOKEN_NULL) {
+        if (a.type == TOKEN_NULL && b.type == TOKEN_NULL) goto incompatible;
+        result = a.type == TOKEN_NULL ? b : a;
+        if (a_array || !sem_null_assignment_allowed(result)) goto incompatible;
+    } else if (a.type == b.type && (a.type != TOKEN_IDENTIFIER ||
+               (a.length == b.length && a.start && b.start && !strncmp(a.start, b.start, a.length)))) {
+        result = a;
+    } else if (a_array) {
+        goto incompatible;
+    } else if (IS_BUILTIN_NUMERIC(a.type) && IS_BUILTIN_NUMERIC(b.type)) {
+        if (assignment_types_compatible(a, b.type)) result = a;
+        else if (assignment_types_compatible(b, a.type)) result = b;
+        else if (assignment_types_compatible((Token){.type = TOKEN_DOUBLE_TYPE}, a.type) &&
+                 assignment_types_compatible((Token){.type = TOKEN_DOUBLE_TYPE}, b.type))
+            result = (Token){.type = TOKEN_DOUBLE_TYPE};
+        else goto incompatible;
+    } else if (a.type == TOKEN_IDENTIFIER && b.type == TOKEN_IDENTIFIER) {
+        Symbol* a_sym = a.start ? resolve_symbol(a) : NULL;
+        Symbol* b_sym = b.start ? resolve_symbol(b) : NULL;
+        if (!sem_concrete_record(a_sym) || !sem_concrete_record(b_sym)) goto incompatible;
+        if (sem_record_assignment_allowed(a, right, b.type)) result = a;
+        else if (sem_record_assignment_allowed(b, left, a.type)) result = b;
+        else goto incompatible;
+    } else goto incompatible;
+    sem_coerce_branch(left, result, a_array);
+    sem_coerce_branch(right, result, a_array);
+    return sem_set_join_type(owner, result, a_array);
+incompatible:
+    report_token_error(ERR_SEM_TYPE_MISMATCH, owner->token, "Conditional branches have incompatible types:");
+    return sem_set_join_type(owner, (Token){.type = TOKEN_EOF}, false);
+}
+
 void sem_check_assignment_type(Token expected, ASTNode* value, CnextTokenType actual) {
     if (!value) return;
     if (expected.type == TOKEN_VAR || expected.type == TOKEN_EOF) return;
-    if (actual == TOKEN_EOF || actual == TOKEN_VAR || actual == TOKEN_NULL) return;
-    if (value->type == AST_NULL_LITERAL) return;
+    if (value->type == AST_NULL_LITERAL || actual == TOKEN_NULL) {
+        if (sem_null_assignment_allowed(expected)) return;
+        char* expected_name = type_name_from_token(expected);
+        report_error_expected(ERR_SEM_TYPE_MISMATCH, value->token.line, value->token.column,
+                              "Type mismatch: null requires a reference type.",
+                              expected_name ? expected_name : "unknown type", "null");
+        free(expected_name);
+        return;
+    }
+    if (actual == TOKEN_EOF || actual == TOKEN_VAR) return;
     if (sem_is_cstr_type(expected) || sem_expr_is_cstr(value)) return;
-    if (expected.type == TOKEN_IDENTIFIER || actual == TOKEN_IDENTIFIER) return;
-    if (expected.type == actual) return;
-
-    bool expected_text = sem_is_text_type(expected.type);
-    bool actual_text = sem_is_text_type(actual);
-    if (expected_text && actual_text) return;
-    if (!expected_text && !actual_text) {
-        if (IS_BUILTIN_NUMERIC(expected.type) && IS_BUILTIN_NUMERIC(actual)) {
-            if (assignment_types_compatible(expected, actual)) return;
-        } else if (expected.type != TOKEN_BOOL_TYPE && actual != TOKEN_BOOL_TYPE) {
-            return;
+    if (expected.type == TOKEN_IDENTIFIER || actual == TOKEN_IDENTIFIER) {
+        if (sem_record_assignment_allowed(expected, value, actual)) return;
+    } else {
+        if (expected.type == actual) return;
+        bool expected_text = sem_is_text_type(expected.type);
+        bool actual_text = sem_is_text_type(actual);
+        if (expected_text && actual_text) return;
+        if (!expected_text && !actual_text) {
+            if (IS_BUILTIN_NUMERIC(expected.type) && IS_BUILTIN_NUMERIC(actual)) {
+                if (assignment_types_compatible(expected, actual)) return;
+            } else if (expected.type != TOKEN_BOOL_TYPE && actual != TOKEN_BOOL_TYPE) {
+                return;
+            }
         }
     }
 
     char* expected_name = type_name_from_token(expected);
     Token actual_token = value->token;
     actual_token.type = actual;
+    if (actual == TOKEN_IDENTIFIER && value->type_name) {
+        actual_token.start = value->type_name;
+        actual_token.length = (int)strlen(value->type_name);
+    }
     char* actual_name = type_name_from_token(actual_token);
     report_error_expected(
         ERR_SEM_TYPE_MISMATCH,
@@ -265,13 +520,14 @@ void validate_var_initializer(ASTNode* node) {
         sem_apply_expected_type(node->init, node->var_type.type);
     }
     CnextTokenType init_type = analyze_expression(node->init);
+    sem_check_value_assignment(node->var_type, node->is_array, node->init);
     sem_check_cstr_conversion(node->var_type, node->init);
     if (node->init->type == AST_NULL_LITERAL) {
         node->init->expr_type = node->var_type.type;
         node->init->type_name = type_name_from_token(node->var_type);
     }
-    if (!(sem_is_cstr_type(node->var_type) && node->init->type == AST_NULL_LITERAL) &&
-        !assignment_types_compatible(node->var_type, init_type)) {
+    if (node->init->type != AST_NULL_LITERAL &&
+        !node->is_array && !assignment_types_compatible(node->var_type, init_type)) {
         char* expected = type_name_from_token(node->var_type);
         Token actual_token = (Token){.type = init_type};
         char* found = type_name_from_token(actual_token);
@@ -284,12 +540,18 @@ void validate_var_initializer(ASTNode* node) {
 }
 
 void analyze_var_declaration(ASTNode* node) {
+    sem_validate_nullable_type(node->var_type, node->type_is_nullable);
     node->lambda_depth = node->is_global ? -1 : sem_lambda_depth;
     validate_type_token(node->var_type);
     validate_var_initializer(node);
 
     // Infer type for 'var' declarations from the initializer
     if (node->var_type.type == TOKEN_VAR && node->init) {
+        ASTNode* array = sem_array_declaration(node->init);
+        if (array && array->var_type.type != TOKEN_EOF && array->var_type.type != TOKEN_VAR) {
+            node->is_array = true;
+            node->var_type = array->var_type;
+        }
         node->type_is_inferred = true;
         CnextTokenType inferred = node->init->expr_type;
         if (inferred != TOKEN_EOF && inferred != TOKEN_VAR) {
@@ -333,6 +595,7 @@ void analyze_var_declaration(ASTNode* node) {
 }
 
 void analyze_field_declaration(ASTNode* node) {
+    sem_validate_nullable_type(node->var_type, node->type_is_nullable);
     validate_type_token(node->var_type);
     if (node->init) {
         report_token_error(ERR_SEM_FIELD_INIT, node->token, "Fields cannot have initializers:");
@@ -357,6 +620,10 @@ void analyze_field_declaration(ASTNode* node) {
 }
 
 void register_import(Token module) {
+    // A local file import (`import "./util.cn"`) was merged into the program
+    // before parsing; it introduces no module symbol of its own.
+    if (module.length > 0 && module.start[0] == '"') return;
+
     define_symbol_if_missing(module, TOKEN_IDENTIFIER, true, NULL);
 
     if (token_matches_name(module, "io")) {

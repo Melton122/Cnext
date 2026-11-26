@@ -33,6 +33,156 @@ char* copy_token_text(Token token) {
     return copy;
 }
 
+// --- Adapting lambdas passed to untyped `func` parameters ---
+//
+// A `func` parameter is untyped, so a call through it inside the function
+// body uses a fixed `int`-based calling convention. A lambda whose real
+// signature works on other types (a float-returning discount, say) returns
+// its value in a different register, so calling it through the fixed
+// convention produced garbage. To keep one ABI at the call-through site, a
+// lambda passed as a `func` argument gets a static adapter that receives and
+// returns `int`s, calls the real lambda with its own types, and coerces the
+// result. Only signatures that survive the int round-trip (numeric/bool
+// parameters and result, or void) are adapted; anything else keeps the
+// previous direct pass-through.
+static int adapt_counter = 0;
+
+bool type_token_is_int_abi_safe(CnextTokenType type) {
+    switch (type) {
+        case TOKEN_INT_TYPE:
+        case TOKEN_LONG_TYPE:
+        case TOKEN_FLOAT_TYPE:
+        case TOKEN_DOUBLE_TYPE:
+        case TOKEN_BOOL_TYPE:
+        case TOKEN_CHAR_TYPE:
+        case TOKEN_BYTE_TYPE:
+        case TOKEN_UINT_TYPE:
+        case TOKEN_ULONG_TYPE:
+        case TOKEN_USHORT_TYPE:
+        case TOKEN_UBYTE_TYPE:
+            return true;
+        default:
+            return false;
+    }
+}
+
+// The CnextTokenType a lambda body produces (TOKEN_EOF when void).
+CnextTokenType lambda_body_result_type(ASTNode* lambda) {
+    if (!lambda || !lambda->left) return TOKEN_EOF;
+    if (lambda->left->type != AST_BLOCK) return lambda->left->expr_type;
+    for (int i = 0; i < lambda->left->child_count; i++) {
+        ASTNode* stmt = lambda->left->children[i];
+        if (stmt->type == AST_RETURN) {
+            return stmt->left ? stmt->left->expr_type : TOKEN_EOF;
+        }
+    }
+    return TOKEN_EOF;
+}
+
+bool lambda_signature_is_int_abi_safe(ASTNode* lambda) {
+    if (!lambda) return false;
+    CnextTokenType ret = lambda_body_result_type(lambda);
+    if (ret != TOKEN_EOF && !type_token_is_int_abi_safe(ret)) return false;
+    for (int i = 0; i < lambda->child_count; i++) {
+        if (!type_token_is_int_abi_safe(lambda->children[i]->var_type.type)) return false;
+    }
+    return true;
+}
+
+// The lambda a closure-valued expression denotes, if any.
+static ASTNode* adapter_lambda_for(ASTNode* arg) {
+    if (!arg) return NULL;
+    if (arg->type == AST_LAMBDA) return arg;
+    if (arg->type == AST_IDENTIFIER && arg->binding &&
+        arg->binding->type == AST_VAR_DECL) {
+        return ast_closure_lambda(arg->binding);
+    }
+    return NULL;
+}
+
+// Emits a static `int`-ABI adapter for the lambda passed as the
+// `arg_index`th argument of `call`, plus the wrapper expression that pairs
+// the adapter with a copy of the real closure. Returns false when the
+// argument is not an adaptable lambda (the caller falls back to direct
+// codegen).
+bool emit_func_param_adapter_value(ASTNode* call, ASTNode* fdecl, int arg_index) {
+    if (!fdecl || fdecl->type != AST_FUNC_DECL) return false;
+    if (arg_index >= fdecl->child_count || arg_index >= call->child_count) return false;
+    ASTNode* param = fdecl->children[arg_index];
+    if (!param || param->var_type.type != TOKEN_FUNC) return false;
+    ASTNode* lambda = adapter_lambda_for(call->children[arg_index]);
+    if (!lambda || !lambda_signature_is_int_abi_safe(lambda)) return false;
+    ASTNode* arg = call->children[arg_index];
+
+    int id = adapt_counter++;
+    bool ret_is_void = lambda_body_result_type(lambda) == TOKEN_EOF;
+    FILE* saved_out = out;
+    out = closure_defs_out;
+    fprintf(out, "static int _cnext_adapt_%d(void* _env", id);
+    for (int p = 0; p < lambda->child_count; p++) fprintf(out, ", int _a%d", p);
+    fprintf(out, ") {\n");
+    fprintf(out, "    CnextClosure* _real = (CnextClosure*)_env;\n");
+    if (ret_is_void) {
+        fprintf(out, "    ((");
+        generate_lambda_return_type(lambda->left);
+        fprintf(out, "(*)(void*");
+        for (int p = 0; p < lambda->child_count; p++) {
+            fprintf(out, ", ");
+            generate_type(lambda->children[p]->var_type, false);
+        }
+        fprintf(out, "))_real->fn)(_real->env");
+        for (int p = 0; p < lambda->child_count; p++) {
+            fprintf(out, ", (");
+            generate_type(lambda->children[p]->var_type, false);
+            fprintf(out, ")_a%d", p);
+        }
+        fprintf(out, ");\n    return 0;\n}\n\n");
+    } else {
+        fprintf(out, "    return (int)((");
+        generate_lambda_return_type(lambda->left);
+        fprintf(out, "(*)(void*");
+        for (int p = 0; p < lambda->child_count; p++) {
+            fprintf(out, ", ");
+            generate_type(lambda->children[p]->var_type, false);
+        }
+        fprintf(out, "))_real->fn)(_real->env");
+        for (int p = 0; p < lambda->child_count; p++) {
+            fprintf(out, ", (");
+            generate_type(lambda->children[p]->var_type, false);
+            fprintf(out, ")_a%d", p);
+        }
+        fprintf(out, ");\n}\n\n");
+    }
+    out = saved_out;
+
+    // The adapter's environment is a heap cell holding a copy of the real
+    // closure. The call-site guard later decrefs the adapter closure, and
+    // cnext_closure_decref frees a non-owner env, so the cell must live on
+    // the heap - a stack address would be freed and then dereferenced.
+    fprintf(out, "({ CnextClosure _adapt_rc_%d = ", id);
+    if (arg->type == AST_LAMBDA) {
+        // gen_lambda_expr emits a bare function pointer; only a declaration
+        // site wraps it into a CnextClosure, so do that here.
+        CapturedVar* caps = NULL;
+        detect_captures_walk(arg->left, &caps, arg, program_node);
+        int cap_count = 0;
+        for (CapturedVar* cv = caps; cv; cv = cv->next) cap_count++;
+        free_captures(caps);
+        if (cap_count == 0) {
+            fprintf(out, "(CnextClosure){ (void*)");
+            generate_expression(arg);
+            fprintf(out, ", NULL, 1 }");
+        } else {
+            generate_expression(arg);
+        }
+    } else {
+        generate_expression(arg);
+    }
+    fprintf(out, "; CnextClosure* _adapt_cell_%d = (CnextClosure*)malloc(sizeof(CnextClosure)); if (!_adapt_cell_%d) { fprintf(stderr, \"Cnext runtime: out of memory.\"); exit(70); } *_adapt_cell_%d = _adapt_rc_%d; (CnextClosure){ (void*)_cnext_adapt_%d, (void*)_adapt_cell_%d, 1, NULL }; })",
+            id, id, id, id, id, id);
+    return true;
+}
+
 void generate_lambda_return_type(ASTNode* body) {
     if (body->type != AST_BLOCK) {
         const char* c_type = type_token_to_c(body->expr_type);
@@ -99,8 +249,11 @@ void generate_type(Token token, bool is_pointer) {
     if (is_pointer) fprintf(out, "*");
 }
 
+static Token array_element_token(ASTNode* node);
+
 // An array whose element type is a class stores class instances, which are
-// pointers, so it uses CnextArrayObj rather than a typed value array.
+// pointers, so it uses CnextArrayObj rather than a typed value array. A struct
+// element is a value type, so it uses a typed value array instead.
 bool node_array_is_object(ASTNode* node) {
     if (!node || !node->is_array) return false;
     if (node->var_type.type == TOKEN_IDENTIFIER) {
@@ -111,11 +264,44 @@ bool node_array_is_object(ASTNode* node) {
         Token subst_type;
         bool subst_array;
         if (find_type_subst(elem_name, &subst_type, &subst_array)) {
+            if (subst_type.type == TOKEN_IDENTIFIER) {
+                char subst_name[256];
+                int slen = subst_type.length < 255 ? subst_type.length : 255;
+                memcpy(subst_name, subst_type.start, slen);
+                subst_name[slen] = '\0';
+                return !type_is_struct(subst_name);
+            }
             return subst_type.type == TOKEN_IDENTIFIER;
         }
-        return true;
+        return !type_is_struct(elem_name);
     }
     return false;
+}
+
+// Emits the array type for an element type that is neither one of the
+// built-in typed arrays nor a class reference: a value array of struct
+// elements. The struct is given a file-scope typedef (emitted into the
+// forward-declaration stream on first use) because two inline anonymous
+// structs declared in different scopes are distinct C types, which would
+// make the declaration and the literal initializer incompatible.
+void emit_struct_array_type(ASTNode* node) {
+    Token elem = array_element_token(node);
+    char elem_name[256];
+    int elen = elem.length < 255 ? elem.length : 255;
+    memcpy(elem_name, elem.start, elen);
+    elem_name[elen] = '\0';
+    char type_name[300];
+    snprintf(type_name, sizeof(type_name), "_CnextArray_%s", elem_name);
+    if (!has_struct_array_typedef(type_name)) {
+        FILE* saved_out = out;
+        out = spec_out;
+        fprintf(out, "typedef struct { ");
+        generate_type(elem, true);
+        fprintf(out, " data; size_t length; } %s;\n", type_name);
+        out = saved_out;
+        add_struct_array_typedef(type_name);
+    }
+    fprintf(out, "%s", type_name);
 }
 
 // `arr = { ... }` assigns a whole array value, so it needs a compound literal
@@ -164,7 +350,12 @@ void generate_array_value(ASTNode* type_owner, ASTNode* literal) {
     if (node_array_is_object(type_owner)) fprintf(out, "void*");
     else generate_type(type_owner->var_type, false);
     fprintf(out, "[])");
-    generate_expression(literal);
+    fprintf(out, "{");
+    for (int i = 0; i < literal->child_count; i++) {
+        if (i) fprintf(out, ", ");
+        generate_expression(literal->children[i]);
+    }
+    fprintf(out, "}");
     fprintf(out, ", %d }; ", literal->child_count);
     if (node_array_is_object(type_owner)) {
         fprintf(out, "_cnarr.data = (void**)_cnext_array_heap_copy(_cnarr.data, _cnarr.length, sizeof(void*)); ");
@@ -212,6 +403,14 @@ void generate_node_type(ASTNode* node, bool is_pointer) {
             case TOKEN_BOOL_TYPE: fprintf(out, "CnextArrayBool"); break;
             default: {
                 if (node_array_is_object(node)) fprintf(out, "CnextArrayObj");
+                else if (node->var_type.type == TOKEN_IDENTIFIER) {
+                    char elem_name[256];
+                    int elen = node->var_type.length < 255 ? node->var_type.length : 255;
+                    memcpy(elem_name, node->var_type.start, elen);
+                    elem_name[elen] = '\0';
+                    if (type_is_struct(elem_name)) emit_struct_array_type(node);
+                    else generate_type(node->var_type, false);
+                }
                 else generate_type(node->var_type, false);
                 break;
             }
@@ -401,7 +600,7 @@ void generate_function(ASTNode* node, const char* prefix) {
     current_func_returns_void = (node->return_type.type == TOKEN_EOF || type_token_to_c(node->return_type.type) == NULL);
     // A function whose declared return type names a class returns a pointer,
     // because class instances are always heap-allocated.
-    generate_type(node->return_type, node->is_class);
+    generate_return_type(node);
     if (prefix) {
         fprintf(out, " %s_%.*s(", prefix, node->token.length, node->token.start);
     } else {
@@ -416,11 +615,17 @@ void generate_function(ASTNode* node, const char* prefix) {
             fprintf(out, " %.*s", node->children[i]->token.length, node->children[i]->token.start);
             fprintf(out, ", ...");
             first_param = false;
-        } else {
-            if (!first_param) fprintf(out, ", ");
-            generate_node_type(node->children[i], node->children[i]->is_pointer);
-            fprintf(out, " %.*s", node->children[i]->token.length, node->children[i]->token.start);
-            first_param = false;
+            continue;
+        }
+        if (!first_param) fprintf(out, ", ");
+        generate_node_type(node->children[i], node->children[i]->is_pointer);
+        fprintf(out, " %.*s", node->children[i]->token.length, node->children[i]->token.start);
+        first_param = false;
+        // A class-typed parameter is a pointer (see the is_pointer flag), so
+        // track it for string interpolation: `{s.name}` must emit `s->name`.
+        if (node->children[i]->is_class && node->children[i]->var_type.type == TOKEN_IDENTIFIER) {
+            track_class_var(node->children[i]->token.start, node->children[i]->token.length,
+                            node->children[i]->var_type.start, node->children[i]->var_type.length);
         }
     }
     fprintf(out, ") ");
@@ -433,8 +638,15 @@ void generate_function(ASTNode* node, const char* prefix) {
 // Writes the C signature of a top-level function without its body, followed by
 // a semicolon. Must stay in sync with generate_function above, which emits the
 // same header and then the block instead.
+void generate_return_type(ASTNode* node) {
+    if (node->return_is_array) {
+        ASTNode value = {.var_type = node->return_type, .is_array = true};
+        generate_node_type(&value, false);
+    } else generate_type(node->return_type, node->is_class);
+}
+
 void generate_function_prototype(ASTNode* node) {
-    generate_type(node->return_type, node->is_class);
+    generate_return_type(node);
     fprintf(out, " %.*s(", node->token.length, node->token.start);
     bool first_param = true;
     for (int i = 0; i < node->child_count; i++) {
@@ -476,4 +688,24 @@ ASTNode* find_class_decl(ASTNode* prog, const char* name) {
         }
     }
     return NULL;
+}
+
+ASTNode* find_struct_decl(ASTNode* prog, const char* name) {
+    if (!prog) return NULL;
+    for (int i = 0; i < prog->child_count; i++) {
+        ASTNode* child = prog->children[i];
+        if (child->type == AST_STRUCT_DECL &&
+            (int)strlen(name) == child->token.length &&
+            strncmp(name, child->token.start, child->token.length) == 0) {
+            return child;
+        }
+    }
+    return NULL;
+}
+
+// A struct is a plain value type (unlike a class instance, which is a
+// reference), so an array of structs must store values, not void* slots.
+bool type_is_struct(const char* name) {
+    return find_struct_decl(program_node, name) != NULL &&
+           find_class_decl(program_node, name) == NULL;
 }

@@ -33,6 +33,7 @@ func is_named_type_symbol_kind(int k): bool {
 // Type name helpers
 // ---------------------------------------------------------------------------
 func type_name_from_token(Token token): str {
+    if token.kind == TOKEN_NULL { return "null" }
     if token.kind == TOKEN_EOF {
         return ""
     }
@@ -94,6 +95,23 @@ func sem_numeric_assignment_allowed(int expected, int actual): bool {
     return false
 }
 
+func sem_null_assignment_allowed(Token t): bool {
+    int depth = 0
+    while depth < 64 {
+        if t.kind == TOKEN_STR_TYPE { return true }
+        if t.kind != TOKEN_IDENTIFIER { return false }
+        if t.text == "CStr" { return true }
+        var sym = resolve_symbol(t)
+        if sym == null || sym.decl_node == null { return false }
+        if sym.decl_node.kind == AST_TYPE_ALIAS && sym.decl_node.left != null {
+            if sym.decl_node.left.is_array { return false }
+            t = sym.decl_node.left.token
+        } else { return sym.decl_node.kind == AST_CLASS_DECL }
+        depth = depth + 1
+    }
+    return false
+}
+
 func assignment_types_compatible(Token expected, int actual): bool {
     if expected.kind == TOKEN_EOF {
         return true
@@ -108,7 +126,7 @@ func assignment_types_compatible(Token expected, int actual): bool {
         return sem_numeric_assignment_allowed(expected.kind, actual)
     }
     if actual == TOKEN_NULL {
-        return true
+        return sem_null_assignment_allowed(expected)
     }
     return false
 }
@@ -131,22 +149,276 @@ func sem_is_text_type_kind(int kind): bool {
     return kind == TOKEN_STR_TYPE
 }
 
+func sem_unalias(Token t): Token {
+    int depth = 0
+    while depth < 64 && t.kind == TOKEN_IDENTIFIER {
+        var sym = resolve_symbol(t)
+        if sym == null || sym.decl_node == null || sym.decl_node.kind != AST_TYPE_ALIAS || sym.decl_node.left == null { break }
+        t = sym.decl_node.left.token
+        depth = depth + 1
+    }
+    return t
+}
+
+func sem_validate_alias(ASTNode node) {
+    var target = node.token
+    int depth = 0
+    while depth < 64 {
+        var sym = resolve_symbol(target)
+        if sym == null || sym.decl_node == null || sym.decl_node.kind != AST_TYPE_ALIAS || sym.decl_node.left == null { return }
+        target = sym.decl_node.left.token
+        if target.kind != TOKEN_IDENTIFIER { return }
+        if target.text == node.token.text { break }
+        depth = depth + 1
+    }
+    semantic_error_at("E101", node.token.line, node.token.col,
+        "Cyclic or overly deep type alias:", "Use an acyclic alias chain with fewer than 64 links.")
+    has_semantic_error = true
+}
+
+func sem_concrete_record(Symbol? sym): bool {
+    return sym != null && sym.decl_node != null &&
+        (sym.decl_node.kind == AST_CLASS_DECL || sym.decl_node.kind == AST_STRUCT_DECL)
+}
+
+func sem_array_declaration(ASTNode? value): ASTNode? {
+    if value == null { return null }
+    if value.kind == AST_LITERAL_ARRAY { return value }
+    if value.kind == AST_SLICE { return sem_array_declaration(value.left) }
+    if value.kind == AST_IDENTIFIER {
+        var sym = resolve_symbol(value.token)
+        if sym != null && sym.decl_node != null && sym.decl_node.is_array { return sym.decl_node }
+    }
+    var field = resolve_field_decl(value)
+    if field != null && field.is_array { return field }
+    if value.is_array { return value }
+    return null
+}
+
+func sem_value_is_array(ASTNode? value): bool { return sem_array_declaration(value) != null }
+
+func sem_check_value_assignment(Token expected, bool array, ASTNode? value) {
+    if value == null || expected.kind == TOKEN_VAR || expected.kind == TOKEN_EOF { return }
+    var actual_array = sem_array_declaration(value)
+    bool known = actual_array != null || (value.expr_type != TOKEN_EOF && value.expr_type != TOKEN_VAR) ||
+                 value.kind == AST_IDENTIFIER || value.kind == AST_NULL_LITERAL
+    if known && array != (actual_array != null) {
+        semantic_error_at("E101", value.token.line, value.token.col,
+            "Array/scalar shape mismatch:", "Use an array only where an array is expected.")
+        has_semantic_error = true
+        return
+    }
+    if array && actual_array != null {
+        if value.kind == AST_LITERAL_ARRAY {
+            value.var_type = expected
+            value.is_array = true
+            int i = 0
+            while i < len(value.children) {
+                var item = value.children[i]
+                sem_apply_expected_type(item, expected.kind)
+                analyze_expression(item)
+                sem_check_value_assignment(expected, false, item)
+                i = i + 1
+            }
+        } else {
+            var want = sem_unalias(expected)
+            var got = sem_unalias(actual_array.var_type)
+            if want.kind == TOKEN_IDENTIFIER {
+                var generic = resolve_symbol(want)
+                if generic == null || (generic.decl_node != null && generic.decl_node.kind == AST_TYPE_PARAM) { return }
+            }
+            bool same = want.kind == got.kind
+            if same && want.kind == TOKEN_IDENTIFIER { same = want.text == got.text }
+            if !same && got.kind != TOKEN_EOF && got.kind != TOKEN_VAR {
+                semantic_error_at("E101", value.token.line, value.token.col,
+                    "Array element types must match exactly:", "Mutable arrays are invariant in their element type.")
+                has_semantic_error = true
+            }
+        }
+        return
+    }
+    if !array { sem_check_assignment_type(expected, value, value.expr_type) }
+}
+
+func sem_validate_nullable_type(Token t, bool nullable) {
+    if !nullable { return }
+    var alias = t
+    bool array_alias = false
+    int depth = 0
+    while depth < 64 && alias.kind == TOKEN_IDENTIFIER {
+        var sym = resolve_symbol(alias)
+        if sym == null || sym.decl_node == null || sym.decl_node.kind != AST_TYPE_ALIAS || sym.decl_node.left == null { break }
+        if sym.decl_node.left.is_array { array_alias = true }
+        alias = sym.decl_node.left.token
+        depth = depth + 1
+    }
+    t = sem_unalias(t)
+    if !array_alias && (t.kind == TOKEN_STR_TYPE || t.text == "CStr") { return }
+    var sym = resolve_symbol(t)
+    if !array_alias && sym != null && sym.decl_node != null && sym.decl_node.kind == AST_CLASS_DECL { return }
+    semantic_error_at("E101", t.line, t.col,
+        "Nullable type requires a string or class reference:",
+        "Nullable scalar and array storage is not yet supported.")
+    has_semantic_error = true
+}
+
+func sem_record_assignment_allowed(Token expected, ASTNode value, int actual): bool {
+    expected = sem_unalias(expected)
+    var found = make_kind_token(actual)
+    if len(value.type_name) > 0 {
+        found = make_token(actual, value.type_name, value.token.line, value.token.col)
+    } else if value.kind == AST_NEW_EXPR {
+        found = make_token(TOKEN_IDENTIFIER, value.token.text, value.token.line, value.token.col)
+    } else if value.kind == AST_CAST {
+        found = value.var_type
+    }
+    found = sem_unalias(found)
+    Symbol? want_sym = null
+    Symbol? got_sym = null
+    if expected.kind == TOKEN_IDENTIFIER { want_sym = resolve_symbol(expected) }
+    if found.kind == TOKEN_IDENTIFIER && len(found.text) > 0 { got_sym = resolve_symbol(found) }
+    if !sem_concrete_record(want_sym) && !sem_concrete_record(got_sym) { return true }
+    if expected.kind == TOKEN_IDENTIFIER && want_sym == null { return true }
+    if found.kind == TOKEN_IDENTIFIER && got_sym == null { return true }
+    if want_sym != null && want_sym.decl_node != null && want_sym.decl_node.kind == AST_TYPE_PARAM { return true }
+    if got_sym != null && got_sym.decl_node != null && got_sym.decl_node.kind == AST_TYPE_PARAM { return true }
+    int depth = 0
+    while depth < 64 && sem_concrete_record(got_sym) {
+        if want_sym != null && want_sym.name == got_sym.name {
+            if depth > 0 { value.upcast_type = expected }
+            return true
+        }
+        if len(got_sym.decl_node.parent_name) == 0 { break }
+        got_sym = resolve_symbol(make_token(TOKEN_IDENTIFIER, got_sym.decl_node.parent_name, value.token.line, 0))
+        depth = depth + 1
+    }
+    return false
+}
+
+func sem_branch_type(ASTNode value): Token {
+    if value.kind == AST_NULL_LITERAL { return make_kind_token(TOKEN_NULL) }
+    var array = sem_array_declaration(value)
+    var t = make_kind_token(value.expr_type)
+    if array != null { t = array.var_type }
+    if array == null && t.kind == TOKEN_IDENTIFIER {
+        if len(value.type_name) > 0 { t = make_token(TOKEN_IDENTIFIER, value.type_name, value.token.line, 0) }
+        else if value.var_type.kind == TOKEN_IDENTIFIER { t = value.var_type }
+    }
+    t = sem_unalias(t)
+    if t.kind == TOKEN_IDENTIFIER && len(t.text) > 0 {
+        var sym = resolve_symbol(t)
+        if sym != null && sym.decl_node != null { t = sym.decl_node.token; t.kind = TOKEN_IDENTIFIER }
+    }
+    return t
+}
+
+func sem_coerce_branch(ASTNode value, Token result, bool array) {
+    if array { sem_check_value_assignment(result, true, value); return }
+    if value.kind == AST_NULL_LITERAL {
+        value.expr_type = result.kind
+        value.type_name = type_name_from_token(result)
+    } else if sem_is_numeric_type_kind(result.kind) && value.expr_type != result.kind {
+        value.upcast_type = result
+    } else if result.kind == TOKEN_IDENTIFIER && value.expr_type == TOKEN_IDENTIFIER {
+        sem_record_assignment_allowed(result, value, value.expr_type)
+    }
+}
+
+func sem_set_join_type(ASTNode owner, Token t, bool array): int {
+    owner.type_name = type_name_from_token(t)
+    owner.var_type = t
+    owner.expr_type = t.kind
+    owner.is_array = array
+    owner.is_class = false
+    if !array && t.kind == TOKEN_IDENTIFIER {
+        var sym = resolve_symbol(t)
+        if sym != null && sym.decl_node != null && sym.decl_node.kind == AST_CLASS_DECL { owner.is_class = true }
+    }
+    return t.kind
+}
+
+func sem_join_branch_types(ASTNode owner, ASTNode left, ASTNode right): int {
+    bool a_array = sem_value_is_array(left)
+    bool b_array = sem_value_is_array(right)
+    var a = sem_branch_type(left)
+    var b = sem_branch_type(right)
+    var result = a
+    if a_array && right.kind == AST_LITERAL_ARRAY && b.kind == TOKEN_EOF {
+        sem_check_value_assignment(a, true, right)
+        b = sem_branch_type(right)
+    } else if b_array && left.kind == AST_LITERAL_ARRAY && a.kind == TOKEN_EOF {
+        sem_check_value_assignment(b, true, left)
+        a = sem_branch_type(left)
+        result = a
+    }
+    bool compatible = a_array == b_array
+    if compatible && (a.kind == TOKEN_EOF || a.kind == TOKEN_VAR || b.kind == TOKEN_EOF || b.kind == TOKEN_VAR) {
+        return sem_set_join_type(owner, make_kind_token(TOKEN_EOF), false)
+    }
+    if compatible {
+        if a.kind == TOKEN_NULL || b.kind == TOKEN_NULL {
+            if a.kind == TOKEN_NULL && b.kind == TOKEN_NULL { compatible = false }
+            else {
+                if a.kind == TOKEN_NULL { result = b }
+                compatible = !a_array && sem_null_assignment_allowed(result)
+            }
+        } else if a.kind == b.kind && (a.kind != TOKEN_IDENTIFIER || a.text == b.text) {
+            result = a
+        } else if a_array { compatible = false }
+        else if sem_is_numeric_type_kind(a.kind) && sem_is_numeric_type_kind(b.kind) {
+            if assignment_types_compatible(a, b.kind) { result = a }
+            else if assignment_types_compatible(b, a.kind) { result = b }
+            else if assignment_types_compatible(make_kind_token(TOKEN_DOUBLE_TYPE), a.kind) &&
+                    assignment_types_compatible(make_kind_token(TOKEN_DOUBLE_TYPE), b.kind) {
+                result = make_kind_token(TOKEN_DOUBLE_TYPE)
+            } else { compatible = false }
+        } else if a.kind == TOKEN_IDENTIFIER && b.kind == TOKEN_IDENTIFIER {
+            var a_sym = resolve_symbol(a)
+            var b_sym = resolve_symbol(b)
+            if !sem_concrete_record(a_sym) || !sem_concrete_record(b_sym) { compatible = false }
+            else if sem_record_assignment_allowed(a, right, b.kind) { result = a }
+            else if sem_record_assignment_allowed(b, left, a.kind) { result = b }
+            else { compatible = false }
+        } else { compatible = false }
+    }
+    if !compatible {
+        semantic_error_at("E101", owner.token.line, owner.token.col,
+            "Conditional branches have incompatible types:", "Use branches with a common checked result type.")
+        has_semantic_error = true
+        return sem_set_join_type(owner, make_kind_token(TOKEN_EOF), false)
+    }
+    sem_coerce_branch(left, result, a_array)
+    sem_coerce_branch(right, result, a_array)
+    return sem_set_join_type(owner, result, a_array)
+}
+
 func sem_check_assignment_type(Token expected, ASTNode? value, int actual) {
     if value == null { return }
     if expected.kind == TOKEN_VAR || expected.kind == TOKEN_EOF { return }
-    if actual == TOKEN_EOF || actual == TOKEN_VAR || actual == TOKEN_NULL { return }
-    if value.kind == AST_NULL_LITERAL { return }
+    if value.kind == AST_NULL_LITERAL || actual == TOKEN_NULL {
+        if sem_null_assignment_allowed(expected) { return }
+        semantic_error_at("E101", value.token.line, value.token.col,
+            "Type mismatch: null requires a reference type.", "Use null only for strings, class references, or CStr.")
+        printin("  = expected: " + type_name_from_token(expected))
+        printin("  = found: null")
+        has_semantic_error = true
+        return
+    }
+    if actual == TOKEN_EOF || actual == TOKEN_VAR { return }
     if expected.kind == TOKEN_IDENTIFIER && expected.text == "CStr" { return }
-    if expected.kind == TOKEN_IDENTIFIER || actual == TOKEN_IDENTIFIER { return }
-    if expected.kind == actual { return }
-    bool expected_text = sem_is_text_type_kind(expected.kind)
-    bool actual_text = sem_is_text_type_kind(actual)
-    if expected_text && actual_text { return }
-    if !expected_text && !actual_text {
-        if sem_is_numeric_type_kind(expected.kind) && sem_is_numeric_type_kind(actual) {
-            if assignment_types_compatible(expected, actual) { return }
-        } else if expected.kind != TOKEN_BOOL_TYPE && actual != TOKEN_BOOL_TYPE {
-            return
+    if expected.kind == TOKEN_IDENTIFIER || actual == TOKEN_IDENTIFIER {
+        if sem_record_assignment_allowed(expected, value, actual) { return }
+    } else {
+        if expected.kind == actual { return }
+        bool expected_text = sem_is_text_type_kind(expected.kind)
+        bool actual_text = sem_is_text_type_kind(actual)
+        if expected_text && actual_text { return }
+        if !expected_text && !actual_text {
+            if sem_is_numeric_type_kind(expected.kind) && sem_is_numeric_type_kind(actual) {
+                if assignment_types_compatible(expected, actual) { return }
+            } else if expected.kind != TOKEN_BOOL_TYPE && actual != TOKEN_BOOL_TYPE {
+                return
+            }
         }
     }
     semantic_error_at("E101", value.token.line, value.token.col,
@@ -192,10 +464,11 @@ func validate_var_initializer(ASTNode node) {
         node.init.expr_type = node.var_type.kind
         node.init.type_name = type_name_from_token(node.var_type)
     }
-    sem_check_assignment_type(node.var_type, node.init, init_type)
+    sem_check_value_assignment(node.var_type, node.is_array, node.init)
 }
 
 func analyze_var_declaration(ASTNode node) {
+    sem_validate_nullable_type(node.var_type, node.type_is_nullable)
     validate_type_token(node.var_type)
     validate_var_initializer(node)
 
@@ -203,6 +476,11 @@ func analyze_var_declaration(ASTNode node) {
     // stage 0 does, so codegen emits the concrete type rather than
     // `__auto_type` and later passes can rely on it.
     if node.var_type.kind == TOKEN_VAR && node.init != null {
+        var array = sem_array_declaration(node.init)
+        if array != null && array.var_type.kind != TOKEN_EOF && array.var_type.kind != TOKEN_VAR {
+            node.is_array = true
+            node.var_type = array.var_type
+        }
         node.type_is_inferred = true
         int inferred = node.init.expr_type
         if inferred != TOKEN_EOF && inferred != TOKEN_VAR {
@@ -232,6 +510,7 @@ func analyze_var_declaration(ASTNode node) {
 }
 
 func analyze_field_declaration(ASTNode node) {
+    sem_validate_nullable_type(node.var_type, node.type_is_nullable)
 }
 
 func register_import(Token module) {

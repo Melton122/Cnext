@@ -125,11 +125,13 @@ Name name = "Test"
 
 ## Nullable Types
 
-Add `?` to make types nullable:
+Strings and class references can be null; `?` documents that intent. The compiler
+does not yet enforce non-null references. Nullable scalars (`int?`, `bool?`,
+and other numeric types) and nullable arrays are rejected because they do not
+yet have a tagged representation.
 
 ```cnext
 str? optional_str = null
-int? optional_int = 42
 
 if optional_str != null {
     printin(optional_str)
@@ -140,7 +142,12 @@ if optional_str != null {
 
 ### Arrays
 
-Fixed-size collections:
+Typed collections with a length; arrays can grow with `push`.
+
+Arrays are distinct from their elements: `int` cannot be assigned to `int[]`.
+Mutable arrays require exactly matching element types; `int[]` does not widen
+to `long[]`, and class-array elements are invariant. Ordinary functions may
+return arrays (`func values(): int[]`). See [the contract](language-contract.md).
 
 ```cnext
 int[] numbers = {1, 2, 3, 4, 5}

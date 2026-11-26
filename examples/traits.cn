@@ -1,12 +1,18 @@
 // Traits
 
 trait Drawable {
-    func draw()
-    func area(): int
+    func draw() {
+        printin("Drawing shape")
+    }
+
+    func area(): int {
+        return 0
+    }
 }
 
 trait Resizable {
-    func resize(int factor)
+    func resize(int factor) {
+    }
 }
 
 class Circle implements Drawable, Resizable {

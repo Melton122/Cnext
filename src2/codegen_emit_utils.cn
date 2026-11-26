@@ -27,6 +27,7 @@ ClosureCleanupScope? g_closure_cleanup_scope = null
 
 int g_indent_level = 0
 int g_lambda_counter = 0
+int g_adapt_counter = 0
 str g_lambda_helpers = ""
 str[] g_generator_helper_chunks
 CapturedVar? g_active_captures = null
@@ -123,6 +124,84 @@ func codegen_is_class_name(str name): bool {
     return str_contains(g_codegen_class_names, "|" + name + "|")
 }
 
+func codegen_is_struct_name(str name): bool {
+    return str_contains(g_codegen_struct_names, "|" + name + "|")
+}
+
+// Variables initialized with a lambda, so `{name(args)}` interpolations can
+// call through the closure's function pointer like the native compiler does.
+class InterpLambda {
+    str name
+    ASTNode? lambda
+    InterpLambda? next
+    func new(str n, ASTNode? l) {
+        self.name = n
+        self.lambda = l
+        self.next = null
+    }
+}
+InterpLambda? g_interp_lambdas = null
+
+func register_interp_lambda(str name, ASTNode? lambda) {
+    var e = new InterpLambda(name, lambda)
+    e.next = g_interp_lambdas
+    g_interp_lambdas = e
+}
+
+func find_interp_lambda(str name): InterpLambda? {
+    var e = g_interp_lambdas
+    while e != null {
+        if e.name == name { return e }
+        e = e.next
+    }
+    return null
+}
+
+// A struct is a plain value type (unlike a class instance, which is a
+// reference), so an array of structs must store values, not void* slots.
+func codegen_is_struct_array_element(str name): bool {
+    return len(name) > 0 && codegen_is_struct_name(name) && !codegen_is_class_name(name)
+}
+
+// The file-scope typedef for a struct-element value array. Emitted by the
+// program pre-scan in generate_program; two inline anonymous structs declared
+// in different scopes would be distinct C types, so the name must be shared.
+func struct_array_typedef_name(str elem): str {
+    return "_CnextArray_" + elem
+}
+
+// Emitted typedef element names, as "|Elem|Elem2|". A global marker instead
+// of an array parameter because array parameters are copies; pushes inside
+// the recursive scan would not reach the caller.
+str g_struct_array_typedefs_seen = "|"
+
+func emit_struct_array_typedefs(ASTNode? node) {
+    if node == null { return }
+    if node.is_array && node.var_type.kind == TOKEN_IDENTIFIER {
+        str elem = node.var_type.text
+        if codegen_is_struct_array_element(elem) &&
+           !str_contains(g_struct_array_typedefs_seen, "|" + elem + "|") {
+            g_struct_array_typedefs_seen = g_struct_array_typedefs_seen + elem + "|"
+            codegen_emit("typedef struct { ")
+            generate_type(node.var_type, true)
+            codegen_emit(" data; size_t length; } ")
+            codegen_emit(struct_array_typedef_name(elem))
+            codegen_emit(";\n")
+        }
+    }
+    int i = 0
+    int n = len(node.children)
+    while i < n {
+        emit_struct_array_typedefs(node.children[i])
+        i = i + 1
+    }
+    if node.left != null { emit_struct_array_typedefs(node.left) }
+    if node.right != null { emit_struct_array_typedefs(node.right) }
+    if node.condition != null { emit_struct_array_typedefs(node.condition) }
+    if node.init != null { emit_struct_array_typedefs(node.init) }
+    if node.increment != null { emit_struct_array_typedefs(node.increment) }
+}
+
 func codegen_is_pointer_param(str name): bool {
     return str_contains(g_codegen_pointer_params, "|" + name + "|")
 }
@@ -211,7 +290,13 @@ func generate_node_type(ASTNode? node, bool is_pointer) {
                 codegen_emit_c_type(subst.concrete_type, true, is_pointer)
                 return
             }
-            codegen_emit("CnextArrayObj")
+            // A struct element is a value type: use the pre-scanned value-array
+            // typedef rather than the opaque object array.
+            if codegen_is_struct_array_element(node.var_type.text) {
+                codegen_emit(struct_array_typedef_name(node.var_type.text))
+            } else {
+                codegen_emit("CnextArrayObj")
+            }
         } else {
             codegen_emit(array_type_to_c_name(node.var_type.kind))
         }
@@ -224,7 +309,11 @@ func generate_node_type(ASTNode? node, bool is_pointer) {
 func codegen_emit_c_type(Token type_tok, bool is_array, bool is_pointer) {
     if is_array {
         if type_tok.kind == TOKEN_IDENTIFIER {
-            codegen_emit("CnextArrayObj")
+            if codegen_is_struct_array_element(type_tok.text) {
+                codegen_emit(struct_array_typedef_name(type_tok.text))
+            } else {
+                codegen_emit("CnextArrayObj")
+            }
         } else {
             codegen_emit(array_type_to_c_name(type_tok.kind))
         }
@@ -325,6 +414,53 @@ func generate_interp_expression(str s, int start, int end) {
         if ch == '(' && paren < 0 { paren = i }
         if ch == '.' && dot < 0 && (paren < 0 || i < paren) { dot = i }
         i = i + 1
+    }
+    // A bare call `name(args)` on a variable holding a lambda calls through
+    // the closure's function pointer; a plain C call would not compile.
+    if dot < 0 && paren > start {
+        str fname = str_substring(s, start, paren)
+        var entry = find_interp_lambda(fname)
+        if entry != null {
+            var lambda = entry.lambda
+            str ret_type = "void*"
+            if lambda.left != null && lambda.left.kind != AST_BLOCK {
+                str ct = type_token_to_c_name(lambda.left.expr_type)
+                if len(ct) > 0 { ret_type = ct }
+            } else if lambda.left != null && lambda.left.kind == AST_BLOCK {
+                int ri = 0
+                while ri < len(lambda.left.children) {
+                    var r = lambda.left.children[ri]
+                    if r != null && r.kind == AST_RETURN && r.left != null {
+                        str ct = type_token_to_c_name(r.left.expr_type)
+                        if len(ct) > 0 { ret_type = ct }
+                        break
+                    }
+                    ri = ri + 1
+                }
+            }
+            codegen_emit("((")
+            codegen_emit(ret_type)
+            codegen_emit("(*)(")
+            codegen_emit("void*")
+            int ai = 0
+            while ai < len(lambda.children) {
+                codegen_emit(", ")
+                generate_type(lambda.children[ai].var_type, lambda.children[ai].is_pointer)
+                ai = ai + 1
+            }
+            codegen_emit("))")
+            codegen_emit(fname)
+            codegen_emit(".fn)(")
+            codegen_emit(fname)
+            codegen_emit(".env")
+            int args_len = end - paren - 2
+            if args_len > 0 {
+                codegen_emit(", ")
+                codegen_emit(str_substring(s, paren + 1, end - 1))
+            }
+            codegen_emit(")")
+            return
+        }
     }
     if dot >= 0 && paren >= 0 {
         str class_name = lookup_class_var(str_substring(s, start, dot))

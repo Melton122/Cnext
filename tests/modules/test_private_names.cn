@@ -1,0 +1,9 @@
+// EXPECT: 2
+// EXPECT: 4
+import "./.fixtures/priv_a.cn"
+import "./.fixtures/priv_b.cn"
+
+main {
+    printin(private_import_a())
+    printin(private_import_b())
+}

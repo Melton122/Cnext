@@ -131,6 +131,8 @@ main {
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
         self.assertIn("@cp README.md dist/", makefile)
         self.assertIn("@cp logo.png dist/", makefile)
+        self.assertIn("cnext-windows-x64-v$(VERSION).zip", makefile)
+        self.assertIn("-v$(VERSION).tar.gz", makefile)
 
     def test_install_scripts_quote_temp_paths_and_cleanup(self):
         shell = (ROOT / "install.sh").read_text(encoding="utf-8")

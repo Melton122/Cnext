@@ -739,47 +739,6 @@ bool registry_logout(void) {
 
 // --- Update ---
 
-bool registry_update(const char* project_dir) {
-    char toml_path[1024];
-    snprintf(toml_path, sizeof(toml_path), "%s/cnext.toml", project_dir);
-
-    FILE* f = fopen(toml_path, "r");
-    if (!f) {
-        fprintf(stderr, "No cnext.toml found in %s\n", project_dir);
-        return false;
-    }
-
-    fprintf(stderr, "Updating dependencies...\n");
-
-    char line[1024];
-    bool in_deps = false;
-    int updated = 0;
-
-    while (fgets(line, sizeof(line), f)) {
-        line[strcspn(line, "\r\n")] = '\0';
-        if (line[0] == '[') {
-            in_deps = (strstr(line, "[dependencies]") != NULL);
-            continue;
-        }
-        if (in_deps && strchr(line, '=')) {
-            char name[256] = {0};
-            char value[768] = {0};
-            if (sscanf(line, " %255[^= ] = \"%767[^\"]\"", name, value) == 2) {
-                if (strncmp(value, "http", 4) == 0) {
-                    // Direct URL - re-download
-                    fprintf(stderr, "  Updating %s...\n", name);
-                    // Would re-download here
-                    updated++;
-                }
-            }
-        }
-    }
-    fclose(f);
-
-    fprintf(stderr, "Updated %d package(s).\n", updated);
-    return true;
-}
-
 // --- Remove ---
 
 bool registry_remove(const char* package_name, const char* project_dir) {

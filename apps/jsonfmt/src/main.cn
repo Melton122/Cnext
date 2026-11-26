@@ -1,0 +1,85 @@
+import json
+
+func usage() {
+    printin("Usage: jsonfmt <input.json> [-o output.json] [--check]")
+    printin("       jsonfmt --help")
+}
+
+func fail(str message, int code) {
+    printin("jsonfmt: " + message)
+    exit(code)
+}
+
+main {
+    int count = sys_args_count()
+    if count == 2 {
+        str first = sys_arg_at(1)
+        if first == "--help" || first == "-h" {
+            usage()
+            return 0
+        }
+    }
+
+    if count < 2 {
+        usage()
+        exit(64)
+    }
+
+    str input = ""
+    str output = ""
+    bool check_only = false
+    int i = 1
+    while i < count {
+        str arg = sys_arg_at(i)
+        if arg == "--check" {
+            check_only = true
+        } else if arg == "-o" {
+            i = i + 1
+            if i >= count {
+                fail("-o requires a path", 64)
+            }
+            output = sys_arg_at(i)
+        } else if str_starts_with(arg, "-") {
+            fail("unknown option: " + arg, 64)
+        } else if input == "" {
+            input = arg
+        } else {
+            fail("too many input files", 64)
+        }
+        i = i + 1
+    }
+
+    if input == "" {
+        usage()
+        exit(64)
+    }
+
+    if !file_exists(input) {
+        fail("input file not found: " + input, 66)
+    }
+
+    str text = read_file(input)
+    var data = json.parse(text)
+    if data == null {
+        fail("invalid JSON: " + input, 65)
+    }
+
+    str formatted = json.stringify(data)
+    json.free(data)
+
+    if check_only {
+        printin("OK")
+        return 0
+    }
+
+    if output == "" {
+        printin(formatted)
+        return 0
+    }
+
+    if !write_file(output, formatted) {
+        fail("cannot write output file: " + output, 74)
+    }
+
+    return 0
+}

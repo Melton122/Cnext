@@ -492,7 +492,10 @@ func parse_main_block(): ASTNode? {
 
 func parse_import_declaration(): ASTNode? {
     var node = new ASTNode(AST_IMPORT, g_parser.previous)
-    if check_token(TOKEN_IDENTIFIER) || check_token(TOKEN_THREAD) {
+    if check_token(TOKEN_STRING_LITERAL) {
+        // Local file import: `import "./util.cn"`
+        advance_token()
+    } else if check_token(TOKEN_IDENTIFIER) || check_token(TOKEN_THREAD) {
         advance_token()
     } else {
         consume(TOKEN_IDENTIFIER, "Expect module name after import.")

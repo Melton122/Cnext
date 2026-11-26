@@ -1,0 +1,182 @@
+// Conservative self-hosted AST optimization, after semantic/lifetime analysis.
+// Keep binding identities and resolved metadata. Do not reassociate expressions,
+// propagate mutable variables, or approximate floating-point/large-integer values.
+int opt_count = 0
+
+func get_optimization_count(): int { return opt_count }
+
+func opt_plain_int(ASTNode? node): bool {
+    return node != null && node.kind == AST_LITERAL && node.token.kind == TOKEN_NUMBER &&
+        node.expr_type == TOKEN_INT_TYPE && node.upcast_type.kind == TOKEN_EOF &&
+        len(node.type_name) == 0 && !node.is_array && !node.is_class
+}
+
+// Only decimal signed int32 literals are candidates. Read through a long so
+// checking the magnitude never overflows the type being optimized. INT_MIN is
+// left alone: printing its decimal spelling as a C literal changes its C type.
+func opt_integer_literal(ASTNode? node): bool {
+    if !opt_plain_int(node) { return false }
+    str text = node.token.text
+    if len(text) == 0 || len(text) > 11 { return false }
+    int i = 0
+    if text[0] == '-' { i = 1 }
+    if i == len(text) { return false }
+    // The current C backend emits numeric spellings verbatim. A leading zero
+    // therefore has C's octal interpretation; do not reinterpret it as decimal.
+    if text[i] == '0' && len(text) - i > 1 { return false }
+    long value = 0
+    while i < len(text) {
+        char c = text[i]
+        if c < '0' || c > '9' { return false }
+        value = value * 10 + (c as int) - 48
+        if value > 2147483647 { return false }
+        i = i + 1
+    }
+    return true
+}
+
+func opt_integer_value(ASTNode node): long {
+    str text = node.token.text
+    int i = 0
+    bool negative = text[0] == '-'
+    if negative { i = 1 }
+    long value = 0
+    while i < len(text) {
+        value = value * 10 + (text[i] as int) - 48
+        i = i + 1
+    }
+    if negative { return -value }
+    return value
+}
+
+// -1 means the expression is not a known, side-effect-free scalar constant.
+func opt_truth(ASTNode? node): int {
+    if node == null || node.kind != AST_LITERAL || node.upcast_type.kind != TOKEN_EOF { return -1 }
+    if node.token.kind == TOKEN_TRUE && node.expr_type == TOKEN_BOOL_TYPE { return 1 }
+    if node.token.kind == TOKEN_FALSE && node.expr_type == TOKEN_BOOL_TYPE { return 0 }
+    if opt_integer_literal(node) {
+        if opt_integer_value(node) == 0 { return 0 }
+        return 1
+    }
+    return -1
+}
+
+func opt_literal(ASTNode node, int token_kind, str text) {
+    // Preserve var_type, expr_type, upcast_type and all resolved semantic flags.
+    // Tokens are value structs and their text is runtime-tracked, unlike the C
+    // bootstrap's separately owned token buffers.
+    node.kind = AST_LITERAL
+    Token token = node.token
+    token.kind = token_kind
+    token.text = text
+    node.token = token
+    node.left = null
+    node.right = null
+    node.condition = null
+    node.init = null
+    node.increment = null
+    node.children = {}
+    opt_count = opt_count + 1
+}
+
+func opt_bool_literal(ASTNode node, bool value) {
+    if value { opt_literal(node, TOKEN_TRUE, "true") }
+    else { opt_literal(node, TOKEN_FALSE, "false") }
+}
+
+func opt_fold_binary(ASTNode node) {
+    if node.left == null || node.right == null || node.is_array || node.is_class || len(node.type_name) != 0 { return }
+    int op = node.token.kind
+    int left_truth = opt_truth(node.left)
+    int right_truth = opt_truth(node.right)
+    if node.expr_type == TOKEN_BOOL_TYPE {
+        // The discarded expression is never evaluated by these operators.
+        // Do not rewrite true&&rhs or false||rhs into an unnormalized RHS.
+        if op == TOKEN_AND_AND && left_truth == 0 { opt_bool_literal(node, false) return }
+        if op == TOKEN_OR_OR && left_truth == 1 { opt_bool_literal(node, true) return }
+        if left_truth >= 0 && right_truth >= 0 {
+            if op == TOKEN_AND_AND { opt_bool_literal(node, left_truth != 0 && right_truth != 0) return }
+            if op == TOKEN_OR_OR { opt_bool_literal(node, left_truth != 0 || right_truth != 0) return }
+            bool bool_operands = node.left.expr_type == TOKEN_BOOL_TYPE && node.right.expr_type == TOKEN_BOOL_TYPE
+            if bool_operands && op == TOKEN_EQ_EQ { opt_bool_literal(node, left_truth == right_truth) return }
+            if bool_operands && op == TOKEN_BANG_EQ { opt_bool_literal(node, left_truth != right_truth) return }
+        }
+    }
+    if !opt_integer_literal(node.left) || !opt_integer_literal(node.right) { return }
+    long left = opt_integer_value(node.left)
+    long right = opt_integer_value(node.right)
+    if node.expr_type == TOKEN_BOOL_TYPE {
+        if op == TOKEN_EQ_EQ { opt_bool_literal(node, left == right) }
+        else if op == TOKEN_BANG_EQ { opt_bool_literal(node, left != right) }
+        else if op == TOKEN_LESS { opt_bool_literal(node, left < right) }
+        else if op == TOKEN_LESS_EQ { opt_bool_literal(node, left <= right) }
+        else if op == TOKEN_GREATER { opt_bool_literal(node, left > right) }
+        else if op == TOKEN_GREATER_EQ { opt_bool_literal(node, left >= right) }
+        return
+    }
+    if node.expr_type != TOKEN_INT_TYPE { return }
+    long result = 0
+    if op == TOKEN_PLUS { result = left + right }
+    else if op == TOKEN_MINUS { result = left - right }
+    else if op == TOKEN_STAR { result = left * right }
+    else if op == TOKEN_SLASH {
+        if right == 0 { return }
+        result = left / right
+    } else if op == TOKEN_PERCENT {
+        if right == 0 { return }
+        result = left % right
+    } else { return }
+    // Every candidate operand fits int32, so these long intermediates fit int64.
+    // Leave overflow and INT_MIN to the original target expression.
+    if result < -2147483647 || result > 2147483647 { return }
+    opt_literal(node, TOKEN_NUMBER, to_str(result))
+}
+
+func opt_fold_unary(ASTNode node) {
+    if node.right == null || node.is_array || node.is_class || len(node.type_name) != 0 { return }
+    if node.token.kind == TOKEN_BANG && node.expr_type == TOKEN_BOOL_TYPE {
+        int truth = opt_truth(node.right)
+        if truth >= 0 { opt_bool_literal(node, truth == 0) }
+        return
+    }
+    if node.token.kind != TOKEN_MINUS || node.expr_type != TOKEN_INT_TYPE || !opt_integer_literal(node.right) { return }
+    long result = -opt_integer_value(node.right)
+    opt_literal(node, TOKEN_NUMBER, to_str(result))
+}
+
+func optimize_node(ASTNode? node): ASTNode? {
+    if node == null { return null }
+    // Structural edges only. binding/closure_signature are semantic back-links.
+    node.left = optimize_node(node.left)
+    node.right = optimize_node(node.right)
+    node.condition = optimize_node(node.condition)
+    node.init = optimize_node(node.init)
+    node.increment = optimize_node(node.increment)
+    node.default_value = optimize_node(node.default_value)
+    int i = 0
+    while i < len(node.children) {
+        node.children[i] = optimize_node(node.children[i])
+        i = i + 1
+    }
+    if node.kind == AST_BINARY { opt_fold_binary(node) }
+    else if node.kind == AST_UNARY { opt_fold_unary(node) }
+    else if node.kind == AST_IF {
+        int truth = opt_truth(node.condition)
+        if truth >= 0 {
+            opt_count = opt_count + 1
+            // Keep the selected lexical block intact for declarations and defers.
+            if truth != 0 && node.left != null { return node.left }
+            if truth == 0 && node.right != null { return node.right }
+            return new ASTNode(AST_BLOCK, node.token)
+        }
+    } else if node.kind == AST_WHILE && opt_truth(node.condition) == 0 {
+        opt_count = opt_count + 1
+        return new ASTNode(AST_BLOCK, node.token)
+    }
+    return node
+}
+
+func optimize_ast(ASTNode program) {
+    opt_count = 0
+    optimize_node(program)
+}

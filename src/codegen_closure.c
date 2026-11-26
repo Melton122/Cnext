@@ -133,6 +133,15 @@ static bool is_closure_argument(ASTNode* value) {
         (value->type == AST_IDENTIFIER && value->binding && value->binding->type == AST_VAR_DECL);
 }
 
+static ASTNode* find_callee_decl(ASTNode* call) {
+    if (!call || !call->left || call->left->type != AST_IDENTIFIER) return NULL;
+    char fname[256];
+    int flen = call->left->token.length < 255 ? call->left->token.length : 255;
+    memcpy(fname, call->left->token.start, flen);
+    fname[flen] = '\0';
+    return find_func_decl(program_node, fname);
+}
+
 bool emit_managed_closure_arguments(ASTNode* call) {
     if (!call || call->type != AST_CALL) return false;
     bool managed = false;
@@ -146,7 +155,12 @@ bool emit_managed_closure_arguments(ASTNode* call) {
         char name[64];
         snprintf(name, sizeof(name), "_cnext_arg_%d", i);
         fprintf(out, "CnextClosure %s = ", name);
-        generate_owned_closure_expression(original[i]);
+        // A lambda passed to an untyped `func` parameter gets an int-ABI
+        // adapter (see emit_func_param_adapter_value) so the call through the
+        // parameter inside the callee body uses one calling convention.
+        if (!emit_func_param_adapter_value(call, find_callee_decl(call), i)) {
+            generate_owned_closure_expression(original[i]);
+        }
         fprintf(out, "; _CnextClosureGuard _cnext_arg_guard_%d __attribute__((cleanup(_cnext_closure_guard_cleanup))) = { &%s, _cnext_defer_count, true }; _cnext_defer_push(_cnext_closure_guard_run, &_cnext_arg_guard_%d); ", i, name, i);
         ASTNode* temporary = create_node(AST_IDENTIFIER, (Token){.type = TOKEN_IDENTIFIER});
         temporary->owned_token_text = checked_strdup(name);

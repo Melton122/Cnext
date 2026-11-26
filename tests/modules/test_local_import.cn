@@ -1,0 +1,17 @@
+import "./.fixtures/math_util.cn"
+import "./.fixtures/chain_a.cn"
+import "./.fixtures/chain_b.cn"
+import "./.fixtures/shape.cn"
+
+main {
+    printin(add(1,2))
+    printin(chain_a())
+    printin(chain_b())
+    printin(shared())
+
+    var p = make_point(3,4)
+    printin(p.x + p.y)
+    var q: Point
+    q.x = 10
+    printin(q.x)
+}

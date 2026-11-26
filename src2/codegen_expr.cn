@@ -37,7 +37,10 @@ func builtin_c_name(str name): str {
     if name == "str_to_float" { return "cnext_str_parse_float" }
     if name == "to_int" { return "cnext_to_int" }
     if name == "to_float" { return "cnext_to_float" }
-    if name == "to_str" { return "cnext_to_string" }    if name == "to_cstr" { return "cnext_to_cstr" }    if name == "from_cstr" { return "cnext_from_cstr" }    if name == "cstr_free" { return "cnext_cstr_free" }
+    if name == "to_str" { return "cnext_to_string" }
+    if name == "to_cstr" { return "cnext_to_cstr" }
+    if name == "from_cstr" { return "cnext_from_cstr" }
+    if name == "cstr_free" { return "cnext_cstr_free" }
     if name == "to_bool" { return "cnext_to_bool" }
     if name == "to_char" { return "cnext_to_char" }
     if name == "parse_int" { return "cnext_parse_int" }
@@ -261,16 +264,20 @@ func gen_with_parens(ASTNode? child, int parent_op, bool is_right) {
 }
 
 // An array whose element type is a class stores class instances, which are
-// pointers, so it uses CnextArrayObj rather than a typed value array.
+// pointers, so it uses CnextArrayObj rather than a typed value array. A struct
+// element is a value type, so it uses a typed value array instead.
 func node_array_is_object(ASTNode? node): bool {
     if node == null { return false }
     if !node.is_array { return false }
     if node.var_type.kind == TOKEN_IDENTIFIER {
         var subst = find_type_subst(node.var_type.text)
         if subst != null {
-            return subst.concrete_type.kind == TOKEN_IDENTIFIER
+            if subst.concrete_type.kind == TOKEN_IDENTIFIER {
+                return !codegen_is_struct_array_element(subst.concrete_type.text)
+            }
+            return false
         }
-        return true
+        return !codegen_is_struct_array_element(node.var_type.text)
     }
     return false
 }
@@ -318,7 +325,14 @@ func generate_array_value(ASTNode? type_owner, ASTNode? literal) {
         generate_type(type_owner.var_type, false)
     }
     codegen_emit("[])")
-    generate_expression(literal)
+    codegen_emit("{")
+    int i = 0
+    while i < len(literal.children) {
+        if i > 0 { codegen_emit(", ") }
+        generate_expression(literal.children[i])
+        i = i + 1
+    }
+    codegen_emit("}")
     codegen_emit(", ")
     codegen_emit(to_str(len(literal.children)))
     codegen_emit(" }; ")
@@ -337,7 +351,9 @@ func generate_array_value(ASTNode? type_owner, ASTNode? literal) {
 func member_uses_pointer(ASTNode? node): bool {
     if node == null { return false }
     if node.is_pointer_access { return true }
-    if node.left == null { return false }    // Arrays are values even when their element type is a class.    if node.left.is_array { return false }
+    if node.left == null { return false }
+    // Arrays are values even when their element type is a class.
+    if node.left.is_array { return false }
     if node.left.is_pointer { return true }
     // Semantics marks a value whose type is a class (a pointer in generated C)
     // and a field that itself holds a class reference.
@@ -364,9 +380,13 @@ func member_uses_pointer(ASTNode? node): bool {
         return true
     }
     if node.left.kind == AST_INDEX {
-        if node.left.var_type.kind == TOKEN_IDENTIFIER {
+        // An array whose element type is a class stores pointers, so the
+        // indexed value needs '->'. A struct-element array stores values,
+        // so member access after indexing must use '.'.
+        if node_array_is_object(node.left) {
             return true
         }
+        return false
     }
     return false
 }
@@ -494,10 +514,35 @@ func emit_raw_string_literal(str text) {
 }
 
 func generate_expression(ASTNode? node): bool {
+    if node == null { return false }
+    if node.kind == AST_LITERAL_ARRAY && node.is_array {
+        generate_array_value(node, node)
+        return true
+    }
+    if node.upcast_type.kind != TOKEN_EOF {
+        codegen_emit("((")
+        generate_type(node.upcast_type, node.upcast_type.kind == TOKEN_IDENTIFIER)
+        codegen_emit(")(")
+        generate_expression_inner(node)
+        codegen_emit("))")
+        return true
+    }
+    if node.kind == AST_BINARY || node.kind == AST_TERNARY {
+        codegen_emit("(")
+        generate_expression_inner(node)
+        codegen_emit(")")
+        return true
+    }
+    return generate_expression_inner(node)
+}
+
+func generate_expression_inner(ASTNode? node): bool {
     if node == null {
         return false
     }
-    if node.kind == AST_CALL && emit_managed_closure_arguments(node) { return true }    if node.kind == AST_LAMBDA {        emit_lambda(node)
+    if node.kind == AST_CALL && emit_managed_closure_arguments(node) { return true }
+    if node.kind == AST_LAMBDA {
+        emit_lambda(node)
         return true
     }
 
@@ -664,6 +709,14 @@ func generate_expression(ASTNode? node): bool {
 			codegen_emit(", ")
 			generate_expression(node.right)
 			codegen_emit(")")
+		} else if node.left != null && len(node.left.type_name) > 0 && !null_cmp {
+			// Match the native emitter's resolved-type path. Every binary child
+			// already has its own wrapper, so no extra precedence wrapper is needed.
+			generate_expression(node.left)
+			codegen_emit(" ")
+			codegen_emit(node.token.text)
+			codegen_emit(" ")
+			generate_expression(node.right)
 		} else {
 			gen_with_parens(node.left, node.token.kind, false)
 			codegen_emit(" ")
@@ -699,7 +752,37 @@ func generate_expression(ASTNode? node): bool {
             codegen_emit(") : (" + zero_val + "))")
             return true
         }
-        if node.left != null && node.left.kind == AST_IDENTIFIER &&           node.left.binding != null && node.left.binding.kind == AST_VAR_DECL {            var lambda = sem_closure_lambda(node.left.binding)            if lambda != null {                emit_lambda_call(node, lambda)                return true            }            if node.left.binding != null && node.left.binding.var_type.kind == TOKEN_FUNC {                codegen_emit("((int(*)(void*, int))(")                generate_expression(node.left)                codegen_emit(").fn)((")                generate_expression(node.left)                codegen_emit(").env")                int i = 0                while i < len(node.children) {                    codegen_emit(", ")                    generate_expression(node.children[i])                    i = i + 1                }                codegen_emit(")")                return true            }        }
+        if node.left != null && node.left.kind == AST_IDENTIFIER &&
+           node.left.binding != null && node.left.binding.kind == AST_VAR_DECL {
+            var lambda = sem_closure_lambda(node.left.binding)
+            if lambda != null {
+                emit_lambda_call(node, lambda)
+                return true
+            }
+            if node.left.binding != null && node.left.binding.var_type.kind == TOKEN_FUNC {
+                // Calls through an untyped `func` use a fixed int ABI; the
+                // cast arity must match this call site's arguments.
+                codegen_emit("((int(*)(void*")
+                int fi = 0
+                while fi < len(node.children) {
+                    codegen_emit(", int")
+                    fi = fi + 1
+                }
+                codegen_emit("))(")
+                generate_expression(node.left)
+                codegen_emit(").fn)((")
+                generate_expression(node.left)
+                codegen_emit(").env")
+                int i = 0
+                while i < len(node.children) {
+                    codegen_emit(", ")
+                    generate_expression(node.children[i])
+                    i = i + 1
+                }
+                codegen_emit(")")
+                return true
+            }
+        }
         if node.left != null && node.left.kind == AST_SUPER_EXPR {
             if len(g_codegen_current_parent_class) > 0 {
                 codegen_emit(g_codegen_current_parent_class)
@@ -791,8 +874,23 @@ func generate_expression(ASTNode? node): bool {
                 codegen_emit(")")
                 return true
             }
-            // Check for class method calls
-            str class_name = lookup_class_var(module_name)
+            // Class method call. Static dispatch prefers the owner's DECLARED
+            // class (stage 0 semantics): `Fighter hero = new Player(...)`
+            // declared as Fighter calls Fighter methods. The tracked concrete
+            // class fills in when the declared type is not a known non-generic
+            // class (e.g. `var b = new Box(5)` dispatches through the mangled
+            // Box_int specialization).
+            str class_name = ""
+            if node.left.left.type_name == node.left.left.var_type.text &&
+               len(node.left.left.type_name) > 0 {
+                var owner_decl = find_class_decl(g_codegen_program, node.left.left.type_name)
+                if owner_decl != null && len(owner_decl.type_params) == 0 {
+                    class_name = node.left.left.type_name
+                }
+            }
+            if len(class_name) == 0 {
+                class_name = lookup_class_var(module_name)
+            }
             if len(class_name) == 0 && node.left.left != null {
                 class_name = extension_prefix(node.left.left.expr_type)
                 if len(class_name) == 0 { class_name = node.left.left.var_type.text }
@@ -1143,18 +1241,20 @@ func generate_expression(ASTNode? node): bool {
         return true
     } else if node.kind == AST_UNARY {
         codegen_emit(node.token.text)
-        generate_expression(node.right)
+        if node.token.kind == TOKEN_BANG || node.token.kind == TOKEN_MINUS {
+            // `!a > b` is not `!(a > b)`, and `-a + b` is not `-(a + b)`.
+            codegen_emit("(")
+            generate_expression(node.right)
+            codegen_emit(")")
+        } else {
+            generate_expression(node.right)
+        }
         return true
     } else if node.kind == AST_INDEX {
-        bool object_array = false
-        if node.left != null {
-            if node.left.var_type.kind == TOKEN_IDENTIFIER {
-                var element_subst = find_type_subst(node.left.var_type.text)                object_array = element_subst == null ||                               element_subst.concrete_type.kind == TOKEN_IDENTIFIER
-            }
-            if node.var_type.kind == TOKEN_IDENTIFIER {
-                var result_subst = find_type_subst(node.var_type.text)                object_array = object_array || result_subst == null ||                               result_subst.concrete_type.kind == TOKEN_IDENTIFIER
-            }
-        }
+        // Class-element arrays store pointers, so indexing yields a void*
+        // that must be cast through the element type; struct-element arrays
+        // store values, so the typed macro applies.
+        bool object_array = node.left != null && node_array_is_object(node.left)
         if object_array {
             codegen_emit("((")
             codegen_emit_c_type(node.left.var_type, false, true)
@@ -1189,7 +1289,10 @@ func generate_expression(ASTNode? node): bool {
         }
         codegen_emit(")")
         return true
-    } else if node.kind == AST_NEW_EXPR {        str c_name = class_mangled_name(node)
+    } else if node.kind == AST_NEW_EXPR {
+
+
+        str c_name = class_mangled_name(node)
         codegen_emit("({ ")
         codegen_emit(c_name)
         codegen_emit("* _obj; if (_cnext_cur_arena) { _obj = (")
@@ -1204,7 +1307,10 @@ func generate_expression(ASTNode? node): bool {
         codegen_emit("memset(_obj, 0, sizeof(")
         codegen_emit(c_name)
         codegen_emit(")); ")
-        codegen_emit(c_name)        codegen_emit("_new(_obj")
+        codegen_emit(c_name)
+
+
+        codegen_emit("_new(_obj")
         int i = 0
         while i < len(node.children) {
             codegen_emit(", ")
@@ -1262,7 +1368,15 @@ func generate_expression(ASTNode? node): bool {
         }
         codegen_emit("}")
         return true
-    } else if node.kind == AST_ASSIGN {        if node.left != null && node.left.expr_type == TOKEN_FUNC && node.token.kind == TOKEN_EQUAL {            codegen_emit("cnext_closure_assign(&(")            generate_expression(node.left)            codegen_emit("), ")            emit_owned_closure(node.right)            codegen_emit(")")            return true        }
+    } else if node.kind == AST_ASSIGN {
+        if node.left != null && node.left.expr_type == TOKEN_FUNC && node.token.kind == TOKEN_EQUAL {
+            codegen_emit("cnext_closure_assign(&(")
+            generate_expression(node.left)
+            codegen_emit("), ")
+            emit_owned_closure(node.right)
+            codegen_emit(")")
+            return true
+        }
         if emit_object_array_element_assignment(node) {
             return true
         }
@@ -1364,7 +1478,14 @@ func generate_expression(ASTNode? node): bool {
 
 func generate_expression_stmt(ASTNode? node) {
     if node == null { return }
-    if node.expr_type == TOKEN_FUNC &&       (node.kind == AST_CALL || node.kind == AST_LAMBDA || node.kind == AST_TERNARY) {        codegen_emit("{ CnextClosure _cnext_unused = ")        emit_owned_closure(node)        codegen_emit("; cnext_closure_decref(&_cnext_unused); }\n")        return    }    if node.kind == AST_TRY_EXPR {
+    if node.expr_type == TOKEN_FUNC &&
+       (node.kind == AST_CALL || node.kind == AST_LAMBDA || node.kind == AST_TERNARY) {
+        codegen_emit("{ CnextClosure _cnext_unused = ")
+        emit_owned_closure(node)
+        codegen_emit("; cnext_closure_decref(&_cnext_unused); }\n")
+        return
+    }
+    if node.kind == AST_TRY_EXPR {
         bool try_nullable = node.expr_type == TOKEN_STR_TYPE || node.expr_type == TOKEN_IDENTIFIER || node.expr_type == TOKEN_FUNC
         if !try_nullable {
             generate_expression(node)

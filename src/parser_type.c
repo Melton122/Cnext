@@ -124,8 +124,13 @@ ASTNode* parse_type() {
             consume(TOKEN_RBRACKET, "Expect ']' after '[' for array type.");
             node->is_array = true;
         }
-        // Nullable type: str?, int?, etc.
+        // Strings and class references already carry a null representation.
+        // Scalars need a tagged representation; never silently discard '?'.
         if (match_token(TOKEN_QUESTION)) {
+            node->type_is_nullable = true;
+            if (node->is_array || (typeToken.type != TOKEN_IDENTIFIER && typeToken.type != TOKEN_STR_TYPE)) {
+                error_at_current("Nullable scalar and array types are not supported; '?' requires a string or class reference.");
+            }
             node->is_pointer = true; // Reuse is_pointer flag for nullable
         }
         // Handle union types: Type1 | Type2 | Type3

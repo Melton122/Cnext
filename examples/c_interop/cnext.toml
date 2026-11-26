@@ -1,0 +1,3 @@
+[native]
+c_sources = ["calibration.c"]
+include_dirs = ["include"]

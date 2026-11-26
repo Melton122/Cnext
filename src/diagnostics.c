@@ -14,6 +14,12 @@ static HANDLE _diag_hConsole = NULL;
 int _diag_error_count = 0;
 int _diag_warning_count = 0;
 
+static OriginMap* _diag_origin_map = NULL;
+
+void diag_set_origin_map(OriginMap* map) {
+    _diag_origin_map = map;
+}
+
 void init_diagnostics(void) {
 #ifdef _WIN32
     if (_diag_color_support == -1) {
@@ -173,9 +179,21 @@ void diag_emit_context(DiagLevel level, ErrorCode code, int line, int col,
     int out_col = col > 0 ? col : 1;
     int out_line = line > 0 ? line : 0;
 
-    fprintf(stderr, "%s%s%s %s[%s]%s %s[%d:%d]%s: %s\n",
-        color, COLOR_BOLD, label, COLOR_MAGENTA, code_str, COLOR_RESET,
-        COLOR_DIM, out_line, out_col, COLOR_RESET, message);
+    const char* origin_file = NULL;
+    int origin_line = out_line;
+    if (out_line > 0) {
+        origin_map_lookup(_diag_origin_map, out_line, &origin_file, &origin_line);
+    }
+
+    if (origin_file) {
+        fprintf(stderr, "%s%s%s %s[%s]%s %s[%s:%d:%d]%s: %s\n",
+            color, COLOR_BOLD, label, COLOR_MAGENTA, code_str, COLOR_RESET,
+            COLOR_DIM, origin_file, origin_line, out_col, COLOR_RESET, message);
+    } else {
+        fprintf(stderr, "%s%s%s %s[%s]%s %s[%d:%d]%s: %s\n",
+            color, COLOR_BOLD, label, COLOR_MAGENTA, code_str, COLOR_RESET,
+            COLOR_DIM, out_line, out_col, COLOR_RESET, message);
+    }
 
     if (source && out_line > 0) {
         print_source_context(source, out_line);

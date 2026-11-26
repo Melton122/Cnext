@@ -877,7 +877,7 @@ class Book:
 <h1 class="cover-title">Cnext</h1>
 <p class="subtitle">A Modern Language That Compiles to C</p>
 <p class="tagline">%s</p>
-<div class="cover-meta"><span>%d chapters</span><span>%d parts</span><span>%d appendices</span><span>Edition v10</span></div>
+<div class="cover-meta"><span>%d chapters</span><span>%d parts</span><span>%d appendices</span><span>Edition v10.0.5 — Baby Otter</span></div>
 <p class="cover-actions"><a class="btn" href="#ch1">Start reading</a><a class="btn ghost" href="#toc">Browse contents</a></p>
 </div>
 </header>

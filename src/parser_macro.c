@@ -39,10 +39,16 @@ ASTNode* deep_copy_ast(ASTNode* node) {
     copy->is_const = node->is_const;
     copy->is_array = node->is_array;
     copy->is_pointer = node->is_pointer;
+    copy->type_is_nullable = node->type_is_nullable;
+    copy->return_is_nullable = node->return_is_nullable;
+    copy->return_is_array = node->return_is_array;
     copy->is_class = node->is_class;
     copy->is_pointer_access = node->is_pointer_access;
     copy->var_type = node->var_type;
+    copy->upcast_type = node->upcast_type;
     copy->return_type = node->return_type;
+    copy->yield_type = node->yield_type;
+    copy->yield_is_class = node->yield_is_class;
     copy->expr_type = node->expr_type;
     copy->is_variadic = node->is_variadic;
     copy->operator_token = node->operator_token;
@@ -90,6 +96,8 @@ void substitute_params(ASTNode* node, ASTNode** params, int param_count, ASTNode
                 node->operator_token = arg_copy->operator_token;
                 node->var_type = arg_copy->var_type;
                 node->return_type = arg_copy->return_type;
+                node->yield_type = arg_copy->yield_type;
+                node->yield_is_class = arg_copy->yield_is_class;
                 node->named_arg_name = arg_copy->named_arg_name;
                 for (int j = 0; j < arg_copy->child_count; j++) {
                     add_child(node, arg_copy->children[j]);

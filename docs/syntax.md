@@ -391,9 +391,117 @@ str os = platform()          // "windows"
 int cpus = cpu_count()       // 8
 str temp = temp_dir()        // temp directory
 str home = home_dir()        // home directory
+```## Modules
+
+### Standard modules
+
+```cnext
+import io
+import math
+import json
 ```
 
+A standard module pulls in the bundled runtime header for that module. It
+adds the module's functions (`read_file`, `json_parse`, `sqrt`, ...) to the
+program's global scope.
+
+### Local source files
+
+A quoted path imports another Cnext source file:
+
+```cnext
+import "./util.cn"           // relative to this file
+import "models/user.cn"     // subdirectories work
+import "util"               // ".cn" is added when the name has no extension
+```
+
+Imported files are compiled as part of the importing program, so their
+top-level functions, classes, structs, enums, and globals are visible
+directly:
+
+```cnext
+// math_util.cn
+func add(int a, int b): int {
+    return a + b
+}
+
+// main.cn
+import "./math_util.cn"
+
+main {
+    printin(add(2, 3))   // 5
+}
+```
+
+Paths resolve relative to the *importing* file, not the directory the
+compiler runs from, so the same program builds from anywhere. Each file is
+included at most once: importing the same file twice, or importing two files
+that both import a third, is safe. Import cycles are ignored rather than
+reported as errors.
+
+Imported code is compiled *before* the importing file, like a C `#include` at
+the top. That is what makes a class or struct defined in a module complete by
+the time the importing file uses it by value:
+
+```cnext
+// point.cn
+struct Point {
+    int x
+    int y
+}
+
+// main.cn
+import "./point.cn"
+
+main {
+    var p: Point      // works: Point is complete here
+    p.x = 1
+    printin(p.x)
+}
+```
+
+Because of that ordering the compiler merges the files into one translation
+unit, but diagnostics still name the real file and line:
+
+```
+error [E100] [build/util.cn:2:12]: Undeclared identifier: missing_name
+```
+
+Package imports, which also prepend their sources, keep reporting positions in
+the merged text for now.
+
+### Visibility
+
+Top-level declarations in a file that is imported are **private** to that file
+unless they are marked `export`:
+
+```cnext
+// util.cn
+func helper(): int {          // private to util.cn
+    return 1
+}
+
+export func add(int a, int b): int {   // visible to importers
+    return helper() + a + b
+}
+```
+
+Private names are rewritten to a file-specific spelling before the files are
+merged (`helper` becomes something like `helper__m2`), so two modules may each
+define a `helper`, and a reference to another file's private name is an
+"undeclared identifier" error. Member declarations and member accesses
+(`p.x`) keep their spelling. `export` is accepted in single-file programs but
+has no effect there.
+
+Notes:
+- `import` is a top-level declaration, one per line.
+- There are no namespaces yet. Exported names share a single top-level scope,
+  so two files cannot export the same function, class, or global; unexported
+  names may repeat freely.
+- A missing local file is a compile error naming the path that was tried.
+
 ## Arrays
+
 
 ### Declaration
 
@@ -471,8 +579,11 @@ bool not_equal = (s1 != s2)  // true
 ### `own` — Ownership Transfer
 
 ```cnext
-own str data = get_string()
+var data = str_upper("hello")
+var transferred = own data
 ```
+
+See [checked ownership and lifetime rules](memory.md#checked-transfers-and-scoped-references).
 
 ### `constexpr` — Compile-Time Constants
 
@@ -549,7 +660,7 @@ valid. Follow that C library's rules for the borrowed pointer's lifetime and
 release. `CStr` does not represent a writable C buffer or a binary buffer.
 Use an API that carries a separate length for binary data.
 
-Owned conversions are tracked until `cstr_free`, `gc()`, or process cleanup.
+Owned conversions are tracked until `cstr_free` or process cleanup.
 Every alias becomes invalid when its allocation is released. A C function must
 not write to, free, or retain an owned conversion beyond that lifetime.
 The compiler does not check pointer lifetimes. For repeated calls, release or
@@ -568,6 +679,11 @@ cnext run examples/c_interop/main.cn --c-source examples/c_interop/calibration.c
 This prints `Calibrated reading: 42`. Cnext generates C, compiles both sources,
 and links the executable in one command. The C code includes `calibration.h`;
 the Cnext declaration must be kept consistent with that header.
+
+The example also includes `cnext.toml`. Use
+`cnext run examples/c_interop/main.cn --manifest examples/c_interop/cnext.toml`
+to load its native inputs, or run `cnext run main.cn` from that example directory.
+See [native build settings](native-builds.md) for host-platform tables and merge rules.
 
 | Build option | Purpose |
 |---|---|

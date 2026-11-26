@@ -13,6 +13,8 @@ int generator_depth = 0
 int defer_depth = 0
 int defer_lambda_depth = 0
 int sem_current_return_type = TOKEN_EOF
+Token sem_current_return_token
+bool sem_current_return_array = false
 int sem_lambda_depth = 0
 // Class whose body is being analyzed, so `self.x` can resolve its field types.
 str sem_current_class = ""

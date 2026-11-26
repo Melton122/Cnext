@@ -1,0 +1,28 @@
+// Prefix `!` and `-` must apply to the whole parenthesized operand, not just
+// its first term: `!(a > b)` is not `!a > b` in C.
+
+main {
+    printin(!(1 > 5))
+    // EXPECT: 1
+    printin(!(5 > 1))
+    // EXPECT: 0
+    printin(-(2 + 3))
+    // EXPECT: -5
+
+    var a: int = 7
+    var b: int = 3
+    printin(!(a > b))
+    // EXPECT: 0
+    printin(!(a < b))
+    // EXPECT: 1
+    printin(!(a == 7 && b == 3))
+    // EXPECT: 0
+    printin(-(a - b) + a)
+    // EXPECT: 3
+
+    var list: int[] = {1, 2, 3}
+    printin(!(list[0] < list[2]))
+    // EXPECT: 0
+    printin(-(list[2] + list[1]))
+    // EXPECT: -5
+}

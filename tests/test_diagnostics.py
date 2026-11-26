@@ -29,6 +29,25 @@ def compile_source(compiler, source):
     return result.returncode, ANSI_ESCAPE.sub("", result.stdout + result.stderr)
 
 
+def compile_imported(compiler, files):
+    """Build `main.cn` from a dict of file name -> source, so diagnostics can
+    be checked against a real multi-file translation unit."""
+    with tempfile.TemporaryDirectory(prefix="cnext-import-diagnostics-", dir=ROOT / "build") as temp_dir:
+        temp = Path(temp_dir)
+        for name, text in files.items():
+            (temp / name).write_text(text, encoding="utf-8")
+        output_path = temp / ("case.exe" if os.name == "nt" else "case")
+        result = subprocess.run(
+            [str(compiler), "build", str(temp / "main.cn"), "-o", str(output_path)],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            timeout=30,
+        )
+    output = ANSI_ESCAPE.sub("", result.stdout + result.stderr).replace("\\", "/")
+    return result.returncode, output
+
+
 def require(label, output, needles):
     missing = [needle for needle in needles if needle not in output]
     if missing:
@@ -213,6 +232,68 @@ def main():
         ],
     )
     print("PASS try propagation diagnostics")
+
+    return_code, output = compile_imported(
+        compiler,
+        {
+            "util.cn": "func helper(): int {\n    return missing_name\n}\n",
+            "main.cn": 'import "./util.cn"\n\nmain {\n    printin(helper())\n}\n',
+        },
+    )
+    if return_code == 0:
+        raise RuntimeError("Undeclared name in an imported file unexpectedly compiled")
+    require(
+        "imported file diagnostic",
+        output,
+        [
+            "util.cn:2:12]",
+            "= rule: CN-E100",
+        ],
+    )
+    if "[1:" in output or "[3:" in output:
+        raise RuntimeError(f"Imported diagnostic used a merged line number:\n{output}")
+    print("PASS imported file diagnostics")
+
+    return_code, output = compile_imported(
+        compiler,
+        {
+            "util.cn": "func helper(): int {\n    return 1\n}\n",
+            "main.cn": 'import "./util.cn"\n\nmain {\n    printin(helper())\n    printin(nothing_here)\n}\n',
+        },
+    )
+    if return_code == 0:
+        raise RuntimeError("Undeclared name in the importing file unexpectedly compiled")
+    require(
+        "importing file diagnostic",
+        output,
+        [
+            "main.cn:5:13]",
+            "Undeclared identifier: nothing_here",
+        ],
+    )
+    print("PASS importing file diagnostics")
+
+    return_code, output = compile_imported(
+        compiler,
+        {
+            "util.cn": (
+                "func helper(): int {\n    return 1\n}\n\n"
+                "export func api(): int {\n    return helper()\n}\n"
+            ),
+            "main.cn": 'import "./util.cn"\n\nmain {\n    printin(api())\n    printin(helper())\n}\n',
+        },
+    )
+    if return_code == 0:
+        raise RuntimeError("A module-private name was visible to the importing file")
+    require(
+        "module-private name diagnostic",
+        output,
+        [
+            "Undeclared identifier: helper",
+            "main.cn:5:",
+        ],
+    )
+    print("PASS module-private names")
 
     guard_files = [
         ROOT / "include" / "ast.h",

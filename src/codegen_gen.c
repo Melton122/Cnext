@@ -44,6 +44,38 @@ void free_gen_locals(GenLocal* list) {
 }
 
 static int gen_yield_counter = 0;
+static Token gen_current_type;
+static bool gen_current_is_pointer;
+
+static Token gen_current_type_for(ASTNode* node, bool* is_pointer) {
+    *is_pointer = false;
+    if (node->type == AST_ASYNC_FUNC_DECL) {
+        if (node->return_type.type != TOKEN_EOF && node->return_type.type != TOKEN_VAR) {
+            *is_pointer = node->is_class || node->is_pointer;
+            return node->return_type;
+        }
+        return (Token){TOKEN_INT_TYPE, "int", 3, node->token.line};
+    }
+    if (node->yield_type.type != TOKEN_EOF) {
+        *is_pointer = node->yield_is_class;
+        return node->yield_type;
+    }
+    return (Token){TOKEN_INT_TYPE, "int", 3, node->token.line};
+}
+
+static void emit_current_zero(void) {
+    if (gen_current_is_pointer) {
+        fprintf(out, "NULL");
+    } else if (gen_current_type.type == TOKEN_STR_TYPE ||
+               gen_current_type.type == TOKEN_FUNC) {
+        const char* c_type = type_token_to_c(gen_current_type.type);
+        fprintf(out, "(%s){0}", c_type);
+    } else if (gen_current_type.type == TOKEN_IDENTIFIER) {
+        fprintf(out, "(%.*s){0}", gen_current_type.length, gen_current_type.start);
+    } else {
+        fprintf(out, "0");
+    }
+}
 
 static void generate_gen_body_node(ASTNode* node, GenLocal* all_vars) {
     if (!node) return;
@@ -53,7 +85,7 @@ static void generate_gen_body_node(ASTNode* node, GenLocal* all_vars) {
             gen_yield_counter++;
             fprintf(out, "        f->current = (");
             if (node->left) generate_expression(node->left);
-            else fprintf(out, "0");
+            else emit_current_zero();
             fprintf(out, ");\n");
             fprintf(out, "        f->_pc = %d;\n", gen_yield_counter);
             fprintf(out, "        return true;\n");
@@ -166,7 +198,7 @@ static void generate_gen_body_node(ASTNode* node, GenLocal* all_vars) {
             write_indent();
             fprintf(out, "f->current = (");
             if (node->left) generate_expression(node->left);
-            else fprintf(out, "0");
+            else emit_current_zero();
             fprintf(out, ");\n");
             break;
         }
@@ -220,10 +252,14 @@ void generate_generator_code(ASTNode* node, const char* func_name) {
         all_vars = copy;
     }
     
+    gen_current_type = gen_current_type_for(node, &gen_current_is_pointer);
+
     out = closure_defs_out;
     fprintf(out, "typedef struct {\n");
     fprintf(out, "    int _pc;\n");
-    fprintf(out, "    int current;\n");
+    fprintf(out, "    ");
+    generate_type(gen_current_type, gen_current_is_pointer);
+    fprintf(out, " current;\n");
     fprintf(out, "    bool done;\n");
     fprintf(out, "    int _received;\n");
     fprintf(out, "    bool (*_next)(void*);\n");
@@ -285,7 +321,9 @@ void generate_generator_code(ASTNode* node, const char* func_name) {
     fprintf(out, "    _cnext_track(f);\n");
     fprintf(out, "    f->_pc = 0;\n");
     fprintf(out, "    f->done = false;\n");
-    fprintf(out, "    f->current = 0;\n");
+    fprintf(out, "    f->current = ");
+    emit_current_zero();
+    fprintf(out, ";\n");
     fprintf(out, "    f->_received = 0;\n");
     fprintf(out, "    f->_next = _gen_%s_next_v;\n", func_name);
     for (GenLocal* gl = params; gl; gl = gl->next) {

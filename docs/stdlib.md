@@ -274,7 +274,7 @@ int found = array_find(nums, (int x) => x > 3)
 
 ```cnext
 debug(42)                       // Print debug info to stderr
-gc()                            // Trigger garbage collection
+gc()                            // Compatibility hint; no-op (no tracing collector)
 long us = benchmark(1000000)    // Benchmark (microseconds)
 ```
 

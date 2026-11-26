@@ -6,3 +6,4 @@ test "this should fail" {
 main {
     printin("should not reach here")
 }
+// EXIT: 1

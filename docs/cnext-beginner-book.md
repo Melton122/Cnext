@@ -235,6 +235,9 @@ Cnext compiles your code to C, so it needs a C compiler to finish the job:
   provides `gcc`.
 - On **macOS**, install **Xcode Command Line Tools** (`xcode-select --install`).
 
+For VS Code, install the **Cnext Language Support** extension so `.cn` files get
+syntax highlighting, the Cnext file icon, snippets, and build commands.
+
 ### 2.3 Install Cnext from source
 
 ```bash
@@ -243,13 +246,22 @@ cd cnext
 make
 ```
 
-This builds the `cnext` executable in the project root. You can also download a
-pre-built package for Windows (for example `cnext-windows-x64-10.0.0.zip`).
+This builds the `cnext` executable in the project root. For v10.0.5 you can also
+use the installers, which download the Windows release asset
+`cnext-windows-x64-v10.0.5.zip`:
 
-> **Tip: pip / package helpers**
+```bash
+# Windows (PowerShell)
+iwr -useb https://raw.githubusercontent.com/Melton122/Cnext/main/install.ps1 | iex
+
+# Linux/macOS
+curl -fsSL https://raw.githubusercontent.com/Melton122/cnext/main/install.sh | bash
+```
+
+> **Tip: package helpers**
 >
-> Later releases may offer installers (`install.sh`, `install.ps1`,
-> `install.bat`). Check the project's README for the current recommended way.
+> The release ships `install.sh`, `install.ps1`, and `install.bat`. Check the
+> project's README for the current recommended way.
 
 ### 2.4 Put `cnext` on your PATH
 
@@ -508,15 +520,45 @@ no newline here -> continues on same line
 
 ### 4.7 Reading input
 
-Ask the user for text with `input` (or `input("prompt: ")`):
+`input()` reads one line. Without a typed destination it returns text (`str`):
 
 ```cnext
 main {
-    print("Enter your name: ")
-    var name = input()
+    var name = input("Enter your name: ")
     printin("Hello, " + name + "!")
 }
 ```
+
+A typed destination selects a typed reader, so the same call can read a number
+or a boolean:
+
+```cnext
+main {
+    var age: int = input("Age: ")
+    var ratio: float = input()
+    var active: bool = input("Active? ")
+    printin(age)
+    printin(ratio)
+    printin(active)
+}
+```
+
+When a whole expression names its type, use an explicit reader such as
+`input_int()`, `input_float()`, or `input_bool()`:
+
+```cnext
+main {
+    var count = input_int("Count: ")
+    var score = input_float("Score: ")
+    var again = input_bool("Again? ")
+    printin(count)
+    printin(score)
+    printin(again)
+}
+```
+
+Typed reads ignore surrounding spaces. Invalid or out-of-range text reads as
+the type's zero value instead of stopping the program.
 
 > **Real world**
 >
@@ -528,17 +570,15 @@ main {
 >
 > Write a program that asks for a user's name and favorite number, then prints
 > a sentence such as `Hello, Ada! 7 is a great choice.` Use variables and
-> string concatenation.
+> string interpolation.
 
 <details><summary>Suggested solution</summary>
 
 ```cnext
 main {
-    print("Name: ")
-    var name = input()
-    print("Favorite number: ")
-    var num = input()
-    printin("Hello, " + name + "! " + num + " is a great choice.")
+    var name = input("Name: ")
+    var num = input_int("Favorite number: ")
+    printin("Hello, {name}! {num} is a great choice.")
 }
 ```
 
@@ -1468,14 +1508,15 @@ main {
 
 ### 13.2 Nullable types
 
-By default, a type doesn't allow `null`. Add a `?` to make it nullable:
+Strings and class references can hold `null`; `?` documents that intent.
+Cnext does not yet enforce non-null references. Nullable scalars and arrays
+are not supported and produce a compiler error.
 
 ```cnext
 str? maybe_name = null      // may or may not hold text
-int? maybe_age = 25         // optional number
 
-if maybe_age != null {
-    printin(maybe_age)      // safe to use here
+if maybe_name != null {
+    printin(maybe_name)
 }
 ```
 
@@ -1506,9 +1547,9 @@ and `??` turns it into `"Unknown"`.
 >
 > "Null pointer" crashes are among the most famous bugs in programming.
 > In languages where almost any value can silently be null, these bugs only
-> surface at runtime. Cnext's `?` types make "this might be null" explicit to
-> the compiler, so it can check that you handle the "no value" case, catching
-> many bugs before the program even runs.
+> surface at runtime. Cnext's `?` syntax documents nullable references, but
+> does not yet prove that every use handles null. Use `??` defaults and check
+> references before dereferencing them.
 
 > **Real world**
 > "No value" situations are everywhere: a user has no middle name, a searched
@@ -1518,17 +1559,17 @@ and `??` turns it into `"Unknown"`.
 
 > **Exercise 13.1**
 >
-> Declare a nullable `int?` and set it to `null`. Print it using `??` with a
-> fallback of `0`, then assign it a number and print it again.
+> Declare a nullable `str?` and set it to `null`. Print it using `??` with a
+> fallback of `"Guest"`, then assign it a name and print it again.
 
 <details><summary>Suggested solution</summary>
 
 ```cnext
 main {
-    int? c = null
-    printin(c ?? 0)      // prints 0 because c is null
-    c = 7
-    printin(c ?? 0)      // prints 7
+    str? name = null
+    printin(name ?? "Guest")
+    name = "Alice"
+    printin(name ?? "Guest")
 }
 ```
 
@@ -2505,7 +2546,7 @@ Let's combine many chapters into one genuinely useful program: a **grade
 book** that
 
 1. stores several students (struct/class) with scores,
-2. reads input with `input`,
+2. reads input with `input()` and typed readers,
 3. decides pass/fail with `if` (Chapter 7),
 4. loops over the list (Chapter 8),
 5. uses functions (Chapter 11),
@@ -2566,8 +2607,7 @@ Extend it to read scores from the user and handle bad input gracefully:
 
 ```cnext
 main {
-    print("Enter a score (0-100): ")
-    var raw = input()
+    var raw = input("Enter a score (0-100): ")
     try {
         var n = to_int(raw)
         printin(n >= 60 ? "PASS" : "FAIL")
@@ -2576,6 +2616,9 @@ main {
     }
 }
 ```
+
+> `input_int()` is simpler when invalid input should become `0`. Keep
+> `to_int(input())` here because this exercise deliberately catches bad text.
 
 > **Exercise 24.1**
 >
@@ -2602,14 +2645,11 @@ main {
     var more = "yes"
 
     while more == "yes" {
-        print("Student name: ")
-        var name = input()
-        print("Score: ")
-        var score = to_int(input())
+        var name = input("Student name: ")
+        var score = to_int(input("Score: "))
         total = total + score
         count = count + 1
-        print("Another? (yes/no): ")
-        more = input()
+        more = input("Another? (yes/no): ")
     }
 
     if count > 0 {

@@ -106,6 +106,15 @@ void generate_block(ASTNode* node) {
     fprintf(out, "}\n");
 }
 
+static bool expression_is_void_call(ASTNode* node) {
+    if (!node || node->type != AST_CALL || !node->left || node->left->type != AST_IDENTIFIER) return false;
+    ASTNode* callee = node->left->binding;
+    if (!callee) return false;
+    if (callee->type != AST_FUNC_DECL && callee->type != AST_ASYNC_FUNC_DECL &&
+        callee->type != AST_COROUTINE_DECL) return false;
+    return callee->return_type.type == TOKEN_EOF;
+}
+
 void generate_node(ASTNode* node) {
     if (!node) return;
     track_source_line(node->token.line);
@@ -272,7 +281,7 @@ void generate_node(ASTNode* node) {
                 generate_expression(node->left);
                 fprintf(out, "; ");
                 fprintf(out, "_a->_next(_a); ");
-                fprintf(out, "_a; })");
+                fprintf(out, "_a; });");
             }
             break;
         }
@@ -534,6 +543,8 @@ void generate_node(ASTNode* node) {
                     generate_node_type(node, node->is_pointer || node->is_class);
                     fprintf(out, " %.*s", node->token.length, node->token.start);
                 }
+                bool cast_class_init = node->is_class && node->init &&
+                    !(node->init->type == AST_NEW_EXPR && node->init->type_arg_count > 0);
                 if (node->init) {
                     if (node->is_global && node->init->type == AST_NEW_EXPR) {
                         // `new` expands to a GCC statement expression, which is
@@ -544,7 +555,13 @@ void generate_node(ASTNode* node) {
                         fprintf(out, "static void __attribute__((constructor)) _cnext_init_%.*s(void) {\n",
                                 node->token.length, node->token.start);
                         fprintf(out, "%.*s = ", node->token.length, node->token.start);
-                        generate_expression(node->init);
+                        if (cast_class_init) {
+                            fprintf(out, "(%.*s*)(", node->var_type.length, node->var_type.start);
+                            generate_expression(node->init);
+                            fprintf(out, ")");
+                        } else {
+                            generate_expression(node->init);
+                        }
                         fprintf(out, ";\n}\n");
                         break;
                     }
@@ -565,6 +582,10 @@ void generate_node(ASTNode* node) {
                     } else if (node->var_type.type == TOKEN_FUNC) {
                         fprintf(out, " = ");
                         generate_owned_closure_expression(node->init);
+                    } else if (cast_class_init) {
+                        fprintf(out, " = (%.*s*)(", node->var_type.length, node->var_type.start);
+                        generate_expression(node->init);
+                        fprintf(out, ")");
                     } else {
                         fprintf(out, " = ");
                         generate_expression(node->init);
@@ -629,7 +650,7 @@ void generate_node(ASTNode* node) {
             for (int i = 0; i < node->child_count; i++) {
                 ASTNode* func = node->children[i];
                 if (func->type == AST_FUNC_DECL) {
-                    generate_type(func->return_type, false);
+                    generate_return_type(func);
                     fprintf(out, " %.*s(", func->token.length, func->token.start);
                     for (int j = 0; j < func->child_count; j++) {
                         if (j > 0) fprintf(out, ", ");
@@ -664,6 +685,8 @@ void generate_node(ASTNode* node) {
             break;
         }
         case AST_MAIN: {
+            bool previous_returns_void = current_func_returns_void;
+            current_func_returns_void = true;
 #if defined(_MSC_VER) || defined(CNEXT_FORCE_MSVC_DEFER)
             bool has_defer = false;
             int scope_mark = -1;
@@ -739,6 +762,7 @@ void generate_node(ASTNode* node) {
             fprintf(out, "return _cnext_main_result;\n");
             indent_level--;
             fprintf(out, "}\n\n");
+            current_func_returns_void = previous_returns_void;
             break;
         }
         case AST_EXPR_STMT:
@@ -926,8 +950,19 @@ void generate_node(ASTNode* node) {
                         current_loop, current_loop, current_loop, current_loop);
                 indent_level++;
                 write_indent();
-                fprintf(out, "__auto_type %.*s = _src%d.data[_i%d];\n",
-                        node->init->token.length, node->init->token.start, current_loop, current_loop);
+                // An array of class instances stores pointers, so the loop
+                // variable must be a typed pointer, not a bare void* from
+                // __auto_type; otherwise member access on it emits invalid C.
+                if (node->init->is_class && node->init->type_name) {
+                    fprintf(out, "%s* %.*s = (%s*)_src%d.data[_i%d];\n",
+                            node->init->type_name,
+                            node->init->token.length, node->init->token.start,
+                            node->init->type_name, current_loop, current_loop);
+                } else {
+                    fprintf(out, "__auto_type %.*s = _src%d.data[_i%d];\n",
+                            node->init->token.length, node->init->token.start,
+                            current_loop, current_loop);
+                }
                 
                 for (int i = 0; i < node->left->child_count; i++) {
                     write_indent();
@@ -1205,7 +1240,7 @@ void generate_node(ASTNode* node) {
                             generate_node(arm->left->children[k]);
                         }
                         write_indent();
-                        if (current_func_returns_void) {
+                        if (current_func_returns_void || expression_is_void_call(last_stmt->left)) {
                             generate_expression(last_stmt->left);
                             fprintf(out, ";\n");
                         } else {

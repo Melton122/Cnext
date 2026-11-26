@@ -48,9 +48,6 @@ bool registry_logout(void);
 // Get saved auth token
 const char* registry_get_token(void);
 
-// Update all dependencies in cnext.toml
-bool registry_update(const char* project_dir);
-
 // Remove a package
 bool registry_remove(const char* package_name, const char* project_dir);
 

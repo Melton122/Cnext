@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <stdbool.h>
 
+#include "origin_map.h"
+
 // Error codes
 typedef enum {
     ERR_NONE = 0,
@@ -119,6 +121,11 @@ void diag_hint_msg(const char* message);
 // Source context display (used by parser for error highlighting)
 void print_source_context(const char* source, int line);
 void print_caret_at(const char* source, int line, int col, int length);
+
+// When set, diagnostics resolve token lines through this map and report the
+// real source file and line (`path:line:col`) instead of a line in the merged
+// translation unit. Pass NULL to clear; the caller keeps ownership.
+void diag_set_origin_map(OriginMap* map);
 
 // Suggestion mapping for common errors
 typedef struct {

@@ -65,7 +65,7 @@
 
 ## Version 4.5 — Memory Model & FFI (Implemented)
 - **FFI Improvements:** `extern "C"` declarations for seamless C function interop
-- **Ownership Semantics:** `own` keyword for ownership transfer expressions
+- **Ownership checks:** local moves, `if`/`else` joins, fresh iteration-local moves, and lexical arena lifetimes are checked; full loop/exception and release analysis remain pending
 - **Memory Profiler:** `--profile` flag for heap profiling, leak detection, allocation tracking
 - **Benchmark Tool:** Built-in `bench { }` block for performance measurement
 
@@ -91,16 +91,20 @@
 - **Performance Benchmarking Suite:** Comprehensive benchmarks for language perf
 - **Cross-platform CI:** Automated testing on Windows, Linux, macOS
 
-## Version 7.0 — Module System (Implemented)
-- **Import system:** `import module` with package support
-- **Modules:** File-based module organization
+## Version 7.0 — Module System (Partial)
+- **Import system:** `import module` for standard modules and packages
+- **Local modules:** `import "./util.cn"` merges another source file into the
+  program (single translation unit); diagnostics still report
+  `file:line:col` for the real file
+- **Per-file visibility:** top-level declarations are private to their file
+  unless marked `export`; private names may repeat across files
 - **Package manager improvements:** `cnext install` for dependency management
-- **Namespaces:** `namespace MyLib { }` syntax
-- **Visibility modifiers:** `public`, `private`, `protected`
+- **Not yet:** `namespace MyLib { }` blocks and `public`/`private`/`protected`
+  visibility modifiers
 
 ## Version 8.0 — Type System & Developer Experience (Implemented)
 - **Type aliases:** `type MyInt = int` for clearer code
-- **Nullable types:** `str?`, `int?` for optional values
+- **Nullable references:** `str?` and class references; tagged nullable scalars and arrays remain pending
 - **Optional chaining:** `?.` operator for safe member access
 - **Null coalescing:** `??` operator for default values
 - **Match expressions:** Enhanced pattern matching with guards

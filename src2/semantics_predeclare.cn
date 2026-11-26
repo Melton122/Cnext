@@ -15,6 +15,8 @@ func predeclare_global(ASTNode? node) {
         inherit_traits(node)
     } else if node.kind == AST_STRUCT_DECL {
         define_type_symbol(node, TOKEN_STRUCT)
+    } else if node.kind == AST_TYPE_ALIAS {
+        define_type_symbol(node, TOKEN_CLASS)
     } else if node.kind == AST_ENUM_DECL {
         define_type_symbol(node, TOKEN_ENUM)
     } else if node.kind == AST_TRAIT_DECL {

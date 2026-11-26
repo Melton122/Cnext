@@ -64,7 +64,17 @@ func sem_for_in_apply_element_type(ASTNode? init, ASTNode? iterable) {
         if len(init.type_name) == 0 && decl.var_type.kind == TOKEN_IDENTIFIER {
             init.type_name = decl.var_type.text
         }
-        init.is_class = decl.is_class
+        // decl.is_class is only set for a non-array class reference, and an
+        // array's var_type is its *element* type. Resolve the element type
+        // symbol so a loop over a class-element array is dereferenced with
+        // '->' like the indexed form.
+        if decl.var_type.kind == TOKEN_IDENTIFIER {
+            var elem_sym = resolve_symbol(decl.var_type)
+            init.is_class = elem_sym != null && elem_sym.decl_node != null &&
+                elem_sym.decl_node.kind == AST_CLASS_DECL
+        } else {
+            init.is_class = false
+        }
         init.expr_type = decl.var_type.kind
         return
     }
@@ -101,11 +111,10 @@ func analyze_assignment(ASTNode? node) {
         analyze_expression(node.right)
     }
     var expected_token = make_kind_token(left_type)
-    if node.left != null && len(node.left.type_name) > 0 {
+    if left_type == TOKEN_IDENTIFIER && node.left != null && len(node.left.type_name) > 0 {
         expected_token = make_token(TOKEN_IDENTIFIER, node.left.type_name, 0, 0)
     }
-    sem_check_assignment_type(expected_token, node.right,
-        node.right == null ? TOKEN_EOF : node.right.expr_type)
+    sem_check_value_assignment(expected_token, sem_value_is_array(node.left), node.right)
     if node.right != null && node.right.kind == AST_NULL_LITERAL {
         node.right.expr_type = left_type
         if node.left != null && len(node.left.type_name) > 0 {
@@ -142,6 +151,33 @@ func analyze_function(ASTNode? node, bool define_name) {
     if node.return_type.kind == TOKEN_ITER {
         node.is_generator = true
     }
+    // Define the function's own name in the enclosing scope so later bodies
+    // (and cross-references between sibling functions) resolve it. Async and
+    // coroutine declarations are not covered by the top-level predeclare,
+    // which only defines plain AST_FUNC_DECL names.
+    if define_name && resolve_current_symbol(node.token) == null {
+        define_symbol(node.token, TOKEN_FUNC, true, "", node)
+    }
+    // A generator's element type resolves like its return type: a declared
+    // class element makes the frame's `current` a pointer.
+    if node.is_generator && node.yield_type.kind == TOKEN_IDENTIFIER {
+        var yield_sym = resolve_symbol(node.yield_type)
+        if yield_sym != null && yield_sym.decl_node != null &&
+           yield_sym.decl_node.kind == AST_CLASS_DECL {
+            node.yield_is_class = true
+        }
+    }
+    sem_validate_nullable_type(node.return_type, node.return_is_nullable)
+    if node.return_is_array && len(node.type_params) > 0 {
+        semantic_error_at("E101", node.token.line, node.token.col,
+            "Generic array returns are not yet supported:", "Use a concrete array result type in a non-generic function.")
+        has_semantic_error = true
+    }
+    if node.return_is_array && (node.is_generator || node.kind == AST_ASYNC_FUNC_DECL || node.kind == AST_COROUTINE_DECL) {
+        semantic_error_at("E101", node.token.line, node.token.col,
+            "Array returns require an ordinary function:", "Suspended array results are not yet supported.")
+        has_semantic_error = true
+    }
     // Create scope for function
     sem_push_scope()
     // Add parameters
@@ -150,6 +186,7 @@ func analyze_function(ASTNode? node, bool define_name) {
     while i < n {
         var child = node.children[i]
         if child.kind == AST_VAR_DECL {
+            sem_validate_nullable_type(child.var_type, child.type_is_nullable)
             child.lambda_depth = sem_lambda_depth
             var tname = type_name_from_token(child.var_type)
             define_symbol(child.token, child.var_type.kind, false, tname, child)
@@ -160,12 +197,18 @@ func analyze_function(ASTNode? node, bool define_name) {
     }
     // Save return type
     int old_return = sem_current_return_type
+    var old_return_token = sem_current_return_token
+    bool old_return_array = sem_current_return_array
     sem_current_return_type = node.return_type.kind
+    sem_current_return_token = node.return_type
+    sem_current_return_array = node.return_is_array
     // Analyze body
     if node.left != null {
         analyze_node(node.left)
     }
     sem_current_return_type = old_return
+    sem_current_return_token = old_return_token
+    sem_current_return_array = old_return_array
     if node.return_type.kind == TOKEN_FUNC { node.closure_signature = sem_returned_closure(node.left) }
     sem_pop_scope()
 }
@@ -191,7 +234,16 @@ func analyze_node(ASTNode? node) {
     } else if node.kind == AST_FUNC_DECL {
         analyze_function(node, true)
         return
+    } else if node.kind == AST_ASYNC_FUNC_DECL || node.kind == AST_COROUTINE_DECL {
+        // Async/coroutine bodies take the same parameter, return, and local
+        // analysis as ordinary functions; without this their locals kept
+        // untyped declarations and awaits never received the callee's type.
+        analyze_function(node, true)
+        return
     } else if node.kind == AST_CLASS_DECL {
+        // Define the class in the current scope, so classes declared inside
+        // test blocks (or other nested scopes) resolve for later declarations.
+        define_type_symbol(node, TOKEN_CLASS)
         str old_class = sem_current_class
         sem_current_class = node.token.text
         sem_push_scope()
@@ -209,6 +261,9 @@ func analyze_node(ASTNode? node) {
         sem_pop_scope()
         sem_current_class = old_class
         return
+    } else if node.kind == AST_TYPE_ALIAS {
+        sem_validate_alias(node)
+        return
     } else if node.kind == AST_VAR_DECL {
         node.lambda_depth = sem_lambda_depth
         if sem_current_scope != null && sem_current_scope.parent == null { node.lambda_depth = -1 }
@@ -225,7 +280,11 @@ func analyze_node(ASTNode? node) {
             // that `var n = make_node()` yields a class pointer, emitting
             // `n.field` on what C types as `Node*`.
             if !explicit_type {
-                if node.init.expr_type == TOKEN_IDENTIFIER &&
+                var array = sem_array_declaration(node.init)
+                if array != null && array.var_type.kind != TOKEN_EOF && array.var_type.kind != TOKEN_VAR {
+                    node.is_array = true
+                    node.var_type = array.var_type
+                } else if node.init.expr_type == TOKEN_IDENTIFIER &&
                    node.init.var_type.kind == TOKEN_IDENTIFIER {
                     // Classes and structs both carry a named type here; only a
                     // class is a pointer (`is_class`).
@@ -250,6 +309,9 @@ func analyze_node(ASTNode? node) {
                 define_symbol(node.token, node.var_type.kind, node.is_const, tname, node)
             }
         }
+        return
+    } else if node.kind == AST_OWN_EXPR {
+        analyze_expression(node)
         return
     } else if node.kind == AST_ASSIGN {
         analyze_assignment(node)
@@ -292,6 +354,7 @@ func analyze_node(ASTNode? node) {
         if node.left != null {
             sem_apply_expected_type(node.left, sem_current_return_type)
             int actual = analyze_expression(node.left)
+            sem_check_value_assignment(sem_current_return_token, sem_current_return_array, node.left)
             if sem_current_return_type == TOKEN_FUNC { sem_validate_closure_escape(node.left) }
             int expected = sem_current_return_type
             if is_builtin_value_type_kind(expected) && expected != TOKEN_VAR &&

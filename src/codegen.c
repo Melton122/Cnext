@@ -257,6 +257,7 @@ void reset_codegen_state(void) {
 
     clear_type_subst();
     free_gen_specs();
+    clear_struct_array_typedefs();
     free_spec_work_queue();
     free_class_spec_queue();
 }

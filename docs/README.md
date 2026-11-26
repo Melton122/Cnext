@@ -9,6 +9,7 @@
 ## Language Features
 
 - [Types](types.md) — Type system
+- [Implemented language contract](language-contract.md) — Checked behavior and remaining guarantees
 - [Functions](functions.md) — Function declarations and calls
 - [Classes](classes.md) — OOP with classes and inheritance
 - [Closures](closures.md) — First-class functions with captures
@@ -26,8 +27,12 @@
 - [AST](ast.md) — Abstract Syntax Tree node types
 - [Standard Library](stdlib.md) — Built-in modules and functions
 - [Process Safety](process-safety.md) — Shell vs argv process APIs and injection defenses
+- [Mixed Cnext and C builds](native-builds.md) — Declarative native project settings
 
 ## Internals
+
+- [Self-hosting](selfhosting.md) — Verified compiler stages, optimizer, test command, and remaining parity work
+- [Production plan](production-plan.md) — Stabilization status and high-level, systems, C ABI, and package milestones
 
 - [Architecture](architecture.md) — Compiler pipeline and project structure
 - [Specification](specification.md) — Language specification (v1.x)

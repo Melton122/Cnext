@@ -43,6 +43,7 @@ ASTNode* create_node(ASTNodeType type, Token token) {
     node->token = token;
     node->var_type.type = TOKEN_EOF;
     node->return_type.type = TOKEN_EOF;
+    node->upcast_type.type = TOKEN_EOF;
     node->expr_type = TOKEN_EOF;
     node->type_params = NULL;
     node->type_param_count = 0;

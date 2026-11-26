@@ -152,7 +152,7 @@ func print_source_excerpt(int line, int col) {
 
 func error_at_tok_fields(Token tok, str message, str expected) {
     str code = parser_error_code(message)
-    str prefix = "error [" + code + "] [" + to_str(tok.line) + ":" + to_str(tok.col) + "]: "
+    str prefix = "error [" + code + "] " + origin_position(tok.line, tok.col) + ": "
     str found = ""
     if tok.kind == TOKEN_EOF {
         found = "end of file"
@@ -198,7 +198,7 @@ func error_at_current(str message) {
 }
 
 func semantic_error_at(str code, int line, int col, str message, str help) {
-    printin("error [" + code + "] [" + to_str(line) + ":" + to_str(col) + "]: " + message)
+    printin("error [" + code + "] " + origin_position(line, col) + ": " + message)
     print_source_excerpt(line, col)
     if len(help) > 0 { printin("  = help: " + help) }
     printin("  = rule: CN-" + code)
@@ -320,14 +320,23 @@ func assign_type_from_node(ASTNode dest, ASTNode typeNode) {
     } else {
         dest.var_type = typeNode.token
         dest.is_array = typeNode.is_array
+        dest.type_is_nullable = typeNode.type_is_nullable
     }
 }
 
 func assign_return_type_from_node(ASTNode dest, ASTNode typeNode) {
+    dest.yield_type = make_eof_token()
+    dest.yield_is_class = false
     if typeNode.is_union_type {
         dest.return_type = make_token(TOKEN_IDENTIFIER, "CnextVariant", typeNode.token.line, typeNode.token.col)
     } else {
         dest.return_type = typeNode.token
+        dest.return_is_nullable = typeNode.type_is_nullable
+        dest.return_is_array = typeNode.is_array
+        // iter<T> generators: remember the element type for the frame layout.
+        if typeNode.token.kind == TOKEN_ITER && len(typeNode.children) > 0 {
+            dest.yield_type = typeNode.children[0].token
+        }
     }
 }
 

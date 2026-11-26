@@ -210,7 +210,7 @@ void generate_generic_specialization(ASTNode* func_decl, const char* mangled_nam
         );
     }
     
-    generate_type(func_decl->return_type, false);
+    generate_return_type(func_decl);
     fprintf(out, " %s(", mangled_name);
     for (int i = 0; i < func_decl->child_count; i++) {
         ASTNode* param = func_decl->children[i];

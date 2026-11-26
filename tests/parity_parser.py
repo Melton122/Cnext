@@ -31,7 +31,7 @@ def build_reference(binary: Path, repo_root: Path) -> None:
     sources = [
         "src/parser.c", "src/parser_core.c", "src/parser_decl.c", "src/parser_expr.c",
         "src/parser_macro.c", "src/parser_stmt.c", "src/parser_type.c",
-        "src/ast.c", "src/lexer.c", "src/diagnostics.c",
+        "src/ast.c", "src/lexer.c", "src/diagnostics.c", "src/origin_map.c",
     ]
     for source in sources:
         if not (repo_root / source).exists():

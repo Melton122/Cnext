@@ -933,6 +933,7 @@ class ASTNode {
     Token var_type
     // Return type
     Token return_type
+    Token upcast_type
     // Resolved expression type
     int expr_type
     ASTNode? binding         // declaration resolved for an identifier
@@ -940,13 +941,21 @@ class ASTNode {
     int lambda_depth        // -1 for globals, 0 in a named function
     bool capture_cell_candidate
     bool capture_cell
+    int lifetime_id
 
     // Boolean flags
     bool is_const
     bool is_array
     bool is_pointer         // nullable (str?)
+    bool type_is_nullable
+    bool return_is_nullable
+    bool return_is_array
     bool is_class
     bool is_pointer_access
+    // Generator element type: `iter<T>` yields T; async funcs yield their
+    // return type. Consumed by codegen_gen to type the frame's `current`.
+    Token yield_type
+    bool yield_is_class
     bool is_union_type
     bool type_is_inferred
     bool is_variadic
@@ -983,6 +992,9 @@ class ASTNode {
         self.token          = tok
         self.var_type       = make_eof_token()
         self.return_type    = make_eof_token()
+        self.upcast_type    = make_eof_token()
+        self.yield_type     = make_eof_token()
+        self.yield_is_class = false
         self.expr_type      = 0
         self.is_const       = false
         self.is_array       = false
@@ -1057,6 +1069,599 @@ class MacroEntry {
         self.decl = d
         self.next = null
     }
+}
+
+
+// --- src2/originmap.cn ---
+// Self-hosting bootstrap: origin map
+// Port of src/origin_map.c
+//
+// Local imports paste imported sources ahead of the importing file, so every
+// line of the importing file moves. The map records which file each line of
+// the merged translation unit really came from, so diagnostics can report
+// `path:line:col` instead of a shifted line number in a nameless blob.
+//
+// Entries are contiguous blocks in ascending merged-line order. A lookup uses
+// the nearest block that starts at or before the requested line.
+
+class OriginEntry {
+    int merged_line   // First line of the block in the merged text
+    int line_count    // How many lines the block covers
+    int file_line     // Line in `file` that `merged_line` corresponds to
+    str file
+
+    func new(int merged, int count, int origin_line, str path) {
+        self.merged_line = merged
+        self.line_count = count
+        self.file_line = origin_line
+        self.file = path
+    }
+}
+
+class OriginMap {
+    OriginEntry[] entries
+    int count
+
+    func new() {
+        self.entries = {}
+        self.count = 0
+    }
+}
+
+// One expander's result: the merged text plus the map describing it.
+class Expansion {
+    str text
+    OriginMap map
+
+    func new(str merged_text, OriginMap origin_map) {
+        self.text = merged_text
+        self.map = origin_map
+    }
+}
+
+// Active map for diagnostics; null when no local imports were expanded.
+OriginMap g_origin_map = null
+
+func origin_map_create(): OriginMap {
+    return new OriginMap()
+}
+
+func origin_map_add(OriginMap map, int merged_line, int line_count, str file, int file_line) {
+    if map == null || file == null || merged_line < 1 || line_count < 1 {
+        return
+    }
+    int origin_line = file_line
+    if origin_line < 1 {
+        origin_line = 1
+    }
+    push(map.entries, new OriginEntry(merged_line, line_count, origin_line, file))
+    map.count = map.count + 1
+}
+
+func origin_map_shift(OriginMap map, int delta) {
+    if map == null || delta == 0 {
+        return
+    }
+    int i = 0
+    while i < map.count {
+        map.entries[i].merged_line = map.entries[i].merged_line + delta
+        i = i + 1
+    }
+}
+
+// Copy `source` entries into `target`, moved down by `delta` lines.
+func origin_map_append(OriginMap target, OriginMap source, int delta) {
+    if target == null || source == null {
+        return
+    }
+    int i = 0
+    while i < source.count {
+        OriginEntry entry = source.entries[i]
+        origin_map_add(target, entry.merged_line + delta, entry.line_count,
+                       entry.file, entry.file_line)
+        i = i + 1
+    }
+}
+
+// Number of newline characters in `text`: prepending it moves every line after
+// it down by exactly this much.
+func origin_newline_count(str text): int {
+    if text == null {
+        return 0
+    }
+    int count = 0
+    int n = len(text)
+    int i = 0
+    while i < n {
+        if str_char_at(text, i) == '\n' {
+            count = count + 1
+        }
+        i = i + 1
+    }
+    return count
+}
+
+// Number of lines in `text`, counting a final unterminated line.
+func origin_count_lines(str text): int {
+    if text == null || len(text) == 0 {
+        return 0
+    }
+    int lines = origin_newline_count(text)
+    if str_char_at(text, len(text) - 1) != '\n' {
+        lines = lines + 1
+    }
+    return lines
+}
+
+// `[file:line:col]`, or `[line:col]` when no map is active or the line falls
+// outside every mapped block.
+func origin_position(int line, int col): str {
+    str plain = "[" + to_str(line) + ":" + to_str(col) + "]"
+    if g_origin_map == null || g_origin_map.count == 0 || line < 1 {
+        return plain
+    }
+    int index = -1
+    int i = 0
+    while i < g_origin_map.count {
+        if g_origin_map.entries[i].merged_line > line {
+            break
+        }
+        index = i
+        i = i + 1
+    }
+    if index < 0 {
+        return plain
+    }
+    OriginEntry entry = g_origin_map.entries[index]
+    int offset = line - entry.merged_line
+    // Past the end of the block (e.g. a blank separator line): keep the
+    // block's file but stop pushing the line number out.
+    if offset >= entry.line_count {
+        offset = entry.line_count - 1
+    }
+    return "[" + entry.file + ":" + to_str(entry.file_line + offset) + ":" + to_str(col) + "]"
+}
+
+// The C version frees the map; the port's garbage collector owns the memory,
+// so this only drops the active map.
+func origin_map_deactivate() {
+    g_origin_map = null
+}
+
+
+// --- src2/privatenames.cn ---
+// Self-hosting bootstrap: private names
+// Port of src/private_names.c
+//
+// Every file in a program that uses `import "./..."` is rewritten before it is
+// merged: `export` is removed from top-level declarations, and the names of
+// top-level declarations that are *not* exported get a suffix unique to that
+// file (`helper` -> `helper__m3`). The rewrite is purely lexical, so line
+// numbers never move.
+//
+// The scanner here must behave exactly like the C one: same whitespace,
+// comment, literal, brace and `export`/declaration handling.
+
+class PrivTok {
+    int start
+    int end
+    int kind
+
+    func new(int start_index, int end_index, int token_kind) {
+        self.start = start_index
+        self.end = end_index
+        self.kind = token_kind
+    }
+}
+
+class PrivSpan {
+    int start
+    int end
+
+    func new(int start_index, int end_index) {
+        self.start = start_index
+        self.end = end_index
+    }
+}
+
+class PrivSpans {
+    PrivSpan[] items
+    int count
+
+    func new() {
+        self.items = {}
+        self.count = 0
+    }
+}
+
+// Token kinds shared with src/private_names.c.
+int PRIV_IDENT = 1
+int PRIV_PUNCT = 2
+int PRIV_SKIP = 3
+
+bool g_priv_privatize = false
+int g_priv_next_tag = 0
+
+func priv_is_space(char c): bool {
+    return c == ' ' || c == '\t' || c == '\r' || c == '\n'
+}
+
+func priv_is_digit(char c): bool {
+    return c >= '0' && c <= '9'
+}
+
+func priv_is_alpha(char c): bool {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}
+
+func priv_is_ident_start(char c): bool {
+    return priv_is_alpha(c) || c == '_'
+}
+
+func priv_is_ident_char(char c): bool {
+    return priv_is_alpha(c) || priv_is_digit(c) || c == '_'
+}
+
+func priv_span_add(PrivSpans spans, int start, int end) {
+    push(spans.items, new PrivSpan(start, end))
+    spans.count = spans.count + 1
+}
+
+func priv_span_contains(PrivSpans spans, int start, int end): bool {
+    int i = 0
+    while i < spans.count {
+        if spans.items[i].start == start && spans.items[i].end == end {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+// The same text appears at two offsets in `source` (string equality on two
+// `str` values is not available here, so compare characters).
+func priv_same_text(str source, int start_a, int end_a, int start_b, int end_b): bool {
+    if end_a - start_a != end_b - start_b {
+        return false
+    }
+    int i = 0
+    while i < end_a - start_a {
+        if str_char_at(source, start_a + i) != str_char_at(source, start_b + i) {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+func priv_span_has_name(str source, PrivTok token, PrivSpans spans): bool {
+    int i = 0
+    while i < spans.count {
+        PrivSpan span = spans.items[i]
+        if priv_same_text(source, span.start, span.end, token.start, token.end) {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+// Skips whitespace and returns the end offset of the token that starts at
+// `token.start`.
+func priv_scan(str source, int index, int length, PrivTok token): int {
+    int i = index
+    while i < length && priv_is_space(str_char_at(source, i)) {
+        i = i + 1
+    }
+    token.start = i
+    if i >= length {
+        token.end = length
+        token.kind = PRIV_SKIP
+        return length
+    }
+
+    char c = str_char_at(source, i)
+
+    if c == '/' && i + 1 < length {
+        char next = str_char_at(source, i + 1)
+        if next == '/' {
+            int j = i + 2
+            while j < length && str_char_at(source, j) != '\n' {
+                j = j + 1
+            }
+            token.end = j
+            token.kind = PRIV_SKIP
+            return j
+        }
+        if next == '*' {
+            int j = i + 2
+            while j + 1 < length && !(str_char_at(source, j) == '*' && str_char_at(source, j + 1) == '/') {
+                j = j + 1
+            }
+            if j + 1 < length {
+                j = j + 2
+            }
+            token.end = j
+            token.kind = PRIV_SKIP
+            return j
+        }
+    }
+
+    if c == '"' || c == '\'' {
+        char quote = c
+        int j = i + 1
+        bool done = false
+        while j < length && !done {
+            char d = str_char_at(source, j)
+            if d == '\\' && j + 1 < length {
+                j = j + 2
+                continue
+            }
+            if d == quote {
+                j = j + 1
+                done = true
+                continue
+            }
+            if d == '\n' {
+                done = true
+                continue
+            }
+            j = j + 1
+        }
+        token.end = j
+        token.kind = PRIV_SKIP
+        return j
+    }
+
+    if priv_is_digit(c) {
+        int j = i + 1
+        while j < length {
+            char d = str_char_at(source, j)
+            if priv_is_alpha(d) || priv_is_digit(d) || d == '.' || d == '_' {
+                j = j + 1
+                continue
+            }
+            break
+        }
+        token.end = j
+        token.kind = PRIV_SKIP
+        return j
+    }
+
+    if priv_is_ident_start(c) {
+        int j = i + 1
+        while j < length && priv_is_ident_char(str_char_at(source, j)) {
+            j = j + 1
+        }
+        token.end = j
+        token.kind = PRIV_IDENT
+        return j
+    }
+
+    token.end = i + 1
+    token.kind = PRIV_PUNCT
+    return i + 1
+}
+
+func priv_token_is(str source, PrivTok token, str text): bool {
+    return token.end - token.start == len(text) &&
+           str_substring(source, token.start, token.end) == text
+}
+
+func priv_is_type_keyword(str source, PrivTok token): bool {
+    return priv_token_is(source, token, "int") ||
+           priv_token_is(source, token, "long") ||
+           priv_token_is(source, token, "float") ||
+           priv_token_is(source, token, "double") ||
+           priv_token_is(source, token, "str") ||
+           priv_token_is(source, token, "bool") ||
+           priv_token_is(source, token, "char") ||
+           priv_token_is(source, token, "byte") ||
+           priv_token_is(source, token, "uint") ||
+           priv_token_is(source, token, "ulong") ||
+           priv_token_is(source, token, "void") ||
+           priv_token_is(source, token, "var") ||
+           priv_token_is(source, token, "const")
+}
+
+// A declaration may name its type first (`const int LIMIT = 3`), so the type
+// token is not the declared name.
+func priv_is_builtin_type_name(str source, PrivTok token): bool {
+    return priv_token_is(source, token, "int") ||
+           priv_token_is(source, token, "long") ||
+           priv_token_is(source, token, "float") ||
+           priv_token_is(source, token, "double") ||
+           priv_token_is(source, token, "str") ||
+           priv_token_is(source, token, "bool") ||
+           priv_token_is(source, token, "char") ||
+           priv_token_is(source, token, "byte") ||
+           priv_token_is(source, token, "uint") ||
+           priv_token_is(source, token, "ulong")
+}
+
+func priv_is_declaration_keyword(str source, PrivTok token): bool {
+    return priv_token_is(source, token, "func") ||
+           priv_token_is(source, token, "class") ||
+           priv_token_is(source, token, "struct") ||
+           priv_token_is(source, token, "enum") ||
+           priv_token_is(source, token, "trait") ||
+           priv_token_is(source, token, "interface") ||
+           priv_token_is(source, token, "var") ||
+           priv_token_is(source, token, "const") ||
+           priv_token_is(source, token, "type")
+}
+
+// Member accesses (`.name`) and attribute names (`@name`) keep their spelling:
+// a field may legally share a name with a private top-level declaration.
+func priv_is_member_or_attribute_name(str source, int start): bool {
+    int j = start - 1
+    while j >= 0 {
+        char c = str_char_at(source, j)
+        if priv_is_space(c) {
+            j = j - 1
+            continue
+        }
+        return c == '.' || c == '@'
+    }
+    return false
+}
+
+func priv_scan_declarations(str source, PrivSpans exports, PrivSpans privates, PrivSpans shadows) {
+    int length = len(source)
+    int depth = 0
+    int i = 0
+    bool pending_export = false
+    bool expect_name = false
+    bool expect_value_name = false
+
+    while i < length {
+        PrivTok token = new PrivTok(0, 0, 0)
+        int end = priv_scan(source, i, length, token)
+        i = end
+
+        if token.kind == PRIV_SKIP {
+            expect_name = false
+            expect_value_name = false
+            continue
+        }
+
+        if token.kind == PRIV_IDENT && expect_value_name {
+            if priv_is_builtin_type_name(source, token) {
+                continue
+            }
+            // A member or method declaration. Member uses are written
+            // `x.name` and are never renamed, so this keeps its spelling.
+            priv_span_add(shadows, token.start, token.end)
+            expect_value_name = false
+            expect_name = false
+            pending_export = false
+            continue
+        }
+
+        if token.kind == PRIV_IDENT {
+            if depth == 0 && priv_token_is(source, token, "export") {
+                priv_span_add(exports, token.start, token.end)
+                pending_export = true
+                expect_name = false
+                continue
+            }
+            if depth == 0 && priv_is_declaration_keyword(source, token) {
+                expect_name = true
+                continue
+            }
+            if depth == 1 && priv_is_type_keyword(source, token) {
+                expect_value_name = true
+                expect_name = false
+                pending_export = false
+                continue
+            }
+            if depth == 1 && priv_token_is(source, token, "func") {
+                // Method declaration: calls are written `x.name()`.
+                expect_value_name = true
+                expect_name = false
+                pending_export = false
+                continue
+            }
+            if depth == 1 && (priv_token_is(source, token, "var") || priv_token_is(source, token, "const")) {
+                expect_value_name = true
+                expect_name = false
+                pending_export = false
+                continue
+            }
+            if expect_name {
+                if priv_is_builtin_type_name(source, token) {
+                    continue
+                }
+                if !pending_export {
+                    priv_span_add(privates, token.start, token.end)
+                }
+                expect_name = false
+                pending_export = false
+                continue
+            }
+            pending_export = false
+            continue
+        }
+
+        // Punctuation.
+        char punct = str_char_at(source, token.start)
+        if punct == '{' {
+            depth = depth + 1
+        } else if punct == '}' && depth > 0 {
+            depth = depth - 1
+        }
+        expect_name = false
+        expect_value_name = false
+        pending_export = false
+    }
+}
+
+// True when the text contains a top-level `import "./file.cn"` declaration.
+func priv_has_local_import(str source): bool {
+    if source == null {
+        return false
+    }
+    int length = len(source)
+    int i = 0
+    while i < length {
+        PrivTok token = new PrivTok(0, 0, 0)
+        int end = priv_scan(source, i, length, token)
+        i = end
+        if token.kind != PRIV_IDENT || !priv_token_is(source, token, "import") {
+            continue
+        }
+        int j = token.end
+        while j < length && (str_char_at(source, j) == ' ' || str_char_at(source, j) == '\t') {
+            j = j + 1
+        }
+        if j < length && str_char_at(source, j) == '"' {
+            return true
+        }
+    }
+    return false
+}
+
+// `tag` below zero only strips `export`; otherwise non-exported top-level names
+// get `__m<tag>` appended wherever they appear (except member/attribute uses
+// and member declarations).
+func priv_module_source(str source, int tag): str {
+    if source == null {
+        return ""
+    }
+    int length = len(source)
+    PrivSpans exports = new PrivSpans()
+    PrivSpans privates = new PrivSpans()
+    PrivSpans shadows = new PrivSpans()
+    priv_scan_declarations(source, exports, privates, shadows)
+
+    if exports.count == 0 && (tag < 0 || privates.count == 0) {
+        return source
+    }
+
+    str out = ""
+    int i = 0
+    while i < length {
+        PrivTok token = new PrivTok(0, 0, 0)
+        int end = priv_scan(source, i, length, token)
+        int gap = token.start - i
+        if gap > 0 {
+            out = out + str_substring(source, i, token.start)
+        }
+
+        if token.kind == PRIV_IDENT && priv_span_contains(exports, token.start, token.end) {
+            // `export` becomes whitespace so every later column stays put.
+            out = out + str_repeat(" ", token.end - token.start)
+        } else if token.kind == PRIV_IDENT && tag >= 0 &&
+                  !priv_is_member_or_attribute_name(source, token.start) &&
+                  priv_span_has_name(source, token, privates) &&
+                  !priv_span_contains(shadows, token.start, token.end) {
+            out = out + str_substring(source, token.start, token.end) + "__m" + to_str(tag)
+        } else if end > token.start {
+            out = out + str_substring(source, token.start, end)
+        }
+        i = end
+    }
+    return out
 }
 
 
@@ -1215,7 +1820,7 @@ func print_source_excerpt(int line, int col) {
 
 func error_at_tok_fields(Token tok, str message, str expected) {
     str code = parser_error_code(message)
-    str prefix = "error [" + code + "] [" + to_str(tok.line) + ":" + to_str(tok.col) + "]: "
+    str prefix = "error [" + code + "] " + origin_position(tok.line, tok.col) + ": "
     str found = ""
     if tok.kind == TOKEN_EOF {
         found = "end of file"
@@ -1261,7 +1866,7 @@ func error_at_current(str message) {
 }
 
 func semantic_error_at(str code, int line, int col, str message, str help) {
-    printin("error [" + code + "] [" + to_str(line) + ":" + to_str(col) + "]: " + message)
+    printin("error [" + code + "] " + origin_position(line, col) + ": " + message)
     print_source_excerpt(line, col)
     if len(help) > 0 { printin("  = help: " + help) }
     printin("  = rule: CN-" + code)
@@ -1383,14 +1988,23 @@ func assign_type_from_node(ASTNode dest, ASTNode typeNode) {
     } else {
         dest.var_type = typeNode.token
         dest.is_array = typeNode.is_array
+        dest.type_is_nullable = typeNode.type_is_nullable
     }
 }
 
 func assign_return_type_from_node(ASTNode dest, ASTNode typeNode) {
+    dest.yield_type = make_eof_token()
+    dest.yield_is_class = false
     if typeNode.is_union_type {
         dest.return_type = make_token(TOKEN_IDENTIFIER, "CnextVariant", typeNode.token.line, typeNode.token.col)
     } else {
         dest.return_type = typeNode.token
+        dest.return_is_nullable = typeNode.type_is_nullable
+        dest.return_is_array = typeNode.is_array
+        // iter<T> generators: remember the element type for the frame layout.
+        if typeNode.token.kind == TOKEN_ITER && len(typeNode.children) > 0 {
+            dest.yield_type = typeNode.children[0].token
+        }
     }
 }
 
@@ -1519,8 +2133,12 @@ func parse_type(): ASTNode? {
             node.is_array = true
         }
 
-        // Nullable type: str?, int?, etc.
+        // Scalars require a tagged representation; do not silently erase '?'.
         if match_token(TOKEN_QUESTION) {
+            node.type_is_nullable = true
+            if node.is_array || (typeToken.kind != TOKEN_IDENTIFIER && typeToken.kind != TOKEN_STR_TYPE) {
+                error_at_current("Nullable scalar and array types are not supported; '?' requires a string or class reference.")
+            }
             node.is_pointer = true  // Reuse is_pointer flag for nullable
         }
 
@@ -1738,6 +2356,9 @@ func deep_copy_ast(ASTNode? node): ASTNode? {
     copy.is_const           = node.is_const
     copy.is_array           = node.is_array
     copy.is_pointer         = node.is_pointer
+    copy.type_is_nullable   = node.type_is_nullable
+    copy.return_is_nullable = node.return_is_nullable
+    copy.return_is_array    = node.return_is_array
     copy.is_class           = node.is_class
     copy.is_pointer_access  = node.is_pointer_access
     copy.is_union_type      = node.is_union_type
@@ -1750,6 +2371,7 @@ func deep_copy_ast(ASTNode? node): ASTNode? {
     copy.type_is_inferred   = node.type_is_inferred
     copy.operator_token     = node.operator_token
     copy.var_type           = node.var_type
+    copy.upcast_type        = node.upcast_type
     copy.return_type        = node.return_type
     copy.expr_type          = node.expr_type
     copy.named_arg_name     = node.named_arg_name
@@ -3805,7 +4427,10 @@ func parse_main_block(): ASTNode? {
 
 func parse_import_declaration(): ASTNode? {
     var node = new ASTNode(AST_IMPORT, g_parser.previous)
-    if check_token(TOKEN_IDENTIFIER) || check_token(TOKEN_THREAD) {
+    if check_token(TOKEN_STRING_LITERAL) {
+        // Local file import: `import "./util.cn"`
+        advance_token()
+    } else if check_token(TOKEN_IDENTIFIER) || check_token(TOKEN_THREAD) {
         advance_token()
     } else {
         consume(TOKEN_IDENTIFIER, "Expect module name after import.")

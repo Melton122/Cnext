@@ -1,0 +1,9 @@
+const int STEP = 2
+
+func helper(): int {
+    return STEP
+}
+
+export func private_import_b(): int {
+    return helper() + STEP
+}

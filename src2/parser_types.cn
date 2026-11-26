@@ -171,6 +171,7 @@ class ASTNode {
     Token var_type
     // Return type
     Token return_type
+    Token upcast_type
     // Resolved expression type
     int expr_type
     ASTNode? binding         // declaration resolved for an identifier
@@ -178,13 +179,21 @@ class ASTNode {
     int lambda_depth        // -1 for globals, 0 in a named function
     bool capture_cell_candidate
     bool capture_cell
+    int lifetime_id
 
     // Boolean flags
     bool is_const
     bool is_array
     bool is_pointer         // nullable (str?)
+    bool type_is_nullable
+    bool return_is_nullable
+    bool return_is_array
     bool is_class
     bool is_pointer_access
+    // Generator element type: `iter<T>` yields T; async funcs yield their
+    // return type. Consumed by codegen_gen to type the frame's `current`.
+    Token yield_type
+    bool yield_is_class
     bool is_union_type
     bool type_is_inferred
     bool is_variadic
@@ -221,6 +230,9 @@ class ASTNode {
         self.token          = tok
         self.var_type       = make_eof_token()
         self.return_type    = make_eof_token()
+        self.upcast_type    = make_eof_token()
+        self.yield_type     = make_eof_token()
+        self.yield_is_class = false
         self.expr_type      = 0
         self.is_const       = false
         self.is_array       = false

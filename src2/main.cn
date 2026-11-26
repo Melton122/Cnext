@@ -6,6 +6,10 @@
 import process
 import os
 
+extern "C" func cnext_native_manifest_args(str path, bool required): str
+extern "C" func cnext_test_execute(str[] argv, str stdin_path, str output_path): int
+extern "C" func cnext_test_list_directory(str path): str
+
 str g_pkg_visited = ""
 
 func pkg_is_space(char c): bool {
@@ -54,8 +58,76 @@ func pkg_is_visited(str name): bool {
     return str_contains(g_pkg_visited, "|" + name + "|")
 }
 
-func collect_package_sources(str text): str {
+func import_is_absolute(str path): bool {
+    int n = len(path)
+    if n == 0 { return false }
+    char first = str_char_at(path, 0)
+    if first == '/' || first == '\\' { return true }
+    if n >= 2 && str_char_at(path, 1) == ':' { return true }
+    return false
+}
+
+func import_basename_has_dot(str spec): bool {
+    int i = len(spec) - 1
+    while i >= 0 {
+        char c = str_char_at(spec, i)
+        if c == '/' || c == '\\' { return false }
+        if c == '.' { return true }
+        i = i - 1
+    }
+    return false
+}
+
+// Collapses "./" path segments so two spellings of one file share a single
+// visited entry (and are merged only once).
+func import_normalize(str path): str {
+    str out = path
+    int guard = 0
+    bool changed = true
+    while changed && guard < 32 {
+        guard = guard + 1
+        str next = str_replace(out, "/./", "/")
+        next = str_replace(next, "\\.\\", "\\")
+        int n = len(next)
+        if n > 2 && str_substring(next, 0, 2) == "./" { next = str_substring(next, 2, n) }
+        if n > 2 && str_substring(next, 0, 2) == ".\\" { next = str_substring(next, 2, n) }
+        changed = next != out
+        out = next
+    }
+    return out
+}
+
+// Resolves an `import "..."` spec against the directory of the file that
+// contains it, adding ".cn" when the basename has no extension.
+func import_resolve(str base_dir, str spec): str {
+    str name = spec
+    int n = len(name)
+    // `!` on a grouped comparison is miscompiled as `!a > b` in this
+    // compiler, so negate plain booleans instead of parenthesized tests.
+    bool has_cn_suffix = n > 3 && str_substring(name, n - 3, n) == ".cn"
+    bool base_has_dot = import_basename_has_dot(name)
+    if !has_cn_suffix && !base_has_dot {
+        name = name + ".cn"
+    }
+    if import_is_absolute(name) { return import_normalize(name) }
+    str dir = base_dir
+    if len(dir) == 0 { dir = "." }
+    char last = str_char_at(dir, len(dir) - 1)
+    if last == '/' || last == '\\' { return import_normalize(dir + name) }
+    return import_normalize(dir + "/" + name)
+}
+
+// Expands local imports and packages into one translation unit. The result is
+// this file in final order: imported code first, then the file itself, with
+// `map` keeping line origins in step so diagnostics name the real file.
+func collect_package_sources(str raw_text, str base_dir, str file_path, bool privatize): Expansion {
+    // Each file is rewritten before it is merged: `export` disappears, and
+    // non-exported top-level names get a suffix unique to this file.
+    int module_tag = g_priv_next_tag
+    g_priv_next_tag = g_priv_next_tag + 1
+    str text = priv_module_source(raw_text, privatize ? module_tag : -1)
     str combined = ""
+    OriginMap combined_map = origin_map_create()
     int n = len(text)
     int i = 0
     while i < n {
@@ -82,6 +154,46 @@ func collect_package_sources(str text): str {
             while j < n && pkg_is_space(str_char_at(text, j)) {
                 j = j + 1
             }
+            if j < n && str_char_at(text, j) == '"' {
+                // Local file import: `import "../util.cn"`.
+                j = j + 1
+                int spec_start = j
+                while j < n && str_char_at(text, j) != '"' && str_char_at(text, j) != '\n' {
+                    j = j + 1
+                }
+                str spec = str_substring(text, spec_start, j)
+                if len(spec) == 0 {
+                    print("error: empty import path\n")
+                    exit(65)
+                }
+                str resolved = import_resolve(base_dir, spec)
+                if !pkg_is_visited(resolved) {
+                    g_pkg_visited = g_pkg_visited + "|" + resolved + "|"
+                    str module_source = read_file(resolved)
+                    if module_source == null {
+                        print("error: cannot open imported file \"" + spec + "\" (looked for \"" + resolved + "\")\n")
+                        exit(65)
+                    }
+                    Expansion child = collect_package_sources(module_source, driver_directory(resolved), resolved, privatize)
+                    str block = child.text
+                    if len(block) > 0 && str_char_at(block, len(block) - 1) != '\n' {
+                        block = block + "\n"
+                    }
+                    OriginMap next_map = origin_map_create()
+                    if child.map.count == 0 {
+                        // No imports of its own: the whole module is one block.
+                        origin_map_add(next_map, 1, origin_count_lines(block), resolved, 1)
+                    } else {
+                        origin_map_append(next_map, child.map, 0)
+                    }
+                    origin_map_append(next_map, combined_map, origin_newline_count(block))
+                    combined = block + combined
+                    combined_map = next_map
+                }
+                if j < n && str_char_at(text, j) == '"' { j = j + 1 }
+                i = j
+                continue
+            }
             int name_start = j
             while j < n && !pkg_is_space(str_char_at(text, j)) &&
                   str_char_at(text, j) != ';' {
@@ -90,30 +202,59 @@ func collect_package_sources(str text): str {
             str name = str_substring(text, name_start, j)
             if !pkg_is_std_name(name) && pkg_is_safe_name(name) && !pkg_is_visited(name) {
                 g_pkg_visited = g_pkg_visited + "|" + name + "|"
-                str pkg_source = read_file("packages/" + name + ".cn")
+                str pkg_path = "packages/" + name + ".cn"
+                str pkg_source = read_file(pkg_path)
                 if pkg_source != null {
-                    combined = collect_package_sources(pkg_source) + pkg_source + combined
+                    // Package code keeps its names and its plain line numbers.
+                    Expansion pkg = collect_package_sources(pkg_source, base_dir, pkg_path, false)
+                    str block = pkg.text
+                    if len(block) > 0 && str_char_at(block, len(block) - 1) != '\n' {
+                        block = block + "\n"
+                    }
+                    OriginMap next_map = origin_map_create()
+                    origin_map_append(next_map, combined_map, origin_newline_count(block))
+                    combined = block + combined
+                    combined_map = next_map
                 }
             }
             i = j
         }
         i = i + 1
     }
-    return combined
+
+    if combined_map.count > 0 {
+        // Imported code is pasted first, so this file starts after it.
+        origin_map_add(combined_map, origin_newline_count(combined) + 1,
+                       origin_count_lines(text), file_path, 1)
+    }
+    return new Expansion(combined + text, combined_map)
 }
 
-func build_source_with_packages(str source): str {
+func build_source_with_packages(str source, str source_dir, str source_path): str {
     g_pkg_visited = ""
-    return collect_package_sources(source) + source
+    g_priv_privatize = priv_has_local_import(source)
+    g_priv_next_tag = 0
+    Expansion result = collect_package_sources(source, source_dir, source_path, g_priv_privatize)
+    // Only map positions when local imports actually moved lines; package
+    // sources keep reporting plain merged line numbers.
+    if result.map.count > 0 {
+        g_origin_map = result.map
+    } else {
+        g_origin_map = null
+    }
+    return result.text
 }
 
 
 func driver_usage() {
     print("Usage: cnext build <file.cn> [-o <program>] [--emit-c <output.c>]\n")
     print("       cnext run <file.cn> [-o <program>] [options] [-- args...]\n")
+    print("       cnext test [filter|file.cn|directory] [--list] [build options]\n")
     print("       cnext <file.cn> [-o <output.c>]  (legacy C emission)\n")
     print("Options: --cc <executable>, --runtime-dir <headers>, --include-dir <path>,\n")
     print("         --c-source <path>, --object <path>, --library-dir <path>, --link-lib <name>\n")
+    print("         --manifest <path>, --no-native-config\n")
+    print("         --optimize, --no-optimize (optimizer is opt-in; disable overrides enable)\n")
 }
 
 func driver_error(str message) {
@@ -166,11 +307,246 @@ func driver_executable(str path): str {
     return "./" + path
 }
 
+// The test command runs this compiler's build path, not the C bootstrap.
+class DriverTestSuite {
+    str root
+    str[] files
+    func new(str path) { self.root = path self.files = {} }
+}
+
+func driver_test_join(str root, str name): str {
+    if len(root) == 0 { return name }
+    char last = str_char_at(root, len(root) - 1)
+    if last == '/' || last == '\\' { return root + name }
+    return root + "/" + name
+}
+
+func driver_test_cn(str name): bool {
+    return len(name) > 3 && str_substring(name, len(name) - 3, len(name)) == ".cn"
+}
+
+func driver_test_collect(DriverTestSuite suite, str directory, str prefix, str filter, int depth) {
+    if depth > 32 { driver_error("Test directory nesting exceeds 32 levels") }
+    str listing = cnext_test_list_directory(directory)
+    if is_null(listing) { print("Could not read test directory: " + directory + "\n"); exit(74) }
+    var names = str_split(listing, "\n")
+    int i = 0
+    while i < len(names) {
+        str name = names[i]
+        i = i + 1
+        if len(name) == 0 || str_char_at(name, 0) == '.' { continue }
+        str path = driver_test_join(directory, name)
+        str relative = driver_test_join(prefix, name)
+        if os_is_dir(path) {
+            if name != "bootstrap" && name != "optimizer" {
+                driver_test_collect(suite, path, relative, filter, depth + 1)
+            }
+        } else if driver_test_cn(name) && (len(filter) == 0 || str_contains(relative, filter)) {
+            if len(suite.files) >= 512 { driver_error("Test suite exceeds 512 source files") }
+            push(suite.files, relative)
+        }
+    }
+}
+
+func driver_test_before(str a, str b): bool {
+    int i = 0
+    while i < len(a) && i < len(b) {
+        int left = str_char_at(a, i)
+        int right = str_char_at(b, i)
+        if left != right { return left < right }
+        i = i + 1
+    }
+    return len(a) < len(b)
+}
+
+func driver_test_sort(DriverTestSuite suite) {
+    int i = 1
+    while i < len(suite.files) {
+        str name = suite.files[i]
+        int j = i
+        while j > 0 && driver_test_before(name, suite.files[j - 1]) {
+            suite.files[j] = suite.files[j - 1]
+            j = j - 1
+        }
+        suite.files[j] = name
+        i = i + 1
+    }
+}
+
+class DriverTestSpec {
+    str[] expects
+    str input
+    int status
+    bool valid
+    func new() { self.expects = {} self.input = "" self.status = 0 self.valid = true }
+}
+
+func driver_test_spec(str source): DriverTestSpec {
+    var spec = new DriverTestSpec()
+    bool has_status = false
+    var lines = str_split(source, "\n")
+    int i = 0
+    while i < len(lines) {
+        str line = lines[i]
+        i = i + 1
+        if len(line) > 0 && str_char_at(line, len(line) - 1) == '\r' {
+            line = str_substring(line, 0, len(line) - 1)
+        }
+        if str_starts_with(line, "// EXPECT:") {
+            int start = 10
+            if len(line) > start && str_char_at(line, start) == ' ' { start = start + 1 }
+            if len(spec.expects) >= 512 { spec.valid = false }
+            else { push(spec.expects, str_substring(line, start, len(line))) }
+        } else if str_starts_with(line, "// STDIN:") {
+            int start = 9
+            if len(line) > start && str_char_at(line, start) == ' ' { start = start + 1 }
+            spec.input = spec.input + str_substring(line, start, len(line)) + "\n"
+            if len(spec.input) > 16384 { spec.valid = false }
+        } else if str_starts_with(line, "// EXIT:") {
+            str value = str_trim(str_substring(line, 8, len(line)))
+            if has_status || len(value) == 0 { spec.valid = false }
+            has_status = true
+            int j = 0
+            int status = 0
+            while j < len(value) {
+                char digit = str_char_at(value, j)
+                if digit < '0' || digit > '9' { spec.valid = false break }
+                if status > 255 { spec.valid = false break }
+                status = status * 10 + (digit as int) - 48
+                j = j + 1
+            }
+            if status > 255 { spec.valid = false }
+            spec.status = status
+        }
+    }
+    return spec
+}
+
+func driver_test_matches(str output, str[] expects): bool {
+    int cursor = 0
+    int i = 0
+    while i < len(expects) {
+        str expected = expects[i]
+        bool found = false
+        while cursor <= len(output) - len(expected) {
+            int j = 0
+            while j < len(expected) && str_char_at(output, cursor + j) == str_char_at(expected, j) { j = j + 1 }
+            if j == len(expected) { cursor = cursor + len(expected) found = true break }
+            cursor = cursor + 1
+        }
+        if !found { return false }
+        i = i + 1
+    }
+    return true
+}
+
+func driver_test_cleanup(str base, str binary) {
+    delete_file(binary)
+    delete_file(base + ".build.log")
+    delete_file(base + ".run.log")
+    delete_file(base + ".stdin")
+}
+
+func driver_test_command(int argument_count): int {
+    bool list = false
+    str selection = ""
+    str[] options = {}
+    int i = 2
+    while i < argument_count {
+        str arg = sys_arg_at(i)
+        if arg == "--list" { list = true i = i + 1 }
+        else if arg == "--no-native-config" || arg == "--optimize" || arg == "--no-optimize" { push(options, arg) i = i + 1 }
+        else if arg == "--cc" || arg == "--runtime-dir" || arg == "--manifest" ||
+                arg == "--include-dir" || arg == "--c-source" || arg == "--object" ||
+                arg == "--library-dir" || arg == "--link-lib" {
+            if i + 1 >= argument_count { driver_error("Missing value after " + arg) }
+            push(options, arg) push(options, sys_arg_at(i + 1)) i = i + 2
+        } else {
+            if len(arg) == 0 || str_char_at(arg, 0) == '-' { driver_error("Unknown test option: " + arg) }
+            if len(selection) > 0 { driver_error("Expected one test filter, file, or directory") }
+            selection = arg i = i + 1
+        }
+    }
+    var suite = new DriverTestSuite("tests")
+    if len(selection) > 0 && os_is_dir(selection) {
+        suite.root = selection
+        driver_test_collect(suite, selection, "", "", 0)
+    } else if len(selection) > 0 && driver_test_cn(selection) && file_exists(selection) {
+        suite.root = ""
+        push(suite.files, selection)
+    } else {
+        if len(selection) > 0 && (str_contains(selection, "/") || str_contains(selection, "\\")) {
+            print("Test path does not exist: " + selection + "\n") return 74
+        }
+        if !os_is_dir("tests") { print("Could not open test directory 'tests'.\n") return 74 }
+        driver_test_collect(suite, "tests", "", selection, 0)
+    }
+    driver_test_sort(suite)
+    if len(suite.files) == 0 { print("No test files found.\n") return 1 }
+    if list {
+        i = 0
+        while i < len(suite.files) { printin(suite.files[i]) i = i + 1 }
+        return 0
+    }
+    print("Running " + to_str(len(suite.files)) + " Cnext test files...\n\n")
+    int passed = 0
+    int failed = 0
+    i = 0
+    while i < len(suite.files) {
+        str name = suite.files[i]
+        str path = driver_test_join(suite.root, name)
+        str source = read_file(path)
+        if source == null { print("  FAIL: " + name + " (could not read source)\n") failed = failed + 1 i = i + 1 continue }
+        var spec = driver_test_spec(source)
+        if !spec.valid { print("  FAIL: " + name + " (invalid EXPECT/STDIN/EXIT metadata)\n") failed = failed + 1 i = i + 1 continue }
+        str base = "./.cnext-test-" + to_str(os_pid()) + "-" + to_str(i)
+        str binary = base
+        if platform() == "windows" { binary = binary + ".exe" }
+        if file_exists(binary) || file_exists(base + ".build.log") || file_exists(base + ".run.log") || file_exists(base + ".stdin") {
+            print("  FAIL: " + name + " (temporary test path already exists)\n") failed = failed + 1 i = i + 1 continue
+        }
+        str[] build = {sys_arg_at(0), "build", path, "-o", binary}
+        int j = 0
+        while j < len(options) { push(build, options[j]) j = j + 1 }
+        int build_status = cnext_test_execute(build, "", base + ".build.log")
+        if build_status != 0 {
+            print("  FAIL: " + name + " (compile error)\n")
+            str log = read_file(base + ".build.log")
+            if log != null { print(log) }
+            failed = failed + 1
+        } else {
+            driver_write(base + ".stdin", spec.input)
+            str[] command = {driver_executable(binary)}
+            int status = cnext_test_execute(command, base + ".stdin", base + ".run.log")
+            bool bounded = os_file_size(base + ".run.log") <= 1048576
+            str output = ""
+            if bounded { output = read_file(base + ".run.log") }
+            bool matches = bounded && !is_null(output) && driver_test_matches(output, spec.expects)
+            if status == spec.status && matches {
+                print("  PASS: " + name + "\n") passed = passed + 1
+            } else {
+                print("  FAIL: " + name + "\n")
+                if status != spec.status { print("    program exited with status " + to_str(status) + "; expected " + to_str(spec.status) + "\n") }
+                if !bounded { print("    output exceeds 1 MiB limit\n") }
+                else if !matches { print("    output did not contain all expected text in order\n") }
+                if output != null && len(output) > 0 { print("    output: " + output) }
+                failed = failed + 1
+            }
+        }
+        driver_test_cleanup(base, binary)
+        i = i + 1
+    }
+    print("\nResults: " + to_str(passed) + " passed, " + to_str(failed) + " failed\n")
+    if failed > 0 { return 1 }
+    return 0
+}
+
 main {
     int argument_count = sys_args_count()
     if argument_count < 2 { driver_usage(); exit(2) }
     str first = sys_arg_at(1)
     if first == "--help" || first == "-h" { driver_usage(); exit(0) }
+    if first == "test" { exit(driver_test_command(argument_count)) }
     bool legacy = first != "build" && first != "run"
     str mode = first
     str source_path = ""
@@ -180,6 +556,11 @@ main {
     str emit_path = ""
     str runtime_dir = ""
     str compiler = "gcc"
+    str manifest_path = "cnext.toml"
+    bool manifest_explicit = false
+    bool no_native_config = false
+    bool enable_optimize = false
+    bool no_optimize = false
     str[] native_args = {}
     str[] library_args = {}
     str[] program_args = {}
@@ -189,7 +570,16 @@ main {
             if mode != "run" || len(source_path) == 0 { driver_error("Program arguments require run <file.cn> -- args...") }
             i = i + 1
             while i < argument_count { push(program_args, sys_arg_at(i)); i = i + 1 }
-        } else if arg == "-o" || arg == "--emit-c" || arg == "--cc" || arg == "--runtime-dir" ||
+        } else if arg == "--no-native-config" {
+            no_native_config = true
+            i = i + 1
+        } else if arg == "--optimize" {
+            enable_optimize = true
+            i = i + 1
+        } else if arg == "--no-optimize" {
+            no_optimize = true
+            i = i + 1
+        } else if arg == "-o" || arg == "--emit-c" || arg == "--cc" || arg == "--runtime-dir" || arg == "--manifest" ||
                   arg == "--include-dir" || arg == "--c-source" || arg == "--object" ||
                   arg == "--library-dir" || arg == "--link-lib" {
             if i + 1 >= argument_count { driver_error("Missing value after " + arg) }
@@ -202,8 +592,13 @@ main {
                 if len(emit_path) > 0 { driver_error("Duplicate --emit-c option") }
                 emit_path = value
             } else if arg == "--cc" { compiler = value }
+            else if arg == "--manifest" {
+                if manifest_explicit || str_char_at(value, 0) == '-' { driver_error("Expected one manifest path after --manifest") }
+                manifest_path = value
+                manifest_explicit = true
+            }
             else if arg == "--runtime-dir" { runtime_dir = value }
-            else if arg == "--library-dir" { push(library_args, "-L"); push(library_args, value) }
+            else if arg == "--library-dir" { push(native_args, "-L"); push(native_args, value) }
             else if arg == "--link-lib" { push(library_args, "-l"); push(library_args, value) }
             else {
                 if arg == "--include-dir" { push(native_args, "-I") }
@@ -226,12 +621,41 @@ main {
     if mode == "emit" && (len(native_args) > 0 || len(library_args) > 0) {
         driver_error("C emission cannot be combined with native build options")
     }
+    if manifest_explicit && no_native_config { driver_error("Cannot combine --manifest with --no-native-config") }
+    if mode != "emit" && !no_native_config {
+        str settings = cnext_native_manifest_args(manifest_path, manifest_explicit)
+        str[] configured = str_split(settings, "\n")
+        str[] merged_native = {}
+        str[] merged_libraries = {}
+        int j = 0
+        while j < len(configured) {
+            str option = configured[j]
+            str value = configured[j + 1]
+            if option == "--link-lib" {
+                push(merged_libraries, "-l")
+                push(merged_libraries, value)
+            } else {
+                if option == "--include-dir" { push(merged_native, "-I") }
+                if option == "--library-dir" { push(merged_native, "-L") }
+                push(merged_native, value)
+            }
+            j = j + 2
+        }
+        j = 0
+        while j < len(native_args) { push(merged_native, native_args[j]); j = j + 1 }
+        j = 0
+        while j < len(library_args) { push(merged_libraries, library_args[j]); j = j + 1 }
+        native_args = merged_native
+        library_args = merged_libraries
+    }
+    if len(native_args) > 128 || len(library_args) > 128 { driver_error("Too many native build arguments (maximum 128 per group)") }
     str raw_source = read_file(source_path)
     if raw_source == null { print("Error reading file: " + source_path + "\n"); exit(74) }
-    str source = build_source_with_packages(raw_source)
+    str source = build_source_with_packages(raw_source, driver_directory(source_path), source_path)
     ASTNode? ast = parse_program(source)
     if ast == null { print("Parse failed\n"); exit(65) }
     if !analyze_program(ast) { print("Semantic analysis failed\n"); exit(65) }
+    if enable_optimize && !no_optimize { optimize_ast(ast) }
     codegen_init(ast)
     generate_program(ast)
     str generated = codegen_flush_output()

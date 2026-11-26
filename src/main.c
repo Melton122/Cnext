@@ -420,10 +420,14 @@ static void print_help(void) {
     printf("  --include-dir <path>           Add a C header search directory (repeatable).\n");
     printf("  --library-dir <path>           Add a library search directory (repeatable).\n");
     printf("  --link-lib <name>              Link a C library by name (repeatable).\n");
+    printf("  --manifest <path>              Read native settings from this manifest.\n");
+    printf("  --no-native-config             Ignore native settings in cnext.toml.\n");
     printf("  --clean                        Remove build artifacts.\n");
 }
 
-#define MAX_NATIVE_ARGS 128
+#include "native_build.h"
+
+#define MAX_NATIVE_ARGS CNEXT_NATIVE_MAX_ARGS
 
 typedef struct {
     const char* input_path;
@@ -435,11 +439,69 @@ typedef struct {
     bool enable_optimize;
     bool verbose;
     const char* emit_c;
+    const char* manifest_path;
+    bool no_native_config;
     const char* native_args[MAX_NATIVE_ARGS];
     int native_argc;
     const char* library_args[MAX_NATIVE_ARGS];
     int library_argc;
 } BuildOptions;
+
+static CnextNativeConfig build_native_manifest;
+
+static void dispose_build_native_manifest(void) {
+    cnext_native_dispose(&build_native_manifest);
+}
+
+static int append_native_option(BuildOptions* opts, const char* option, const char* value) {
+    const char* flag = NULL;
+    bool library = strcmp(option, "--link-lib") == 0;
+    if (library) flag = "-l";
+    else if (strcmp(option, "--library-dir") == 0) flag = "-L";
+    else if (strcmp(option, "--include-dir") == 0) flag = "-I";
+    const char** args = library ? opts->library_args : opts->native_args;
+    int* count = library ? &opts->library_argc : &opts->native_argc;
+    int needed = flag ? 2 : 1;
+    if (*count + needed > MAX_NATIVE_ARGS) {
+        fprintf(stderr, "Too many native build arguments (maximum %d per group).\n", MAX_NATIVE_ARGS);
+        return 64;
+    }
+    if (flag) args[(*count)++] = flag;
+    args[(*count)++] = value;
+    return 0;
+}
+
+static int load_native_build_options(BuildOptions* opts) {
+    if (opts->emit_c || opts->no_native_config) return 0;
+    if (atexit(dispose_build_native_manifest) != 0) {
+        fprintf(stderr, "Could not register native manifest cleanup.\n");
+        return 74;
+    }
+    if (!cnext_native_load(opts->manifest_path ? opts->manifest_path : "cnext.toml",
+                           opts->manifest_path != NULL, &build_native_manifest)) {
+        fprintf(stderr, "%s\n", build_native_manifest.error);
+        return 64;
+    }
+    const char* cli_native[MAX_NATIVE_ARGS];
+    const char* cli_libraries[MAX_NATIVE_ARGS];
+    int native_count = opts->native_argc, library_count = opts->library_argc;
+    memcpy(cli_native, opts->native_args, sizeof(*cli_native) * native_count);
+    memcpy(cli_libraries, opts->library_args, sizeof(*cli_libraries) * library_count);
+    opts->native_argc = opts->library_argc = 0;
+    for (int i = 0; i < build_native_manifest.count; i += 2) {
+        int status = append_native_option(opts, build_native_manifest.args[i], build_native_manifest.args[i + 1]);
+        if (status) return status;
+    }
+    if (opts->native_argc + native_count > MAX_NATIVE_ARGS || opts->library_argc + library_count > MAX_NATIVE_ARGS) {
+        fprintf(stderr, "Too many native build arguments (maximum %d per group).\n", MAX_NATIVE_ARGS);
+        return 64;
+    }
+    memcpy(opts->native_args + opts->native_argc, cli_native, sizeof(*cli_native) * native_count);
+    memcpy(opts->library_args + opts->library_argc, cli_libraries, sizeof(*cli_libraries) * library_count);
+    opts->native_argc += native_count;
+    opts->library_argc += library_count;
+    return 0;
+}
 
 static int parse_build_args(int argc, char** argv, BuildOptions* opts) {
     opts->input_path = NULL;
@@ -451,6 +513,8 @@ static int parse_build_args(int argc, char** argv, BuildOptions* opts) {
     opts->enable_optimize = false;
     opts->verbose = false;
     opts->emit_c = NULL;
+    opts->manifest_path = NULL;
+    opts->no_native_config = false;
     opts->native_argc = 0;
     opts->library_argc = 0;
 
@@ -479,6 +543,14 @@ static int parse_build_args(int argc, char** argv, BuildOptions* opts) {
                 return 64;
             }
             opts->emit_c = argv[++i];
+        } else if (strcmp(argv[i], "--no-native-config") == 0) {
+            opts->no_native_config = true;
+        } else if (strcmp(argv[i], "--manifest") == 0) {
+            if (i + 1 >= argc || !argv[i + 1][0] || argv[i + 1][0] == '-' || opts->manifest_path) {
+                fprintf(stderr, "Expected one manifest path after --manifest.\n");
+                return 64;
+            }
+            opts->manifest_path = argv[++i];
         } else if (strcmp(argv[i], "--c-source") == 0 ||
                    strcmp(argv[i], "--object") == 0 ||
                    strcmp(argv[i], "--include-dir") == 0 ||
@@ -489,20 +561,8 @@ static int parse_build_args(int argc, char** argv, BuildOptions* opts) {
                 fprintf(stderr, "Expected a value after %s (use ./ for paths starting with '-').\n", option);
                 return 64;
             }
-            const char* flag = NULL;
-            bool library = strcmp(option, "--link-lib") == 0;
-            if (library) flag = "-l";
-            else if (strcmp(option, "--library-dir") == 0) flag = "-L";
-            else if (strcmp(option, "--include-dir") == 0) flag = "-I";
-            const char** args = library ? opts->library_args : opts->native_args;
-            int* count = library ? &opts->library_argc : &opts->native_argc;
-            int needed = flag ? 2 : 1;
-            if (*count + needed > MAX_NATIVE_ARGS) {
-                fprintf(stderr, "Too many native build arguments (maximum %d per group).\n", MAX_NATIVE_ARGS);
-                return 64;
-            }
-            if (flag) args[(*count)++] = flag;
-            args[(*count)++] = argv[++i];
+            int status = append_native_option(opts, option, argv[++i]);
+            if (status) return status;
         } else if (strcmp(argv[i], "--verbose") == 0) {
             opts->verbose = true;
         } else if (strcmp(argv[i], "--clean") == 0) {
@@ -524,7 +584,11 @@ static int parse_build_args(int argc, char** argv, BuildOptions* opts) {
         fprintf(stderr, "Cannot combine --emit-c with -o; link the generated C separately.\n");
         return 64;
     }
-    return 0;
+    if (opts->manifest_path && opts->no_native_config) {
+        fprintf(stderr, "Cannot combine --manifest with --no-native-config.\n");
+        return 64;
+    }
+    return load_native_build_options(opts);
 }
 
 #define TEST_ENTRY_PATH_MAX 512
@@ -886,8 +950,7 @@ int main(int argc, char** argv) {
         if (argc >= 3) {
             return install_single_package(argv[2], argv[0]) ? 0 : 1;
         } else {
-            install_packages_from_toml(argv[0]);
-            return 0;
+            return install_packages_from_toml(argv[0]) ? 0 : 1;
         }
     }
 
@@ -986,7 +1049,7 @@ int main(int argc, char** argv) {
     }
 
     if (strcmp(command, "update") == 0) {
-        return registry_update(".") ? 0 : 1;
+        return install_packages_from_toml(argv[0]) ? 0 : 1;
     }
 
     if (strcmp(command, "remove") == 0) {

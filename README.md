@@ -45,7 +45,7 @@ Cnext is a high-level, statically-typed language with a familiar syntax that tra
 - **Modern Syntax** — Clean, readable code with type inference (`var`), string interpolation, and optional semicolons
 - **Rich Type System** — `int`, `long`, `float`, `double`, `str`, `bool`, `char`, `byte`, `uint`, `ulong`, `ushort`, `ubyte`
 - **Type Aliases** — `type MyInt = int` for clearer code
-- **Nullable Types** — `str?`, `int?` for optional values
+- **Nullable References** — `str?` and class references; nullable scalars are not yet supported
 - **Generics** — Write reusable code with parameterized types
 - **Closures** — First-class functions with captured variables
 - **Pattern Matching** — Expressive `match` expressions with wildcards
@@ -158,6 +158,8 @@ cnext build file.cn --library-dir native/lib --link-lib helper # Link a C librar
 Native build options also work with `cnext run` and can be repeated. Use
 `--include-dir` for C headers and `--object` for existing objects or archives.
 See [C interoperability](docs/syntax.md#extern--c-ffi) for examples and ABI rules.
+Projects can also declare these inputs in `[native]` sections of `cnext.toml`;
+see [mixed Cnext/C builds](docs/native-builds.md).
 
 ## Language Overview
 
@@ -185,7 +187,7 @@ MyInt my_num = 100
 
 // Nullable types
 str? optional_str = null
-int? optional_int = 42
+// Nullable scalars such as int? are not yet supported.
 ```
 
 ### Functions

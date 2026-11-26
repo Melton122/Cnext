@@ -237,6 +237,8 @@ func sem_call_type_kind(ASTNode? call): int {
     if call == null || call.left == null { return TOKEN_EOF }
     if call.left.kind == AST_IDENTIFIER {
         str b = call.left.token.text
+        if b == "md5" || b == "sha1" || b == "sha256" ||
+           b == "hash_md5" || b == "hash_sha1" || b == "hash_sha256" { return TOKEN_STR_TYPE }
         if b == "to_cstr" { return TOKEN_IDENTIFIER }
         if b == "write_file" || b == "str_contains" { return TOKEN_BOOL_TYPE }
         if b == "to_str" || b == "from_cstr" || b == "str_substring" ||
@@ -255,7 +257,11 @@ func sem_call_type_kind(ASTNode? call): int {
             var d = sym.decl_node
             var lambda = sem_closure_lambda(d)
             if d.kind == AST_VAR_DECL && lambda != null { return lambda.return_type.kind }
-            if d.kind == AST_VAR_DECL && d.var_type.kind == TOKEN_FUNC { return TOKEN_INT_TYPE }
+            // A call through an untyped `func` value has an unknown result
+            // type. Returning EOF keeps assignment/return checks lenient, in
+            // step with the native compiler; forcing int rejected float
+            // lambdas that are perfectly valid.
+            if d.kind == AST_VAR_DECL && d.var_type.kind == TOKEN_FUNC { return TOKEN_EOF }
             if d.return_type.kind != TOKEN_EOF &&
                d.return_type.kind != TOKEN_VAR {
                 return d.return_type.kind
@@ -306,7 +312,7 @@ func sem_value_type_name(ASTNode? e): str {
         }
         return ""
     }
-    if e.kind == AST_MEMBER_ACCESS {
+    if e.kind == AST_MEMBER_ACCESS || e.kind == AST_SAFE_ACCESS {
         return sem_member_type_name(e)
     }
     if e.kind == AST_CALL {
@@ -342,25 +348,47 @@ func lambda_return_value(ASTNode? body): ASTNode? {
 
 func sem_analyze_when_expression(ASTNode? node): int {
     if node == null { return TOKEN_EOF }
-    int result = TOKEN_EOF
+    ASTNode? current = null
+    bool has_else = false
+    int count = 0
     int i = 0
+    int n = len(node.children)
     while i < len(node.children) {
         var arm = node.children[i]
         i = i + 1
         if arm == null { continue }
         if arm.condition != null { analyze_expression(arm.condition) }
         if arm.left == null { continue }
-        int arm_type = analyze_expression(arm.left)
-        if result == TOKEN_EOF || result == TOKEN_VAR {
-            result = arm_type
-        } else if arm_type != TOKEN_EOF && arm_type != TOKEN_VAR && arm_type != result {
-            if result == TOKEN_STR_TYPE || arm_type == TOKEN_STR_TYPE ||
-               !sem_is_numeric_type_kind(result) || !sem_is_numeric_type_kind(arm_type) {
-                result = TOKEN_EOF
+        analyze_expression(arm.left)
+        if arm.is_const {
+            if has_else || i != n {
+                semantic_error_at("E101", arm.token.line, arm.token.col,
+                    "The else arm must be unique and last:", "Put one else arm at the end.")
+                has_semantic_error = true
             }
+            has_else = true
+        }
+        if count == 0 { current = arm.left }
+        else { sem_join_branch_types(node, current, arm.left); current = node }
+        count = count + 1
+    }
+    if !has_else {
+        semantic_error_at("E101", node.token.line, node.token.col,
+            "When expression requires an else arm:", "Add an explicit fallback value.")
+        has_semantic_error = true
+    }
+    if count == 0 { return TOKEN_EOF }
+    if count == 1 { sem_join_branch_types(node, current, current) }
+    if node.expr_type != TOKEN_EOF {
+        i = 0
+        while i < n {
+            if node.children[i] != null && node.children[i].left != null {
+                sem_coerce_branch(node.children[i].left, node.var_type, node.is_array)
+            }
+            i = i + 1
         }
     }
-    return result
+    return node.expr_type
 }
 
 func analyze_expression(ASTNode? node): int {
@@ -368,7 +396,17 @@ func analyze_expression(ASTNode? node): int {
         return TOKEN_EOF
     }
     
-    if node.kind == AST_LAMBDA {
+    if node.kind == AST_OWN_EXPR {
+        int kind = analyze_expression(node.left)
+        if node.left != null {
+            node.is_array = sem_value_is_array(node.left)
+            node.var_type = node.left.var_type
+            node.is_class = node.left.is_class
+            node.type_name = node.left.type_name
+        }
+        node.expr_type = kind
+        return kind
+    } else if node.kind == AST_LAMBDA {
         int outer_return = sem_current_return_type
         sem_current_return_type = TOKEN_EOF
         sem_lambda_depth = sem_lambda_depth + 1
@@ -439,9 +477,12 @@ func analyze_expression(ASTNode? node): int {
         if sym != null {
             node.expr_type = sym.sym_type
             node.binding = sym.decl_node
+            node.type_name = sym.type_name
 
             if sym.decl_node != null {
                 var d = sym.decl_node
+                node.is_array = d.is_array
+                if d.is_array { node.var_type = d.var_type }
                 if d.var_type.kind == TOKEN_IDENTIFIER {
                     node.var_type = d.var_type
                     node.type_name = d.var_type.text
@@ -496,6 +537,33 @@ func analyze_expression(ASTNode? node): int {
             lt = TOKEN_STR_TYPE
         }
 
+        // Operator overload resolution: when the left operand is a class or
+        // struct that defines an overload for this operator, the expression
+        // takes the overload's declared return type (e.g. `Vec2 * float` is
+        // a Vec2), and the numeric-promotion rules below must not apply.
+        // Stage 0 resolves this before any of the built-in inference rules.
+        if node.left != null && len(node.left.type_name) > 0 {
+            str op_owner = node.left.type_name
+            if op_owner != "str" && op_owner != "int" && op_owner != "float" &&
+               op_owner != "bool" && op_owner != "char" {
+                var owner_decl = sem_named_decl(op_owner)
+                if owner_decl != null {
+                    int ci = 0
+                    int cn = len(owner_decl.children)
+                    while ci < cn {
+                        var child = owner_decl.children[ci]
+                        if child != null && child.kind == AST_OPERATOR_DECL &&
+                           child.token.kind == node.token.kind {
+                            node.expr_type = child.return_type.kind
+                            node.type_name = type_name_from_token(child.return_type)
+                            return child.return_type.kind
+                        }
+                        ci = ci + 1
+                    }
+                }
+            }
+        }
+
         int op = node.token.kind
         if op == TOKEN_EQ_EQ || op == TOKEN_BANG_EQ || op == TOKEN_LESS ||
            op == TOKEN_LESS_EQ || op == TOKEN_GREATER || op == TOKEN_GREATER_EQ ||
@@ -542,11 +610,30 @@ func analyze_expression(ASTNode? node): int {
         int i = 0
         int n = len(node.children)
         while i < n {
-            if callee_decl != null && i < len(callee_decl.children) {
-                sem_apply_expected_type(node.children[i],
-                    callee_decl.children[i].var_type.kind)
+            var arg = node.children[i]
+            ASTNode? param = null
+            int offset = 0
+            if callee_decl != null && len(callee_decl.children) > 0 && node.left != null &&
+               (node.left.kind == AST_MEMBER_ACCESS || node.left.kind == AST_SAFE_ACCESS) &&
+               callee_decl.children[0].token.text == "self" { offset = 1 }
+            if callee_decl != null && arg.kind == AST_NAMED_ARG {
+                int p = offset
+                while p < len(callee_decl.children) {
+                    if callee_decl.children[p].token.text == arg.token.text { param = callee_decl.children[p] }
+                    p = p + 1
+                }
+                arg = arg.right
+            } else if callee_decl != null && i + offset < len(callee_decl.children) {
+                param = callee_decl.children[i + offset]
             }
-            analyze_expression(node.children[i])
+            if param != null { sem_apply_expected_type(arg, param.var_type.kind) }
+            // Propagate the parameter's str type to null literal arguments so
+            // the codegen emits (CnextString){NULL, 0} rather than NULL.
+            if param != null && param.var_type.kind == TOKEN_STR_TYPE && arg.kind == AST_NULL_LITERAL {
+                arg.expr_type = TOKEN_STR_TYPE
+            }
+            analyze_expression(arg)
+            if param != null { sem_check_value_assignment(param.var_type, param.is_array, arg) }
             i = i + 1
         }
         if sem_is_input_call(node) {
@@ -567,6 +654,18 @@ func analyze_expression(ASTNode? node): int {
             node.type_name = type_name_from_token(make_kind_token(explicit_kind))
             return explicit_kind
         }
+        if callee_decl != null && callee_decl.return_is_array {
+            node.is_array = true
+            node.var_type = callee_decl.return_type
+            node.expr_type = callee_decl.return_type.kind
+            return node.expr_type
+        }
+        if callee_decl == null && node.left != null && node.left.kind == AST_IDENTIFIER && node.left.token.text == "str_split" {
+            node.is_array = true
+            node.var_type = make_token(TOKEN_STR_TYPE, "str", node.token.line, 0)
+            node.expr_type = TOKEN_STR_TYPE
+            return TOKEN_STR_TYPE
+        }
         int call_kind = sem_call_type_kind(node)
         if call_kind == TOKEN_IDENTIFIER {
             str call_class = sem_call_type_name(node)
@@ -582,6 +681,7 @@ func analyze_expression(ASTNode? node): int {
         }
         if call_kind != TOKEN_EOF && call_kind != TOKEN_VAR {
             node.expr_type = call_kind
+            node.type_name = type_name_from_token(make_kind_token(call_kind))
             return call_kind
         }
         node.expr_type = TOKEN_VAR
@@ -615,9 +715,15 @@ func analyze_expression(ASTNode? node): int {
         if node.left != null {
             analyze_expression(node.left)
         }
-        node.expr_type = TOKEN_INT_TYPE
-        node.var_type = make_kind_token(TOKEN_INT_TYPE)
-        return TOKEN_INT_TYPE
+        // await takes the awaited call's result type (int when unknown).
+        int awaited = node.left != null ? node.left.expr_type : TOKEN_EOF
+        if awaited == TOKEN_EOF || awaited == TOKEN_VAR { awaited = TOKEN_INT_TYPE }
+        node.expr_type = awaited
+        node.var_type = make_kind_token(awaited)
+        if awaited == TOKEN_IDENTIFIER && node.left != null {
+            node.type_name = node.left.type_name
+        }
+        return awaited
     } else if node.kind == AST_NULL_COALESCE {
         int lt = analyze_expression(node.left)
         analyze_expression(node.right)
@@ -632,6 +738,16 @@ func analyze_expression(ASTNode? node): int {
         if member_kind != TOKEN_EOF && member_kind != TOKEN_FUNC {
             node.expr_type = member_kind
             node.type_name = sem_member_type_name(node)
+            // A field whose declared type is a class is stored as a pointer,
+            // so reading it yields a reference; a following hop in the chain
+            // must dereference with '->'. Mirrors MEMBER_ACCESS below.
+            if member_kind == TOKEN_IDENTIFIER {
+                str member_class = sem_member_type_name(node)
+                if len(member_class) > 0 && sem_class_decl(member_class) != null {
+                    node.is_class = true
+                    node.is_pointer_access = true
+                }
+            }
             return member_kind
         }
         node.expr_type = TOKEN_IDENTIFIER
@@ -659,6 +775,7 @@ func analyze_expression(ASTNode? node): int {
         if member_kind == TOKEN_IDENTIFIER {
             str member_class = sem_member_type_name(node)
             if len(member_class) > 0 {
+                node.type_name = member_class
                 node.var_type = make_token(TOKEN_IDENTIFIER, member_class, 0, 0)
                 if sem_class_decl(member_class) != null {
                     node.is_class = true
@@ -670,27 +787,41 @@ func analyze_expression(ASTNode? node): int {
         }
         if member_kind != TOKEN_EOF && member_kind != TOKEN_FUNC {
             node.expr_type = member_kind
+            node.type_name = type_name_from_token(make_kind_token(member_kind))
             return member_kind
         }
         node.expr_type = TOKEN_VAR
         return TOKEN_VAR
     } else if node.kind == AST_NEW_EXPR {
+        node.type_name = node.token.text
         node.is_class = true
         node.var_type = make_token(TOKEN_IDENTIFIER, node.token.text, 0, 0)
         node.expr_type = TOKEN_IDENTIFIER
+        ASTNode? constructor = null
+        var cls = sem_class_decl(node.token.text)
+        if cls != null {
+            int m = 0
+            while m < len(cls.children) {
+                if cls.children[m].kind == AST_CONSTRUCTOR { constructor = cls.children[m] }
+                m = m + 1
+            }
+        }
         int i = 0
         int n = len(node.children)
         while i < n {
+            ASTNode? param = null
+            if constructor != null && i < len(constructor.children) { param = constructor.children[i] }
+            if param != null { sem_apply_expected_type(node.children[i], param.var_type.kind) }
             analyze_expression(node.children[i])
+            if param != null { sem_check_value_assignment(param.var_type, param.is_array, node.children[i]) }
             i = i + 1
         }
         return node.expr_type
     } else if node.kind == AST_TERNARY {
         analyze_expression(node.condition)
-        int lt = analyze_expression(node.left)
+        analyze_expression(node.left)
         analyze_expression(node.right)
-        node.expr_type = lt
-        return lt
+        return sem_join_branch_types(node, node.left, node.right)
     } else if node.kind == AST_LITERAL_ARRAY {
         int i = 0
         int n = len(node.children)
@@ -703,7 +834,14 @@ func analyze_expression(ASTNode? node): int {
     } else if node.kind == AST_INDEX {
         analyze_expression(node.left)
         analyze_expression(node.right)
+        var array = sem_array_declaration(node.left)
+        if array != null {
+            node.var_type = array.var_type
+            node.expr_type = array.var_type.kind
+            if array.var_type.kind != TOKEN_IDENTIFIER { return node.expr_type }
+        }
         str element_class = sem_index_element_name(node)
+        if array != null && array.var_type.kind == TOKEN_IDENTIFIER { element_class = array.var_type.text }
         if len(element_class) > 0 && sem_class_decl(element_class) != null {
             node.is_class = true
             node.is_pointer_access = true

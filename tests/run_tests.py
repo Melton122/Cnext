@@ -35,6 +35,10 @@ def discover_tests(include_excluded=False):
         relative = path.relative_to(TEST_ROOT)
         if any(part in EXCLUDED_TEST_DIRS for part in relative.parts[:-1]):
             continue
+        # Dot-directories hold fixtures imported by tests, not tests themselves
+        # (same rule as the built-in `cnext test` runner).
+        if any(part.startswith(".") for part in relative.parts[:-1]):
+            continue
         if not include_excluded and path.name in EXCLUDED_TESTS:
             continue
         found.append(relative.as_posix())

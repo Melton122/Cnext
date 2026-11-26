@@ -45,7 +45,7 @@ make
 ```
 
 This builds the `cnext` executable in the project root. You can also download a
-pre-built package for Windows (`cnext-windows-x64-10.0.0.zip`).
+pre-built package for Windows (`cnext-windows-x64-v10.0.5.zip`).
 
 ### Put `cnext` on your PATH
 

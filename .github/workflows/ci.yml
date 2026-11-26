@@ -56,7 +56,17 @@ jobs:
       run: python tests/run_tests.py
 
     - name: Run C interoperability build tests
-      run: python tests/test_native_linking.py
+      run: |
+        python tests/test_native_linking.py
+        python tests/test_native_manifest.py
+
+    - name: Run language and package contracts
+      run: |
+        python tests/test_language_contracts.py
+        python tests/test_package_security.py
+        python tests/test_allocators.py
+        python tests/test_lifetimes.py
+        python tests/test_optimizer_semantics.py
 
     - name: Run LSP Tests
       run: python tests/test_lsp.py
@@ -72,6 +82,43 @@ jobs:
 
     - name: Stage 2 bootstrap programs
       run: python tests/test_bootstrap_codegen.py --stage1 build/selfhost/stage2_exe${{ runner.os == 'Windows' && '.exe' || '' }}
+
+    - name: Stage 1 language contracts
+      env:
+        CNEXT_EXE: build/selfhost/stage1_exe${{ runner.os == 'Windows' && '.exe' || '' }}
+      run: |
+        python tests/test_language_contracts.py
+        python tests/test_lifetimes.py
+        python tests/test_native_manifest.py
+
+    - name: Stage 2 language contracts
+      env:
+        CNEXT_EXE: build/selfhost/stage2_exe${{ runner.os == 'Windows' && '.exe' || '' }}
+      run: |
+        python tests/test_language_contracts.py
+        python tests/test_lifetimes.py
+        python tests/test_native_manifest.py
+
+    - name: Stage 1 optimizer and test command
+      env:
+        CNEXT_EXE: build/selfhost/stage1_exe${{ runner.os == 'Windows' && '.exe' || '' }}
+      run: |
+        python tests/test_optimizer_semantics.py
+        python tests/test_selfhost_optimizer.py
+        python tests/test_selfhost_test_runner.py
+
+    - name: Stage 2 optimizer and test command
+      env:
+        CNEXT_EXE: build/selfhost/stage2_exe${{ runner.os == 'Windows' && '.exe' || '' }}
+      run: |
+        python tests/test_optimizer_semantics.py
+        python tests/test_selfhost_optimizer.py
+        python tests/test_selfhost_test_runner.py
+
+    - name: Native and self-hosted behavior parity
+      env:
+        CNEXT_SELFHOST_EXE: build/selfhost/stage2_exe${{ runner.os == 'Windows' && '.exe' || '' }}
+      run: python tests/test_compiler_parity.py
 
     - name: Stage 1 build and run CLI
       run: python tests/test_selfhost_cli.py --compiler build/selfhost/stage1_exe${{ runner.os == 'Windows' && '.exe' || '' }}

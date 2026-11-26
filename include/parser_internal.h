@@ -72,14 +72,22 @@ static inline void assign_type_from_node(ASTNode* dest, ASTNode* typeNode) {
     } else {
         dest->var_type = typeNode->token;
         dest->is_array = typeNode->is_array;
+        dest->type_is_nullable = typeNode->type_is_nullable;
     }
 }
 
 static inline void assign_return_type_from_node(ASTNode* dest, ASTNode* typeNode) {
+    dest->yield_type.type = TOKEN_EOF;
+    dest->yield_is_class = false;
     if (typeNode->is_union_type) {
         dest->return_type = (Token){TOKEN_IDENTIFIER, "CnextVariant", 12, typeNode->token.line};
     } else {
         dest->return_type = typeNode->token;
+        dest->return_is_nullable = typeNode->type_is_nullable;
+        dest->return_is_array = typeNode->is_array;
+        if (typeNode->token.type == TOKEN_ITER && typeNode->child_count > 0) {
+            dest->yield_type = typeNode->children[0]->token;
+        }
     }
 }
 

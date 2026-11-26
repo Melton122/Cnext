@@ -255,6 +255,7 @@ static void gen_with_parens(ASTNode* child, CnextTokenType parent_op, bool is_ri
     }
 }
 
+
 static void gen_lambda_body(ASTNode* node) {
     if (node->left->type == AST_BLOCK) { generate_block(node->left); return; }
     fprintf(out, "{\n");
@@ -264,13 +265,21 @@ static void gen_lambda_body(ASTNode* node) {
         if (node->children[i]->capture_cell) { write_indent(); emit_capture_cell(node->children[i], true); }
     }
     write_indent();
-    fprintf(out, "return ");
-    if (node->left->expr_type == TOKEN_FUNC) {
-        fprintf(out, "cnext_closure_escape(");
+    // An expression lambda whose body produces no value (for example
+    // `() => printin("hi")`) compiles to a void function: `return <void
+    // macro>;` is not valid C, so evaluate the body as a statement instead.
+    if (type_token_to_c(node->left->expr_type) == NULL) {
+        generate_expression(node->left);
+        fprintf(out, ";\n");
+    } else if (node->left->expr_type == TOKEN_FUNC) {
+        fprintf(out, "return cnext_closure_escape(");
         generate_owned_closure_expression(node->left);
-        fprintf(out, ")");
-    } else generate_expression(node->left);
-    fprintf(out, ";\n");
+        fprintf(out, ");\n");
+    } else {
+        fprintf(out, "return ");
+        generate_expression(node->left);
+        fprintf(out, ";\n");
+    }
     pop_scope();
     indent_level--;
     write_indent();
@@ -856,7 +865,13 @@ static void generate_call_expr(ASTNode* node) {
                 bool bound_closure = node->left->binding && node->left->binding->type == AST_VAR_DECL &&
                     (node->left->expr_type == TOKEN_FUNC || node->left->binding->var_type.type == TOKEN_FUNC);
                 if (is_func_param(fname, flen) || is_func_typed_var(fname, flen) || bound_closure) {
-                    fprintf(out, "((int(*)(void*, int))((CnextClosure)");
+                    // Calls through an untyped `func` use a fixed int ABI. The
+                    // cast's arity must match this call site's arguments
+                    // (including a zero-argument call), or the C compiler
+                    // rejects the program with "too few arguments".
+                    fprintf(out, "((int(*)(void*");
+                    for (int ai = 0; ai < node->child_count; ai++) fprintf(out, ", int");
+                    fprintf(out, "))((CnextClosure)");
                     generate_expression(node->left);
                     fprintf(out, ").fn)(((CnextClosure)");
                     generate_expression(node->left);
@@ -911,7 +926,12 @@ static void generate_call_expr(ASTNode* node) {
                 for (int i = 0; i < node->child_count; i++) {
                     if (node->children[i]->type == AST_NAMED_ARG) continue;
                     if (!first_arg) fprintf(out, ", ");
-                    generate_expression(node->children[i]);
+                    // A lambda passed to an untyped `func` parameter gets an
+                    // int-ABI adapter so calls through the parameter inside
+                    // the function body use one calling convention.
+                    if (!emit_func_param_adapter_value(node, func_decl, i)) {
+                        generate_expression(node->children[i]);
+                    }
                     first_arg = false;
                     if (pos_idx < func_decl->child_count) {
                         provided[pos_idx] = true;
@@ -978,7 +998,28 @@ static void emit_raw_string_literal(const char* start, const char* end) {
     fprintf(out, "\", %d}", length);
 }
 
+static void generate_expression_inner(ASTNode* node);
+
 void generate_expression(ASTNode* node) {
+    if (!node) return;
+    if (node->type == AST_LITERAL_ARRAY && node->is_array) {
+        generate_array_value(node, node);
+        return;
+    }
+    if (node->upcast_type.type != TOKEN_EOF) {
+        fprintf(out, "((");
+        generate_type(node->upcast_type, node->upcast_type.type == TOKEN_IDENTIFIER);
+        fprintf(out, ")(");
+        generate_expression_inner(node);
+        fprintf(out, "))");
+    } else if (node->type == AST_BINARY || node->type == AST_TERNARY) {
+        fprintf(out, "(");
+        generate_expression_inner(node);
+        fprintf(out, ")");
+    } else generate_expression_inner(node);
+}
+
+static void generate_expression_inner(ASTNode* node) {
     if (!node) return;
     if (node->type == AST_CALL && emit_managed_closure_arguments(node)) return;
     switch (node->type) {
@@ -1121,7 +1162,15 @@ void generate_expression(ASTNode* node) {
             break;
         case AST_UNARY:
             fprintf(out, "%.*s", node->token.length, node->token.start);
-            generate_expression(node->right);
+            // `!a > b` is not `!(a > b)`, and `-a + b` is not `-(a + b)`, so
+            // prefix operators always parenthesize their operand.
+            if (node->token.type == TOKEN_BANG || node->token.type == TOKEN_MINUS) {
+                fprintf(out, "(");
+                generate_expression(node->right);
+                fprintf(out, ")");
+            } else {
+                generate_expression(node->right);
+            }
             break;
         case AST_BIT_EXTRACT: {
             unsigned long long mask = 0;

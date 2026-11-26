@@ -17,6 +17,7 @@ func analyze_program(ASTNode? program): bool {
     // Initialize global scope with builtins would go here
     analyze_node(program)
     sem_pop_scope()
+    if !has_semantic_error { analyze_lifetimes(program) }
     return !has_semantic_error
 }
 

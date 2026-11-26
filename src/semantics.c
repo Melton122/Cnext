@@ -75,5 +75,6 @@ bool analyze_semantics(ASTNode* program, bool require_main) {
     }
 
     sem_pop_scope();
+    if (!has_semantic_error) analyze_lifetimes(program);
     return !has_semantic_error;
 }

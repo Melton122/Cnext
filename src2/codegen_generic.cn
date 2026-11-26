@@ -198,7 +198,7 @@ func declare_generic_specializations() {
         bind_specialization(work)
         // Scanning under the concrete bindings can append nested calls.
         scan_node_for_generic_calls(work.func_decl.left)
-        generate_type(work.func_decl.return_type, false)
+        codegen_emit_c_type(work.func_decl.return_type, work.func_decl.return_is_array, work.func_decl.is_pointer)
         codegen_emit(" " + work.mangled_name + "(")
         int i = 0
         while i < len(work.func_decl.children) {
@@ -232,7 +232,7 @@ func process_spec_queue() {
 
 func emit_specialized_signature(SpecWork work) {
     var func_decl = work.func_decl
-    generate_type(func_decl.return_type, false)
+    codegen_emit_c_type(func_decl.return_type, func_decl.return_is_array, func_decl.is_pointer)
     codegen_emit(" ")
     codegen_emit(work.mangled_name)
     codegen_emit("(")

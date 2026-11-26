@@ -71,9 +71,27 @@ typedef struct _AllocNode {
     void* ptr;
     bool is_cstr;
     struct _AllocNode* next;
+    struct _AllocNode* index_next;
 } _AllocNode;
 
 static _AllocNode* _cnext_allocs = NULL;
+// Resizing arrays must find their ledger entries without scanning every live
+// string/object. The compiler itself can have hundreds of thousands of these.
+#define CNEXT_ALLOC_INDEX_SIZE 4096
+static _AllocNode* _cnext_alloc_index[CNEXT_ALLOC_INDEX_SIZE];
+static size_t _cnext_alloc_bucket(void* ptr) {
+    return ((uintptr_t)ptr >> 4) & (CNEXT_ALLOC_INDEX_SIZE - 1);
+}
+static void _cnext_index_insert(_AllocNode* node) {
+    size_t bucket = _cnext_alloc_bucket(node->ptr);
+    node->index_next = _cnext_alloc_index[bucket];
+    _cnext_alloc_index[bucket] = node;
+}
+static void _cnext_index_remove(_AllocNode* node) {
+    _AllocNode** slot = &_cnext_alloc_index[_cnext_alloc_bucket(node->ptr)];
+    while (*slot && *slot != node) slot = &(*slot)->index_next;
+    if (*slot) *slot = node->index_next;
+}
 
 /* Internal lock protecting the tracking list, global arena, and global pool.
  * C11 atomic spinlock: works on GCC/Clang everywhere without pulling in
@@ -98,6 +116,7 @@ static void _cnext_track_kind(void* ptr, bool is_cstr) {
     _cnext_mem_lock_acquire();
     node->next = _cnext_allocs;
     _cnext_allocs = node;
+    _cnext_index_insert(node);
     _cnext_mem_lock_release();
 }
 
@@ -113,6 +132,7 @@ static void _cnext_untrack(void* ptr) {
         if ((*curr)->ptr == ptr) {
             _AllocNode* to_remove = *curr;
             *curr = (*curr)->next;
+            _cnext_index_remove(to_remove);
             free(to_remove);
             _cnext_mem_lock_release();
             return;
@@ -130,6 +150,7 @@ static void _cnext_free_all() {
         free(node->ptr);
         free(node);
     }
+    memset(_cnext_alloc_index, 0, sizeof(_cnext_alloc_index));
     _cnext_mem_lock_release();
 }
 
@@ -139,38 +160,90 @@ static void _cnext_free_all() {
 // Fast bulk allocation: allocate from a pre-allocated block, free all at once.
 #define CNEXT_ARENA_BLOCK_SIZE (64 * 1024)  // 64KB blocks
 
+#ifdef _MSC_VER
+#define CNEXT_ALLOC_ALIGNMENT __alignof(CNEXT_MAX_ALIGN_T)
+#else
+#define CNEXT_ALLOC_ALIGNMENT _Alignof(CNEXT_MAX_ALIGN_T)
+#endif
+
+typedef struct _CnextLargeAllocation {
+    void* ptr;
+    struct _CnextLargeAllocation* next;
+} _CnextLargeAllocation;
+
+static void _cnext_allocation_error(const char* message) {
+    fprintf(stderr, "Cnext runtime: %s.\n", message);
+    exit(70);
+}
+
+static size_t _cnext_aligned_allocation_size(size_t size) {
+    size_t alignment = CNEXT_ALLOC_ALIGNMENT;
+    if (!size) size = 1;
+    if (size > SIZE_MAX - (alignment - 1)) _cnext_allocation_error("allocation size overflow");
+    return ((size + alignment - 1) / alignment) * alignment;
+}
+
+static _CnextLargeAllocation* _cnext_large_allocation(size_t size) {
+    void* ptr = malloc(size);
+    if (!ptr) _cnext_allocation_error("out of memory");
+    _CnextLargeAllocation* allocation = (_CnextLargeAllocation*)malloc(sizeof(*allocation));
+    if (!allocation) { free(ptr); _cnext_allocation_error("out of memory"); }
+    allocation->ptr = ptr;
+    allocation->next = NULL;
+    return allocation;
+}
+
+static void _cnext_large_free_all(_CnextLargeAllocation* allocation) {
+    while (allocation) {
+        _CnextLargeAllocation* next = allocation->next;
+        free(allocation->ptr);
+        free(allocation);
+        allocation = next;
+    }
+}
+
 typedef struct _ArenaBlock {
     struct _ArenaBlock* next;
     size_t used;
-    char data[CNEXT_ARENA_BLOCK_SIZE];
+    union { CNEXT_MAX_ALIGN_T alignment; char data[CNEXT_ARENA_BLOCK_SIZE]; };
 } _ArenaBlock;
 
 typedef struct {
     _ArenaBlock* current;
     size_t total_allocated;
     size_t total_freed;
+    _CnextLargeAllocation* large;
 } CnextArena;
 
-static CnextArena _cnext_global_arena = {NULL, 0, 0};
+static CnextArena _cnext_global_arena = {0};
 
 static void* cnext_arena_alloc(CnextArena* arena, size_t size) {
-    // Align to 8 bytes
-    size = (size + 7) & ~(size_t)7;
-
+    if (!arena) _cnext_allocation_error("null arena");
+    size = _cnext_aligned_allocation_size(size);
+    _cnext_mem_lock_acquire();
+    if (size > SIZE_MAX - arena->total_allocated) {
+        _cnext_mem_lock_release();
+        _cnext_allocation_error("allocation accounting overflow");
+    }
     if (size > CNEXT_ARENA_BLOCK_SIZE) {
-        // Too large for arena, use regular malloc
-        void* ptr = malloc(size);
-        if (!ptr) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
+        _cnext_mem_lock_release();
+        _CnextLargeAllocation* allocation = _cnext_large_allocation(size);
         _cnext_mem_lock_acquire();
+        if (size > SIZE_MAX - arena->total_allocated) {
+            _cnext_mem_lock_release();
+            _cnext_large_free_all(allocation);
+            _cnext_allocation_error("allocation accounting overflow");
+        }
+        allocation->next = arena->large;
+        arena->large = allocation;
         arena->total_allocated += size;
+        void* ptr = allocation->ptr;
         _cnext_mem_lock_release();
         return ptr;
     }
-
-    _cnext_mem_lock_acquire();
-    if (!arena->current || arena->current->used + size > CNEXT_ARENA_BLOCK_SIZE) {
+    if (!arena->current || size > CNEXT_ARENA_BLOCK_SIZE - arena->current->used) {
         _ArenaBlock* block = (_ArenaBlock*)malloc(sizeof(_ArenaBlock));
-        if (!block) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
+        if (!block) { _cnext_mem_lock_release(); _cnext_allocation_error("out of memory"); }
         block->next = arena->current;
         block->used = 0;
         arena->current = block;
@@ -192,6 +265,8 @@ static void cnext_arena_free_all(CnextArena* arena) {
         block = next;
     }
     arena->current = NULL;
+    _cnext_large_free_all(arena->large);
+    arena->large = NULL;
     arena->total_freed = arena->total_allocated;
     _cnext_mem_lock_release();
 }
@@ -207,6 +282,7 @@ static CnextArena* cnext_mem_arena_create(void) {
     arena->current = NULL;
     arena->total_allocated = 0;
     arena->total_freed = 0;
+    arena->large = NULL;
     return arena;
 }
 
@@ -227,9 +303,12 @@ static void cnext_mem_arena_destroy(CnextArena* arena) {
 
 static size_t cnext_mem_arena_usage(CnextArena* arena) {
     if (!arena) return 0;
-    return arena->total_allocated > arena->total_freed
+    _cnext_mem_lock_acquire();
+    size_t usage = arena->total_allocated > arena->total_freed
         ? arena->total_allocated - arena->total_freed
         : 0;
+    _cnext_mem_lock_release();
+    return usage;
 }
 
 /* --- Scoped Memory (automatic, thread-local) --- */
@@ -277,30 +356,45 @@ static size_t cnext_mem_scope_usage(void) {
 
 typedef struct _PoolBlock {
     struct _PoolBlock* next;
-    char data[CNEXT_POOL_BLOCK_SIZE];
+    union { CNEXT_MAX_ALIGN_T alignment; char data[CNEXT_POOL_BLOCK_SIZE]; };
     int used;
 } _PoolBlock;
 
 typedef struct {
     _PoolBlock* blocks;
     size_t total_allocated;
+    _CnextLargeAllocation* large;
 } CnextPool;
 
-static CnextPool _cnext_global_pool = {NULL, 0};
+static CnextPool _cnext_global_pool = {0};
 
 static void* cnext_pool_alloc(CnextPool* pool, size_t size) {
-    if (size > CNEXT_POOL_BLOCK_SIZE / 4) {
-        // Too large for pool, use regular malloc
-        return malloc(size);
-    }
-
-    // Align to 8 bytes
-    size = (size + 7) & ~(size_t)7;
-
+    if (!pool) _cnext_allocation_error("null pool");
+    size = _cnext_aligned_allocation_size(size);
     _cnext_mem_lock_acquire();
-    if (!pool->blocks || pool->blocks->used + (int)size > CNEXT_POOL_BLOCK_SIZE) {
+    if (size > SIZE_MAX - pool->total_allocated) {
+        _cnext_mem_lock_release();
+        _cnext_allocation_error("allocation accounting overflow");
+    }
+    if (size > CNEXT_POOL_BLOCK_SIZE / 4) {
+        _cnext_mem_lock_release();
+        _CnextLargeAllocation* allocation = _cnext_large_allocation(size);
+        _cnext_mem_lock_acquire();
+        if (size > SIZE_MAX - pool->total_allocated) {
+            _cnext_mem_lock_release();
+            _cnext_large_free_all(allocation);
+            _cnext_allocation_error("allocation accounting overflow");
+        }
+        allocation->next = pool->large;
+        pool->large = allocation;
+        pool->total_allocated += size;
+        void* ptr = allocation->ptr;
+        _cnext_mem_lock_release();
+        return ptr;
+    }
+    if (!pool->blocks || size > CNEXT_POOL_BLOCK_SIZE - (size_t)pool->blocks->used) {
         _PoolBlock* block = (_PoolBlock*)malloc(sizeof(_PoolBlock));
-        if (!block) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
+        if (!block) { _cnext_mem_lock_release(); _cnext_allocation_error("out of memory"); }
         block->next = pool->blocks;
         block->used = 0;
         pool->blocks = block;
@@ -322,6 +416,9 @@ static void cnext_pool_free_all(CnextPool* pool) {
         block = next;
     }
     pool->blocks = NULL;
+    _cnext_large_free_all(pool->large);
+    pool->large = NULL;
+    pool->total_allocated = 0;
     _cnext_mem_lock_release();
 }
 
@@ -559,7 +656,7 @@ static inline void cnext_cstr_free(CStr text) {
         slot = &(*slot)->next;
     }
     _AllocNode* owned = *slot;
-    if (owned) *slot = owned->next;
+    if (owned) { *slot = owned->next; _cnext_index_remove(owned); }
     _cnext_mem_lock_release();
     if (!owned) cnext_throw_cstr("cstr_free: expected a live to_cstr allocation");
     free(owned->ptr);
@@ -1366,14 +1463,12 @@ static inline bool cnext_str_is_empty(CnextString s) {
 
 /* --- String Split/Join --- */
 
-typedef struct {
-    CnextString* data;
-    size_t length;
-} CnextStringArray;
+typedef CnextArrayString CnextStringArray;
 
 static inline CnextStringArray cnext_str_split(CnextString s, CnextString delim) {
     if (!s.data || s.length == 0) { CnextStringArray r = {NULL, 0}; return r; }
     if (!delim.data || delim.length == 0) {
+        if (s.length > SIZE_MAX / sizeof(CnextString)) _cnext_allocation_error("string split allocation overflow");
         CnextStringArray r = (CnextStringArray){(CnextString*)malloc(sizeof(CnextString) * s.length), s.length};
         if (!r.data) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
         for (size_t i = 0; i < s.length; i++) {
@@ -1388,18 +1483,28 @@ static inline CnextStringArray cnext_str_split(CnextString s, CnextString delim)
     if (!items) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
     size_t pos = 0;
     while (pos <= s.length) {
-        int found = -1;
-        if (pos + delim.length <= s.length) {
+        // This buffer remains untracked until its final address is known. A
+        // growth step must not register it again before the single tail track.
+        if (count == cap) {
+            if (cap > SIZE_MAX / (2 * sizeof(*items))) {
+                free(items); _cnext_allocation_error("string split allocation overflow");
+            }
+            size_t next = cap * 2;
+            CnextString* grown = (CnextString*)realloc(items, sizeof(*items) * next);
+            if (!grown) { free(items); _cnext_allocation_error("out of memory"); }
+            items = grown;
+            cap = next;
+        }
+        size_t found = SIZE_MAX;
+        if (delim.length <= s.length - pos) {
             for (size_t j = 0; j <= s.length - delim.length - pos; j++) {
-                if (memcmp(s.data + pos + j, delim.data, delim.length) == 0) { found = (int)j; break; }
+                if (memcmp(s.data + pos + j, delim.data, delim.length) == 0) { found = j; break; }
             }
         }
-        if (found >= 0) {
-            if (count >= cap) { cap *= 2; _cnext_untrack(items); items = (CnextString*)realloc(items, sizeof(CnextString) * cap); if (!items) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); } _cnext_track(items); }
-            items[count++] = (CnextString){s.data + pos, (size_t)found};
-            pos += (size_t)found + delim.length;
+        if (found != SIZE_MAX) {
+            items[count++] = (CnextString){s.data + pos, found};
+            pos += found + delim.length;
         } else {
-            if (count >= cap) { cap *= 2; _cnext_untrack(items); items = (CnextString*)realloc(items, sizeof(CnextString) * cap); if (!items) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); } _cnext_track(items); }
             items[count++] = (CnextString){s.data + pos, s.length - pos};
             break;
         }
@@ -1600,18 +1705,37 @@ static inline size_t _cnext_array_check(size_t length, size_t index) {
    storage. Copy them onto the heap so the array owns its buffer and can be
    grown later with CNEXT_ARRAY_PUSH. */
 static inline void* _cnext_array_heap_copy(const void* src, size_t count, size_t elem_size) {
+    if (!elem_size || (count && count > SIZE_MAX / elem_size)) _cnext_allocation_error("array allocation overflow");
     void* dst = malloc((count ? count : 1) * elem_size);
     if (!dst) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); }
     if (count && src) memcpy(dst, src, count * elem_size);
     return dst;
 }
 
+// Preserve an existing allocation-ledger entry when realloc moves a buffer.
+// Untracked arrays retain their existing ownership regime; slices and aliases
+// still require the caller's normal exclusive-mutation discipline.
+static inline void* _cnext_array_grow(void* previous, size_t length, size_t elem_size) {
+    if (!elem_size || length >= SIZE_MAX / elem_size) _cnext_allocation_error("array allocation overflow");
+    _cnext_mem_lock_acquire();
+    _AllocNode* owner = _cnext_alloc_index[_cnext_alloc_bucket(previous)];
+    while (owner && owner->ptr != previous) owner = owner->index_next;
+    if (owner) _cnext_index_remove(owner);
+    void* grown = realloc(previous, (length + 1) * elem_size);
+    if (owner) {
+        if (grown) owner->ptr = grown;
+        _cnext_index_insert(owner);
+    }
+    _cnext_mem_lock_release();
+    if (!grown) _cnext_allocation_error("out of memory");
+    return grown;
+}
+
 /* Append to any of the Cnext array types. The updated struct is returned so
    the caller can assign it back, which is how push() is generated. */
 #define CNEXT_ARRAY_PUSH(arr, val) ({ \
     __typeof__(arr) _p = (arr); \
-    _p.data = (__typeof__(_p.data))realloc(_p.data, (_p.length + 1) * sizeof(*_p.data)); \
-    if (!_p.data) { fprintf(stderr, "Cnext runtime: out of memory.\n"); exit(70); } \
+    _p.data = (__typeof__(_p.data))_cnext_array_grow(_p.data, _p.length, sizeof(*_p.data)); \
     _p.data[_p.length] = (val); \
     _p.length++; \
     _p; })
@@ -2816,43 +2940,19 @@ static inline CnextString cnext_base64_decode(CnextString s) {
     return (CnextString){out, j};
 }
 
-/* --- Crypto Builtins (simple hash) --- */
+/* Global hash builtins share the module implementations and digest formats. */
+#include "crypto.h"
 
 static inline CnextString cnext_hash_md5_str(CnextString s) {
-    unsigned int h = 5381;
-    for (size_t i = 0; i < s.length; i++) h = ((h << 5) + h) + (unsigned char)s.data[i];
-    char* buf = (char*)malloc(9);
-    if (!buf) return (CnextString){NULL, 0};
-    snprintf(buf, 9, "%08x", h);
-    _cnext_track(buf);
-    return (CnextString){buf, 8};
+    return crypto_md5(s);
 }
 
 static inline CnextString cnext_hash_sha1_str(CnextString s) {
-    unsigned int h = 0x67452301;
-    for (size_t i = 0; i < s.length; i++) {
-        h = (h << 5) + h + (unsigned char)s.data[i];
-        h ^= h >> 16;
-    }
-    char* buf = (char*)malloc(9);
-    if (!buf) return (CnextString){NULL, 0};
-    snprintf(buf, 9, "%08x", h);
-    _cnext_track(buf);
-    return (CnextString){buf, 8};
+    return crypto_sha1(s);
 }
 
 static inline CnextString cnext_hash_sha256_str(CnextString s) {
-    unsigned int h = 0x6a09e667;
-    for (size_t i = 0; i < s.length; i++) {
-        h = (h << 5) + h + (unsigned char)s.data[i];
-        h ^= h >> 16;
-        h *= 0x85ebca6b;
-    }
-    char* buf = (char*)malloc(9);
-    if (!buf) return (CnextString){NULL, 0};
-    snprintf(buf, 9, "%08x", h);
-    _cnext_track(buf);
-    return (CnextString){buf, 8};
+    return crypto_sha256(s);
 }
 
 static inline CnextString cnext_uuid(void) {
@@ -2886,7 +2986,10 @@ static inline void cnext_debug_ptr(void* x) { fprintf(stderr, "[debug] %p\n", x)
     bool: cnext_debug_bool, \
     default: cnext_debug_ptr)(__VA_ARGS__)
 
-static inline void cnext_gc(void) { _cnext_free_all(); }
+/* There is no tracing collector: freeing the tracking list here would also
+ * free live strings, objects, and closure environments. Keep this legacy
+ * collection hint harmless; deterministic reclamation uses free/arenas. */
+static inline void cnext_gc(void) { }
 
 static inline long long cnext_benchmark(int iterations) {
     volatile long long sink = 0;
@@ -3024,5 +3127,8 @@ static inline void* cnext_variant_as_ptr(CnextVariant v) {
 static inline bool cnext_variant_is(CnextVariant v, int tag) {
     return v.tag == tag;
 }
+
+#include "native_build_runtime.h"
+#include "test_runner_runtime.h"
 
 #endif /* CNEXT_RUNTIME_H */

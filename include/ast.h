@@ -128,9 +128,13 @@ typedef struct ASTNode {
     int lambda_depth;
     bool capture_cell_candidate;
     bool capture_cell;
+    int lifetime_id; // scratch declaration identity for the lifetime pass
     bool is_const;
     bool is_array;
     bool is_pointer;
+    bool type_is_nullable;
+    bool return_is_nullable;
+    bool return_is_array;
     bool is_class;
     bool is_pointer_access;
     char* type_name; // For resolved type (e.g., class name for member access)
@@ -163,6 +167,9 @@ typedef struct ASTNode {
     // Types
     Token var_type; // the token representing the type
     Token return_type;
+    Token upcast_type; // verified numeric widening or derived-to-base conversion
+    Token yield_type; // generator element type for iter<T>
+    bool yield_is_class;
     CnextTokenType expr_type;
     bool type_is_inferred;
     // Text allocated by an optimizer pass for token replacement. Source tokens

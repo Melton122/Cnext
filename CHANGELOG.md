@@ -4,6 +4,90 @@ All notable changes to Cnext will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Self-hosted opt-in AST optimization: guarded int32/boolean literal folding,
+  decisive short-circuit folding, literal `if` selection, and `while(false)` removal.
+  `--no-optimize` wins over `--optimize` in either order.
+- Self-hosted `test` command with recursive sorted discovery, filtering/listing,
+  ordered `EXPECT`, `STDIN`, explicit expected `EXIT`, and argv-safe child execution.
+- Native/self-hosted behavioral parity tests and stage-specific optimizer/test-runner
+  checks in CI; `make selfhost-check` runs the focused self-hosting gate.
+
+### Fixed
+- `for-in` over an array of class instances no longer crashes the compiler: the
+  element binding's type name was freed twice (once after being stored on the
+  loop variable), which corrupted the heap and aborted at exit. The loop now
+  also extracts class elements as typed pointers (`Student* s`) instead of
+  bare `void*`, so member access on the loop variable compiles.
+- Chained optional access (`user?.address?.city`) generates valid C again: a
+  `?.` hop whose field type is a class now dereferences with `->` like ordinary
+  member access, instead of applying `.` to a pointer.
+- Lambdas passed as untyped `func` parameters run under one calling convention:
+  the compiler emits an `int`-ABI adapter at the pass site, so a
+  float-returning lambda (for example a discount rule) returns its real value
+  instead of register garbage, and calls through a zero-argument `func`
+  parameter compile instead of failing with "too few arguments".
+- Arrays of structs store struct values (a file-scope typedef per element type)
+  instead of opaque `void*` slots, so `Point[] pts = {a, b}`, indexing,
+  element assignment, `for-in`, and passing elements to functions all work.
+- Self-hosted compiler parity with the native compiler on the above fixes:
+  `func`-typed parameters now accept lambdas with non-int result types (the
+  semantic checker no longer forces the call type to `int` and the fixed
+  calling convention is arity-matched); chained `?.` resolves the owner type
+  through safe-access hops; class-element `for-in` extracts typed pointers;
+  and struct-element arrays use value storage with their own typedef, typed
+  indexing, and `.` member access. All five feature probes compile and run
+  identically under native and stage-2 self-hosted binaries.
+- A full corpus sweep (156 test and example programs) now builds and runs
+  identically under the native and self-hosted compilers. Gaps closed in the
+  self-hosted port: operator overloads type their result from the overload's
+  declared return type instead of falling back to int; method dispatch
+  prefers the owner's declared class (so `Fighter hero = new Player(...)`
+  calls Fighter methods); passing `null` for a `str` parameter emits
+  `(CnextString){NULL, 0}`; classes declared inside test blocks are defined
+  and registered, so `Point p = new Point(3, 4)` is a pointer; async and
+  coroutine declarations are semantically analyzed like ordinary functions
+  (locals, awaits, and cross-calls type correctly); async/generator frames
+  type their `current` slot from the yield or return type; `run_async f()`
+  drives the frame to completion; and `{name(args)}` string interpolation
+  calls a stored lambda through its function pointer.
+- Void expression lambdas (`() => printin("x")`) emit their body as a statement
+  instead of the invalid `return <void call>;`.
+- String interpolation of a class-typed function parameter (`{s.name}`) emits
+  pointer access (`s->name`), matching how such parameters are passed.
+- `match` arms whose last expression is a void call now emit it as a statement
+  instead of `return <call>;`. `main` is always lowered as a void-returning
+  function for this purpose, and user-defined void callees are detected in both
+  compilers, so native and self-hosted output agree for statement-style matches.
+- Growing `str_split` results are registered once, preventing a cleanup double-free
+  that also affected self-hosted compilation. Tracked array growth updates its
+  allocation-ledger entry when realloc moves the buffer; overflow/OOM paths retain
+  the original allocation and release the tracking lock.
+- Arena and pool bulk cleanup now releases oversized allocations as well as blocks.
+  Allocation alignment follows the target's ordinary C alignment, and overflow/OOM
+  paths fail with runtime status 70 without retaining the allocation lock.
+- Conditional results check both branches, retain array/record metadata, and
+  apply lossless numeric widening before selection. Nested ternaries preserve
+  grouping in generated C.
+
+### Changed
+- `if`/`else` ownership joins check each branch independently and exclude paths
+  that return or throw. Loops permit moves of fresh iteration-local resources,
+  while bindings carried between iterations remain restricted. Returning branches
+  no longer poison ownership on the continuing path.
+- `switch`/`match` arms join ownership independently. A move on any arm reaching
+  after the statement blocks later reads; returning/throwing/continuing arms are
+  excluded; the no-match path counts unless the construct is exhaustive. Arms that
+  both move and contain `break`/`continue` are rejected until break-target joins
+  are modeled. Exception joins remain conservative.
+- `own` consumes local resource bindings in supported transfer
+  positions. Both compilers reject later reads, direct aliases, borrowed/escaped
+  moves, and unsupported conditional/callback transfers. Lexical arena reference
+  checks reject use after scope end and common escape paths; this is a restricted
+  checker rather than a complete memory-safety guarantee.
+- `when` expressions require one explicit final `else` arm.
+- Zero-byte arena/pool requests reserve one alignment unit; usage includes padding.
+
 ## [10.0.5] - 2026 — Baby Otter
 
 ### Added

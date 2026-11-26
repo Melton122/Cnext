@@ -17,6 +17,7 @@ static void report_defer_control(ASTNode* node, const char* keyword) {
 // constructors and operator declarations need the same treatment or a
 // `func new(Node n)` signature disagrees with its own call sites.
 static void define_parameter(ASTNode* param) {
+    sem_validate_nullable_type(param->var_type, param->type_is_nullable);
     param->lambda_depth = sem_lambda_depth;
     validate_type_token(param->var_type);
     char* type_name = type_name_from_token(param->var_type);
@@ -37,6 +38,11 @@ static void define_parameter(ASTNode* param) {
 }
 
 void analyze_function(ASTNode* node, bool define_name) {
+    sem_validate_nullable_type(node->return_type, node->return_is_nullable);
+    if (node->return_is_array && (node->is_generator || node->type == AST_ASYNC_FUNC_DECL || node->type == AST_COROUTINE_DECL))
+        report_token_error(ERR_SEM_TYPE_MISMATCH, node->token, "Array returns require an ordinary function:");
+    if (node->return_is_array && node->type_param_count > 0)
+        report_token_error(ERR_SEM_TYPE_MISMATCH, node->token, "Generic array returns are not yet supported:");
     if (define_name && !resolve_current_symbol(node->token)) {
         define_symbol(node->token, TOKEN_FUNC, true, NULL, node);
     }
@@ -77,6 +83,13 @@ void analyze_function(ASTNode* node, bool define_name) {
             node->is_class = true;
         }
     }
+    if (node->is_generator && node->yield_type.type == TOKEN_IDENTIFIER) {
+        Symbol* yield_sym = resolve_symbol(node->yield_type);
+        if (yield_sym && yield_sym->type == TOKEN_CLASS &&
+            yield_sym->decl_node && yield_sym->decl_node->type != AST_TYPE_ALIAS) {
+            node->yield_is_class = true;
+        }
+    }
 
     for (int i = 0; i < node->child_count; i++) {
         ASTNode* param = node->children[i];
@@ -91,12 +104,15 @@ void analyze_function(ASTNode* node, bool define_name) {
     // The return type types a `return input()` in the body.
     CnextTokenType saved_return_type = sem_current_return_type;
     Token saved_return_token = sem_current_return_token;
+    bool saved_return_array = sem_current_return_array;
     sem_current_return_type = node->return_type.type;
     sem_current_return_token = node->return_type;
+    sem_current_return_array = node->return_is_array;
     analyze_node(node->left);
     if (node->return_type.type == TOKEN_FUNC) node->closure_signature = ast_returned_closure(node->left);
     sem_current_return_type = saved_return_type;
     sem_current_return_token = saved_return_token;
+    sem_current_return_array = saved_return_array;
     sem_pop_scope();
     if (was_generator) generator_depth--;
 }
@@ -205,8 +221,7 @@ void analyze_assignment(ASTNode* node) {
             expected.length = (int)strlen(expected.start);
         }
         sem_check_cstr_conversion(expected, node->right);
-        sem_check_assignment_type(expected, node->right,
-                                  node->right ? node->right->expr_type : TOKEN_EOF);
+        sem_check_value_assignment(expected, sem_value_is_array(node->left), node->right);
     }
 
     if (node->right && node->right->type == AST_NULL_LITERAL) {
@@ -325,7 +340,14 @@ static CnextTokenType sem_for_in_element_type(ASTNode* iterable, char** type_nam
     if (decl->var_type.type == TOKEN_IDENTIFIER) {
         *type_name = decl->type_name ? copy_cstring(decl->type_name) :
                                        sem_copy_token_text(decl->var_type);
-        *is_class = decl->is_class;
+        // decl->is_class is only set for a non-array class reference, and an
+        // array's var_type is its *element* type. Resolve the element type
+        // symbol to decide whether the loop variable is a class reference,
+        // which codegen must dereference with '->'.
+        Symbol* elem_sym = resolve_symbol(decl->var_type);
+        *is_class = elem_sym && elem_sym->type == TOKEN_CLASS &&
+                    elem_sym->decl_node &&
+                    elem_sym->decl_node->type != AST_TYPE_ALIAS;
     }
     return decl->var_type.type;
 }
@@ -491,6 +513,11 @@ void analyze_node(ASTNode* node) {
                             node->init->type_name = element_name;
                             node->init->var_type.start = node->init->type_name;
                             node->init->var_type.length = (int)strlen(node->init->type_name);
+                            // Ownership moved to the node; freeing it here (the
+                            // previous behaviour) left node->init->type_name
+                            // dangling, corrupted the heap, and crashed the
+                            // compiler at exit for class-element arrays.
+                            element_name = NULL;
                         }
                         node->init->is_class = element_class;
                         node->init->expr_type = element_type;
@@ -606,6 +633,7 @@ void analyze_node(ASTNode* node) {
                 // return type is the context that types the read.
                 sem_apply_expected_type(node->left, sem_current_return_type);
                 CnextTokenType actual = analyze_expression(node->left);
+                sem_check_value_assignment(sem_current_return_token, sem_current_return_array, node->left);
                 if (sem_current_return_type == TOKEN_FUNC) sem_validate_closure_escape(node->left);
                 sem_check_cstr_conversion(sem_current_return_token, node->left);
                 Token expected = {.type = sem_current_return_type};
@@ -787,13 +815,13 @@ void analyze_node(ASTNode* node) {
             if (node->left) analyze_node(node->left);
             break;
         case AST_OWN_EXPR:
-            // own expr — analyze the expression, ownership is a semantic hint
-            if (node->left) analyze_expression(node->left);
+            analyze_expression(node);
             break;
         case AST_TYPE_ALIAS:
             // type MyType = OtherType — validate the target type exists and register the alias
             if (node->left) validate_type_token(node->left->token);
             define_type_symbol(node, TOKEN_CLASS);
+            sem_validate_alias(node);
             break;
         default:
             break;

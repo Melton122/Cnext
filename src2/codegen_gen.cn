@@ -70,6 +70,50 @@ func free_gen_locals(GenLocal? list) {
     }
 }
 
+// The frame's `current` slot holds whatever the generator yields: a
+// generator's element type, or an async function's return type. int is the
+// fallback when no type is declared (e.g. a bare generator).
+str g_gen_current_c_type = "int"
+bool g_gen_current_is_pointer = false
+bool g_gen_current_is_value_struct = false
+
+func gen_current_type_for(ASTNode? node) {
+    g_gen_current_c_type = "int"
+    g_gen_current_is_pointer = false
+    g_gen_current_is_value_struct = false
+    if node == null { return }
+    Token t = make_eof_token()
+    if node.kind == AST_ASYNC_FUNC_DECL {
+        if node.return_type.kind != TOKEN_EOF && node.return_type.kind != TOKEN_VAR {
+            t = node.return_type
+            g_gen_current_is_pointer = node.is_class || node.is_pointer
+        }
+    } else if node.yield_type.kind != TOKEN_EOF {
+        t = node.yield_type
+        g_gen_current_is_pointer = node.yield_is_class
+    }
+    if t.kind == TOKEN_EOF || t.kind == TOKEN_VAR || t.kind == TOKEN_ITER { return }
+    if t.kind == TOKEN_STR_TYPE || t.kind == TOKEN_FUNC {
+        g_gen_current_c_type = type_token_to_c_name(t.kind)
+        g_gen_current_is_value_struct = true
+    } else if t.kind == TOKEN_IDENTIFIER {
+        g_gen_current_c_type = t.text
+        g_gen_current_is_value_struct = true
+    }
+}
+
+func emit_current_zero() {
+    if g_gen_current_is_pointer {
+        codegen_emit("NULL")
+    } else if g_gen_current_is_value_struct {
+        // Braces via to_char: a literal "{0}" in a Cnext string would be
+        // parsed as interpolation of the expression 0.
+        codegen_emit("(" + g_gen_current_c_type + ")" + to_char(123) + "0" + to_char(125))
+    } else {
+        codegen_emit("0")
+    }
+}
+
 func generate_gen_body_node(ASTNode? node, GenLocal? all_vars) {
     if node == null { return }
 
@@ -79,7 +123,7 @@ func generate_gen_body_node(ASTNode? node, GenLocal? all_vars) {
         if node.left != null {
             generate_expression(node.left)
         } else {
-            codegen_emit("0")
+            emit_current_zero()
         }
         codegen_emit(");\n")
         codegen_emit("        f->_pc = ")
@@ -199,7 +243,7 @@ func generate_gen_body_node(ASTNode? node, GenLocal? all_vars) {
         if node.left != null {
             generate_expression(node.left)
         } else {
-            codegen_emit("0")
+            emit_current_zero()
         }
         codegen_emit(");\n")
     } else {
@@ -262,13 +306,18 @@ func generate_generator_code(ASTNode? node, str func_name): bool {
         l = l.next
     }
 
+    gen_current_type_for(node)
+
     str outer_output = codegen_flush_output()
     int outer_indent = g_indent_level
     codegen_output_set("")
     g_indent_level = 0
 
     codegen_emit("typedef struct {")
-    codegen_emit("\n    int _pc;\n    int current;\n    bool done;\n    int _received;\n    bool (*_next)(void*);\n")
+    codegen_emit("\n    int _pc;\n    ")
+    codegen_emit(g_gen_current_c_type)
+    if g_gen_current_is_pointer { codegen_emit("*") }
+    codegen_emit(" current;\n    bool done;\n    int _received;\n    bool (*_next)(void*);\n")
     p = params
     while p != null {
         codegen_emit("    ")
@@ -354,7 +403,9 @@ func generate_generator_code(ASTNode? node, str func_name): bool {
     codegen_emit(func_name)
     codegen_emit("_frame));\n")
     codegen_emit("    if (!f) { fprintf(stderr, \"Cnext runtime: out of memory.\\n\"); exit(70); }\n")
-    codegen_emit("    _cnext_track(f);\n    f->_pc = 0;\n    f->done = false;\n    f->current = 0;\n    f->_received = 0;\n")
+    codegen_emit("    _cnext_track(f);\n    f->_pc = 0;\n    f->done = false;\n    f->current = ")
+    emit_current_zero()
+    codegen_emit(";\n    f->_received = 0;\n")
     codegen_emit("    f->_next = _gen_")
     codegen_emit(func_name)
     codegen_emit("_next_v;\n")

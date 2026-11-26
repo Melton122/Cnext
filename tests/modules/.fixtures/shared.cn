@@ -1,0 +1,7 @@
+// Imported twice along two paths (diamond) — must be merged only once.
+// The counter is module-private; only `shared` is exported.
+int shared_counter = 0
+
+export func shared(): int {
+    return shared_counter
+}

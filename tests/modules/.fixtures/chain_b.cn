@@ -1,0 +1,6 @@
+// Relative import with an extensionless name
+import "./shared"
+
+export func chain_b(): int {
+    return 20 + shared()
+}

@@ -107,8 +107,12 @@ func parse_type(): ASTNode? {
             node.is_array = true
         }
 
-        // Nullable type: str?, int?, etc.
+        // Scalars require a tagged representation; do not silently erase '?'.
         if match_token(TOKEN_QUESTION) {
+            node.type_is_nullable = true
+            if node.is_array || (typeToken.kind != TOKEN_IDENTIFIER && typeToken.kind != TOKEN_STR_TYPE) {
+                error_at_current("Nullable scalar and array types are not supported; '?' requires a string or class reference.")
+            }
             node.is_pointer = true  // Reuse is_pointer flag for nullable
         }
 

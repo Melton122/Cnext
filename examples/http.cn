@@ -8,7 +8,7 @@ main {
     printin("Response length: " + response.length)
 
     // POST request
-    var data = '{"name": "Alice"}'
+    var data = "{\"name\": \"Alice\"}"
     str result = http_post("https://httpbin.org/post", data)
     printin("POST result length: " + result.length)
 }

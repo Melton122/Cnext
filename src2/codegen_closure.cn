@@ -69,6 +69,132 @@ func is_closure_argument(ASTNode node): bool {
         (node.kind == AST_IDENTIFIER && node.binding != null && node.binding.kind == AST_VAR_DECL)
 }
 
+// --- Adapting lambdas passed to untyped `func` parameters ---
+//
+// A `func` parameter is untyped, so a call through it inside the function
+// body uses a fixed `int`-based calling convention. A lambda whose real
+// signature works on other types (a float-returning discount, say) returns
+// its value in a different register, so calling it through the fixed
+// convention produced garbage. A lambda passed as a `func` argument gets a
+// static adapter that receives and returns `int`s, calls the real lambda
+// with its own types, and coerces the result. Only signatures that survive
+// the int round-trip (numeric/bool parameters and result, or void) adapt;
+// anything else keeps the direct pass-through.
+
+func int_abi_safe_kind(int kind): bool {
+    return kind == TOKEN_INT_TYPE || kind == TOKEN_LONG_TYPE ||
+        kind == TOKEN_FLOAT_TYPE || kind == TOKEN_DOUBLE_TYPE ||
+        kind == TOKEN_BOOL_TYPE || kind == TOKEN_CHAR_TYPE ||
+        kind == TOKEN_BYTE_TYPE || kind == TOKEN_UINT_TYPE ||
+        kind == TOKEN_ULONG_TYPE || kind == TOKEN_USHORT_TYPE ||
+        kind == TOKEN_UBYTE_TYPE
+}
+
+func lambda_signature_is_int_abi_safe(ASTNode? lambda): bool {
+    if lambda == null { return false }
+    if lambda.is_array { return false }
+    if lambda.return_type.kind != TOKEN_EOF && !int_abi_safe_kind(lambda.return_type.kind) { return false }
+    int i = 0
+    while i < len(lambda.children) {
+        if !int_abi_safe_kind(lambda.children[i].var_type.kind) { return false }
+        i = i + 1
+    }
+    return true
+}
+
+func adapter_lambda_for(ASTNode? arg): ASTNode? {
+    if arg == null { return null }
+    if arg.kind == AST_LAMBDA { return arg }
+    if arg.kind == AST_IDENTIFIER && arg.binding != null && arg.binding.kind == AST_VAR_DECL {
+        return sem_closure_lambda(arg.binding)
+    }
+    return null
+}
+
+// Emits a static `int`-ABI adapter for the lambda passed as the `index`th
+// argument of `call`, plus the wrapper expression that pairs the adapter with
+// a heap copy of the real closure. Returns false when the argument is not an
+// adaptable lambda (the caller falls back to the direct pass-through).
+func emit_func_param_adapter_value(ASTNode call, ASTNode? fdecl, int index): bool {
+    if fdecl == null || index >= len(fdecl.children) || index >= len(call.children) { return false }
+    var param = fdecl.children[index]
+    if param.var_type.kind != TOKEN_FUNC { return false }
+    var lambda = adapter_lambda_for(call.children[index])
+    if !lambda_signature_is_int_abi_safe(lambda) { return false }
+    var arg = call.children[index]
+
+    int id = g_adapt_counter
+    g_adapt_counter = g_adapt_counter + 1
+    bool ret_is_void = lambda.return_type.kind == TOKEN_EOF
+    str id_str = to_str(id)
+
+    str outer_output = codegen_flush_output()
+    codegen_output_set("")
+    codegen_emit("static int __cnext_adapt_" + id_str + "(void* _env")
+    int p = 0
+    while p < len(lambda.children) {
+        codegen_emit(", int _a" + to_str(p))
+        p = p + 1
+    }
+    codegen_emit(") {\n")
+    codegen_emit("    CnextClosure* _real = (CnextClosure*)_env;\n")
+    if ret_is_void {
+        codegen_emit("    ((")
+        codegen_emit_c_type(lambda.return_type, false, false)
+        codegen_emit("(*)(void*")
+        p = 0
+        while p < len(lambda.children) {
+            codegen_emit(", ")
+            generate_type(lambda.children[p].var_type, false)
+            p = p + 1
+        }
+        codegen_emit("))_real->fn)(_real->env")
+        p = 0
+        while p < len(lambda.children) {
+            codegen_emit(", (")
+            generate_type(lambda.children[p].var_type, false)
+            codegen_emit(")_a" + to_str(p))
+            p = p + 1
+        }
+        codegen_emit(");\n    return 0;\n}\n\n")
+    } else {
+        codegen_emit("    return (int)((")
+        codegen_emit_c_type(lambda.return_type, false, false)
+        codegen_emit("(*)(void*")
+        p = 0
+        while p < len(lambda.children) {
+            codegen_emit(", ")
+            generate_type(lambda.children[p].var_type, false)
+            p = p + 1
+        }
+        codegen_emit("))_real->fn)(_real->env")
+        p = 0
+        while p < len(lambda.children) {
+            codegen_emit(", (")
+            generate_type(lambda.children[p].var_type, false)
+            codegen_emit(")_a" + to_str(p))
+            p = p + 1
+        }
+        codegen_emit(");\n}\n\n")
+    }
+    g_lambda_helpers = g_lambda_helpers + codegen_flush_output()
+    codegen_output_set(outer_output)
+
+    // The adapter's environment is a heap cell holding a copy of the real
+    // closure. The call-site guard later decrefs the adapter closure, and
+    // cnext_closure_decref frees a non-owner env, so the cell must live on
+    // the heap - a stack address would be freed and then dereferenced.
+    codegen_emit("({ CnextClosure _adapt_real_" + id_str + " = ")
+    generate_expression(arg)
+    codegen_emit("; CnextClosure* _adapt_cell_" + id_str + " = (CnextClosure*)malloc(sizeof(CnextClosure)); *_adapt_cell_" + id_str + " = _adapt_real_" + id_str + "; (CnextClosure){ (void*)__cnext_adapt_" + id_str + ", (void*)_adapt_cell_" + id_str + ", 1 }; })")
+    return true
+}
+
+func find_callee_decl_for_adapter(ASTNode? call): ASTNode? {
+    if call == null || call.left == null || call.left.kind != AST_IDENTIFIER { return null }
+    return codegen_find_func_decl(call.left.token.text)
+}
+
 func emit_managed_closure_arguments(ASTNode call): bool {
     bool managed = false
     int i = 0
@@ -90,7 +216,12 @@ func emit_managed_closure_arguments(ASTNode call): bool {
             str id = to_str(i)
             str name = "_cnext_arg_" + id
             codegen_emit("CnextClosure " + name + " = ")
-            emit_owned_closure(originals[i])
+            // A lambda passed to an untyped `func` parameter gets an int-ABI
+            // adapter so the call through the parameter inside the callee
+            // body uses one calling convention.
+            if !emit_func_param_adapter_value(call, find_callee_decl_for_adapter(call), i) {
+                emit_owned_closure(originals[i])
+            }
             codegen_emit("; _CnextClosureGuard _cnext_arg_guard_" + id + " __attribute__((cleanup(_cnext_closure_guard_cleanup))) = ")
             codegen_emit("{")
             codegen_emit(" &" + name + ", _cnext_defer_count, true }; _cnext_defer_push(_cnext_closure_guard_run, &_cnext_arg_guard_" + id + "); ")

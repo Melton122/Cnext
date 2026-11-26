@@ -1,0 +1,18 @@
+func choose_flag(): bool { return true }
+func fraction_value(): float { return 0.5 }
+
+main {
+    bool flag = choose_flag()
+    int exact = 16777217
+    float fraction = fraction_value()
+    var number = flag ? exact : fraction
+    assert(number > 16777216.0)
+    var other = when { flag => exact, !flag => fraction, else => 0 }
+    assert(other > 16777216.0)
+    int[] first = {10}
+    int[] second = {20}
+    var selected = flag ? first : second
+    assert(selected[0] == 10)
+    assert(10 + (flag ? 1 : 2) == 11)
+    printin("conditional joins preserved")
+}

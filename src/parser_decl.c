@@ -460,8 +460,12 @@ static ASTNode* main_block() {
 
 static ASTNode* import_declaration() {
     ASTNode* node = create_node(AST_IMPORT, parser.previous);
-    // Accept identifier or 'thread' keyword as module name
-    if (check(TOKEN_IDENTIFIER) || check(TOKEN_THREAD)) {
+    if (check(TOKEN_STRING_LITERAL)) {
+        // Local file import: `import "./util.cn"`. The file was already merged
+        // by build_source_with_local_imports(); nothing is emitted for it.
+        advance_token();
+    } else if (check(TOKEN_IDENTIFIER) || check(TOKEN_THREAD)) {
+        // Accept identifier or 'thread' keyword as module name
         advance_token();
     } else {
         consume(TOKEN_IDENTIFIER, "Expect module name after import.");

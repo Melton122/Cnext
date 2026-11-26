@@ -1,6 +1,8 @@
 # Memory, ownership, and cleanup
 
-Cnext has no garbage collector and no borrow checker. Every value belongs to
+Cnext has no garbage collector. Its ownership checker covers the restricted
+transfers and arena references described below; it is not a complete borrow checker.
+Every value belongs to
 exactly one of the ownership regimes below. The regime decides who may free it,
 when cleanup runs, and whether it may cross a thread boundary.
 
@@ -20,6 +22,90 @@ Tracked allocations are reclaimed by `_cnext_free_all()` at process exit, so
 forgetting to free a value cannot leak past shutdown. Calling `free(s)` on a
 tracked string untracks it and releases it immediately; never use `s` again.
 
+`gc()` is a compatibility no-op. There is no tracing collector, so it cannot
+identify unreachable values. It never invalidates live values. Use explicit
+cleanup or arenas to bound memory use in long-running programs.
+
+## Checked transfers and scoped references
+
+`own` is an expression that consumes a local resource binding. Later reads of that
+binding, including interpolated strings, are errors. An unconditional assignment
+can initialize the binding again. Transfers preserve the operand's type and array
+shape; they add no runtime allocation or automatic destructor.
+
+```cnext
+var text = str_upper("hello")
+var transferred = own text
+printin(transferred)
+// printin(text) would be a use-after-move error.
+text = str_lower("AGAIN")
+```
+
+The implemented subset accepts transfers in variable initializers, assignment
+right sides, returns, and direct call/constructor arguments. It tracks direct
+local aliases and rejects moves of parameters, literals, captured values, values
+passed to unknown retaining calls, and arena-backed objects. Fresh objects, array
+literals, known allocating string builtins, and functions whose returns are
+syntactically fresh can provide movable values. Moving and borrowing the same
+value in one call is an error. Foreign/unknown calls cannot take checked ownership.
+
+`if`/`else` branches are checked independently. A binding moved on any continuing
+branch cannot be read after the join. Returning/throwing branches are excluded
+from the continuing path, and nested conditionals follow the same rule. A moved
+binding initialized on every continuing branch can be read again. When branches
+assign different resources, their merged value is conservatively borrowed and
+cannot be moved again. Call/capture effects also remain conservative.
+
+Loops allow moves of fresh values and resource bindings created inside the current
+loop body. A binding declared outside that body, including a `for` initializer,
+cannot move inside the loop. An inner loop likewise cannot move an outer loop's
+local value. Loops may run zero times: initialization inside a loop does not prove
+that a previously moved outer binding is available afterward. Assignments to
+outer bindings conservatively retain possible early-exit effects.
+
+`switch` and `match` arms are checked as independent branches. A move on any arm
+that reaches after the statement prevents later reads, while arms that return,
+throw, or continue are excluded from the continuing path. The no-match path is
+included unless the construct is exhaustive (`default`, or an unguarded `_` arm).
+Because a `break` exits only the switch, an arm that both moves and contains
+`break`/`continue` is rejected until break-target joins are modeled.
+
+Moves in conditions, ternary/`when`/short-circuit expressions, try execution,
+callbacks, deferred work, default arguments, and suspended functions remain
+rejected. These restrictions apply even when a condition appears constant.
+Non-owning calls may retain heap references, so the checker conservatively prevents
+later moves of those arguments.
+
+Class objects allocated while `mem_scope_begin()` is active carry that scope's
+lifetime through local aliases and conditional results. Reads after its end are
+errors. These references cannot be returned, thrown, captured, stored in fields,
+globals, arrays, or bindings predating the scope, or passed to potentially
+retaining calls (including methods). Known read/copy builtins can inspect them.
+Scope begin/end operations must be standalone and balanced within a lexical block.
+Register cleanup immediately to cover early exits and exception unwinding:
+
+```cnext
+{
+    mem_scope_begin()
+    defer mem_scope_end()
+    var node = new Node()
+    // Use node here; the deferred end runs when this block exits.
+}
+```
+
+A deferred end must refer to the most recent open scope in the same block. It
+cannot be combined with a manual end of that scope. Explicit return, throw,
+break, and continue paths with an open, non-deferred scope are rejected.
+Implicit exceptions from calls are not modeled; use deferred cleanup for them.
+
+This is not whole-program memory safety: explicit `free`/refcount releases,
+foreign retention, pointer aliases inside containers, threads, and arbitrary
+interprocedural effects (including allocation into a caller's ambient arena) still
+require manual discipline. Unsupported reference
+expressions are treated conservatively rather than granting unique ownership.
+Analysis limits are 4,096 local bindings, 4,095 resource groups per function,
+128 nested scopes, and 127 explicit call arguments; exceeding a limit is an error.
+
 ## C string interoperability
 
 `CStr` is a read-only C string pointer, separate from the `str` value type.
@@ -27,7 +113,7 @@ tracked string untracks it and releases it immediately; never use `s` again.
 Only this allocation may be released with `cstr_free`; null is a no-op.
 Borrowed C pointers and already released pointers are rejected. Copies of a
 `CStr` share the pointer, so releasing one invalidates every alias. Remaining
-owned conversions are reclaimed by `gc()` or process cleanup.
+owned conversions are reclaimed by process cleanup.
 
 `from_cstr(pointer)` copies the C text into a new tracked `str`. It neither
 retains nor releases the original pointer. The returned string remains valid
@@ -73,6 +159,19 @@ var scratch = mem_arena_alloc(arena, 1024)
   `mem_arena_destroy` releases both.
 - `mem_arena_usage` reports currently live bytes.
 - Values allocated from an arena must not outlive the arena.
+
+Arena allocations, including allocations larger than an arena block, are owned
+by the arena and released by bulk cleanup. The pool allocator follows the same
+rule for its oversized allocations. Both align ordinary allocations for the
+target C `max_align_t` (the MSVC runtime uses its `long double` alignment).
+Over-aligned foreign types still require a separate allocator.
+
+Zero-byte requests reserve one alignment unit. Usage includes alignment padding.
+Size-rounding/accounting overflow, a null allocation arena, and allocation failure
+terminate with runtime status 70. These failures do not leave the allocation lock
+held. Bulk cleanup is idempotent, and an arena may be reused after `mem_arena_free`.
+Do not destroy an arena or free its storage while another thread is using it;
+allocation/usage locking does not extend the lifetime of the arena handle.
 
 ## 3. Scoped ownership
 

@@ -1,0 +1,11 @@
+// Two modules may each define a private `helper` and a private `STEP`; only
+// the exported wrapper is visible to the importing file.
+const int STEP = 1
+
+func helper(): int {
+    return STEP
+}
+
+export func private_import_a(): int {
+    return helper() + STEP
+}

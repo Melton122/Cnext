@@ -1,6 +1,9 @@
 # Cnext Language Specification
 
 ## Overview
+This document is an introductory reference, not a complete normative specification.
+See [the production plan](production-plan.md) for language guarantees and remaining work.
+
 Cnext is a modern, beginner-friendly evolution of C. It maintains C's high performance and familiar syntax while removing unnecessary complexity like mandatory semicolons, manual memory management for strings (by default), and verbose loop syntax.
 
 ## File Extensions
@@ -18,7 +21,7 @@ main {
 Cnext is strongly typed.
 - `int`: Standard 32-bit integer.
 - `float`: Standard 32-bit floating point.
-- `str`: String type (mapped to C-strings or struct depending on implementation).
+- `str`: A pointer-and-length value (`CnextString`); it is distinct from C's `char*`.
 - `bool`: Boolean type (`true` or `false`).
 - `char`: Single ASCII character.
 

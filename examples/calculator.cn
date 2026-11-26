@@ -21,7 +21,7 @@ func divide(double a, double b): double {
     return a / b
 }
 
-func to_str(double val): str {
+func format_double(double val): str {
     var int_part = val as int
     var frac = val - int_part as double
     if frac < 0.001 && frac > -0.001 {
@@ -37,19 +37,19 @@ main {
 
     // Addition
     var r1 = add(2.0, 3.0)
-    printin("2 + 3 = " + to_str(r1))
+    printin("2 + 3 = " + format_double(r1))
 
     // Subtraction
     var r2 = subtract(10.0, 5.0)
-    printin("10 - 5 = " + to_str(r2))
+    printin("10 - 5 = " + format_double(r2))
 
     // Multiplication
     var r3 = multiply(4.0, 5.0)
-    printin("4 * 5 = " + to_str(r3))
+    printin("4 * 5 = " + format_double(r3))
 
     // Division
     var r4 = divide(20.0, 4.0)
-    printin("20 / 4 = " + to_str(r4))
+    printin("20 / 4 = " + format_double(r4))
 
     // Division by zero
     printin("")
@@ -60,13 +60,13 @@ main {
     printin("")
     printin("Combined operations:")
     var r6 = add(multiply(2.0, 3.0), multiply(4.0, 5.0))
-    printin("(2 * 3) + (4 * 5) = " + to_str(r6))
+    printin("(2 * 3) + (4 * 5) = " + format_double(r6))
 
     var r7 = multiply(add(2.0, 3.0), add(4.0, 1.0))
-    printin("(2 + 3) * (4 + 1) = " + to_str(r7))
+    printin("(2 + 3) * (4 + 1) = " + format_double(r7))
 
     var r8 = subtract(multiply(3.0, 4.0), divide(10.0, 2.0))
-    printin("(3 * 4) - (10 / 2) = " + to_str(r8))
+    printin("(3 * 4) - (10 / 2) = " + format_double(r8))
 
     printin("")
     printin("All operations completed!")

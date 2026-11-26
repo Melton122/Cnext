@@ -1,0 +1,154 @@
+// Self-hosting bootstrap: origin map
+// Port of src/origin_map.c
+//
+// Local imports paste imported sources ahead of the importing file, so every
+// line of the importing file moves. The map records which file each line of
+// the merged translation unit really came from, so diagnostics can report
+// `path:line:col` instead of a shifted line number in a nameless blob.
+//
+// Entries are contiguous blocks in ascending merged-line order. A lookup uses
+// the nearest block that starts at or before the requested line.
+
+class OriginEntry {
+    int merged_line   // First line of the block in the merged text
+    int line_count    // How many lines the block covers
+    int file_line     // Line in `file` that `merged_line` corresponds to
+    str file
+
+    func new(int merged, int count, int origin_line, str path) {
+        self.merged_line = merged
+        self.line_count = count
+        self.file_line = origin_line
+        self.file = path
+    }
+}
+
+class OriginMap {
+    OriginEntry[] entries
+    int count
+
+    func new() {
+        self.entries = {}
+        self.count = 0
+    }
+}
+
+// One expander's result: the merged text plus the map describing it.
+class Expansion {
+    str text
+    OriginMap map
+
+    func new(str merged_text, OriginMap origin_map) {
+        self.text = merged_text
+        self.map = origin_map
+    }
+}
+
+// Active map for diagnostics; null when no local imports were expanded.
+OriginMap g_origin_map = null
+
+func origin_map_create(): OriginMap {
+    return new OriginMap()
+}
+
+func origin_map_add(OriginMap map, int merged_line, int line_count, str file, int file_line) {
+    if map == null || file == null || merged_line < 1 || line_count < 1 {
+        return
+    }
+    int origin_line = file_line
+    if origin_line < 1 {
+        origin_line = 1
+    }
+    push(map.entries, new OriginEntry(merged_line, line_count, origin_line, file))
+    map.count = map.count + 1
+}
+
+func origin_map_shift(OriginMap map, int delta) {
+    if map == null || delta == 0 {
+        return
+    }
+    int i = 0
+    while i < map.count {
+        map.entries[i].merged_line = map.entries[i].merged_line + delta
+        i = i + 1
+    }
+}
+
+// Copy `source` entries into `target`, moved down by `delta` lines.
+func origin_map_append(OriginMap target, OriginMap source, int delta) {
+    if target == null || source == null {
+        return
+    }
+    int i = 0
+    while i < source.count {
+        OriginEntry entry = source.entries[i]
+        origin_map_add(target, entry.merged_line + delta, entry.line_count,
+                       entry.file, entry.file_line)
+        i = i + 1
+    }
+}
+
+// Number of newline characters in `text`: prepending it moves every line after
+// it down by exactly this much.
+func origin_newline_count(str text): int {
+    if text == null {
+        return 0
+    }
+    int count = 0
+    int n = len(text)
+    int i = 0
+    while i < n {
+        if str_char_at(text, i) == '\n' {
+            count = count + 1
+        }
+        i = i + 1
+    }
+    return count
+}
+
+// Number of lines in `text`, counting a final unterminated line.
+func origin_count_lines(str text): int {
+    if text == null || len(text) == 0 {
+        return 0
+    }
+    int lines = origin_newline_count(text)
+    if str_char_at(text, len(text) - 1) != '\n' {
+        lines = lines + 1
+    }
+    return lines
+}
+
+// `[file:line:col]`, or `[line:col]` when no map is active or the line falls
+// outside every mapped block.
+func origin_position(int line, int col): str {
+    str plain = "[" + to_str(line) + ":" + to_str(col) + "]"
+    if g_origin_map == null || g_origin_map.count == 0 || line < 1 {
+        return plain
+    }
+    int index = -1
+    int i = 0
+    while i < g_origin_map.count {
+        if g_origin_map.entries[i].merged_line > line {
+            break
+        }
+        index = i
+        i = i + 1
+    }
+    if index < 0 {
+        return plain
+    }
+    OriginEntry entry = g_origin_map.entries[index]
+    int offset = line - entry.merged_line
+    // Past the end of the block (e.g. a blank separator line): keep the
+    // block's file but stop pushing the line number out.
+    if offset >= entry.line_count {
+        offset = entry.line_count - 1
+    }
+    return "[" + entry.file + ":" + to_str(entry.file_line + offset) + ":" + to_str(col) + "]"
+}
+
+// The C version frees the map; the port's garbage collector owns the memory,
+// so this only drops the active map.
+func origin_map_deactivate() {
+    g_origin_map = null
+}

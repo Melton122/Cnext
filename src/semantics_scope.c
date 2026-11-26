@@ -12,6 +12,7 @@ int defer_lambda_depth = 0;
    input()` inside `func ask(): int` needs it to know which reader to use. */
 CnextTokenType sem_current_return_type = TOKEN_EOF;
 Token sem_current_return_token = {0};
+bool sem_current_return_array = false;
 int sem_lambda_depth = 0;
 
 char* copy_cstring(const char* value) {

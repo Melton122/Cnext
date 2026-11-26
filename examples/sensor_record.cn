@@ -76,7 +76,7 @@ func decode_record(str data): SensorRecord {
     }
     var record = new SensorRecord()
     record.status = status
-    record.sensor_channel = status ~> "??##_#???"
+    record.sensor_channel = (status ~> "??##_#???") as int
     record.ready = status ~= "1"
     record.temperature = u16_be_at(data, 2)
     record.humidity = u16_be_at(data, 4)
@@ -89,7 +89,7 @@ func encode_record(int status, int temperature, int humidity): str {
 }
 
 func set_sensor_channel(int status, int sensor_channel): int {
-    int current = status ~> "??##_#???"
+    int current = (status ~> "??##_#???") as int
     return status - current * 8 + sensor_channel * 8
 }
 

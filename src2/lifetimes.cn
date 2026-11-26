@@ -1,0 +1,703 @@
+// Checked ownership subset. Keep diagnostics and transfer rules in sync with src/lifetimes.c.
+int life_next_id = 0
+class LifeGroup {
+    int scope
+    bool borrowed
+    bool escaped
+    func new(int s, bool b) { self.scope = s self.borrowed = b self.escaped = false }
+}
+class LifeEntry {
+    ASTNode decl
+    int group
+    int birth
+    bool moved
+    bool parameter
+    func new(ASTNode d, int g, int b, bool p) {
+        self.decl = d self.group = g self.birth = b self.parameter = p self.moved = false
+    }
+}
+class LifeArena {
+    int id
+    int depth
+    bool deferred
+    func new(int i, int d) { self.id = i self.depth = d self.deferred = false }
+}
+class LifeState {
+    ASTNode root
+    LifeEntry[] entries
+    LifeGroup[] groups
+    LifeArena[] arenas
+    int entry_count
+    int arena_count
+    int next_scope
+    int depth
+    int control
+    int move_floor
+    bool stopped
+    func new(ASTNode r) {
+        self.root = r self.entries = {} self.groups = {} self.arenas = {}
+        push(self.groups, new LifeGroup(0, false))
+    }
+}
+func life_error(ASTNode node, str message) {
+    semantic_error_at("E101", node.token.line, node.token.col, message, "Check ownership and memory scope boundaries.")
+    has_semantic_error = true
+}
+func life_named(ASTNode? call, str name): bool {
+    return call != null && call.kind == AST_CALL && call.left != null &&
+        call.left.kind == AST_IDENTIFIER && call.left.token.text == name
+}
+func life_named_list(ASTNode? call, str names): bool {
+    if call == null || call.kind != AST_CALL || call.left == null || call.left.kind != AST_IDENTIFIER { return false }
+    var parts = str_split(names, "|")
+    int i = 0
+    while i < len(parts) {
+        if parts[i] == call.left.token.text { return true }
+        i = i + 1
+    }
+    return false
+}
+func life_fresh_call(ASTNode? node): bool {
+    return life_named_list(node, "str_upper|str_lower|str_trim|str_replace|str_repeat|to_str|read_file|input|to_cstr|from_cstr")
+}
+func life_safe_call(ASTNode? node): bool {
+    return life_fresh_call(node) || life_named_list(node, "print|printin|len|typeof|assert|debug|cstr_free|free")
+}
+func life_constructs(ASTNode? node): bool {
+    if node == null { return false }
+    if node.kind == AST_OWN_EXPR || life_named(node, "mem_scope_begin") || life_named(node, "mem_scope_end") { return true }
+    if life_constructs(node.left) || life_constructs(node.right) || life_constructs(node.condition) ||
+        life_constructs(node.init) || life_constructs(node.increment) || life_constructs(node.default_value) { return true }
+    int i = 0
+    while i < len(node.children) {
+        if life_constructs(node.children[i]) { return true }
+        i = i + 1
+    }
+    return false
+}
+func life_resource(ASTNode? node): bool {
+    if node == null { return false }
+    return node.is_array || node.is_class || node.kind == AST_NEW_EXPR || node.expr_type == TOKEN_STR_TYPE ||
+        node.var_type.kind == TOKEN_STR_TYPE || node.var_type.kind == TOKEN_IDENTIFIER || node.expr_type == TOKEN_IDENTIFIER
+}
+func life_group(LifeState state, int scope, bool borrowed): int {
+    if len(state.groups) >= 4096 { life_error(state.root, "Too many resource values for lifetime analysis:") return 0 }
+    int id = len(state.groups)
+    push(state.groups, new LifeGroup(scope, borrowed))
+    return id
+}
+func life_scope_join(int a, int b): int { if a > b { return a } return b }
+func life_entry(LifeState state, ASTNode? binding): LifeEntry? {
+    if binding == null || binding.lifetime_id == 0 { return null }
+    int i = state.entry_count - 1
+    while i >= 0 {
+        if state.entries[i].decl.lifetime_id == binding.lifetime_id { return state.entries[i] }
+        i = i - 1
+    }
+    return null
+}
+func life_scope_active(LifeState state, int scope): bool {
+    if scope == 0 { return true }
+    int i = 0
+    while i < state.arena_count {
+        if state.arenas[i].id == scope { return true }
+        i = i + 1
+    }
+    return false
+}
+func life_carried(LifeState state, LifeEntry entry): bool {
+    int i = 0
+    while i < state.move_floor {
+        if state.entries[i].decl.lifetime_id == entry.decl.lifetime_id { return true }
+        i = i + 1
+    }
+    return false
+}
+func life_current_scope(LifeState state): int {
+    if state.arena_count == 0 { return 0 }
+    return state.arenas[state.arena_count - 1].id
+}
+func life_read(LifeState state, LifeEntry entry, ASTNode use) {
+    if entry.moved { life_error(use, "Use of moved binding:") }
+    if entry.group != 0 && !life_scope_active(state, state.groups[entry.group].scope) {
+        life_error(use, "Use of value after its memory scope ended:")
+    }
+}
+func life_add(LifeState state, ASTNode decl, int group, bool parameter) {
+    if state.entry_count >= 4096 { life_error(decl, "Too many bindings for lifetime analysis:") return }
+    life_next_id = life_next_id + 1
+    decl.lifetime_id = life_next_id
+    var entry = new LifeEntry(decl, group, state.next_scope, parameter)
+    if state.entry_count < len(state.entries) { state.entries[state.entry_count] = entry }
+    else { push(state.entries, entry) }
+    state.entry_count = state.entry_count + 1
+}
+func life_alias_count(LifeState state, int group): int {
+    int count = 0
+    int i = 0
+    while i < state.entry_count {
+        if !state.entries[i].moved && state.entries[i].group == group { count = count + 1 }
+        i = i + 1
+    }
+    return count
+}
+// Binding snapshots are deep copies; resource groups keep unique identities.
+func life_snapshot(LifeState state, int count): LifeEntry[] {
+    LifeEntry[] result = {}
+    int i = 0
+    while i < count {
+        var entry = state.entries[i]
+        var copy = new LifeEntry(entry.decl, entry.group, entry.birth, entry.parameter)
+        copy.moved = entry.moved
+        push(result, copy)
+        i = i + 1
+    }
+    return result
+}
+func life_restore(LifeState state, LifeEntry[] entries, int count) {
+    int i = 0
+    while i < count {
+        var entry = entries[i]
+        var copy = new LifeEntry(entry.decl, entry.group, entry.birth, entry.parameter)
+        copy.moved = entry.moved
+        state.entries[i] = copy
+        i = i + 1
+    }
+    state.entry_count = count
+    state.stopped = false
+}
+func life_merge(LifeState state, LifeEntry[] other, int count) {
+    int i = 0
+    while i < count {
+        var entry = state.entries[i]
+        entry.moved = entry.moved || other[i].moved
+        if entry.group != other[i].group {
+            int a = entry.group
+            int b = other[i].group
+            int scope = 0
+            if a != 0 { state.groups[a].escaped = true scope = state.groups[a].scope }
+            if b != 0 { state.groups[b].escaped = true scope = life_scope_join(scope, state.groups[b].scope) }
+            entry.group = life_group(state, scope, true)
+        }
+        i = i + 1
+    }
+    state.entry_count = count
+}
+func life_owned_result(ASTNode? expr, int depth): bool {
+    if expr == null || depth > 32 { return false }
+    if expr.kind == AST_OWN_EXPR || expr.kind == AST_NEW_EXPR || expr.kind == AST_LITERAL_ARRAY || life_fresh_call(expr) { return true }
+    return expr.kind == AST_TERNARY && life_owned_result(expr.left, depth + 1) && life_owned_result(expr.right, depth + 1)
+}
+class LifeReturns {
+    bool found
+    bool fresh
+    func new() { self.found = false self.fresh = true }
+}
+func life_returns(ASTNode? body, LifeReturns result) {
+    if body == null || body.kind == AST_LAMBDA { return }
+    if body.kind == AST_RETURN {
+        result.found = true result.fresh = result.fresh && life_owned_result(body.left, 0) return
+    }
+    life_returns(body.left, result) life_returns(body.right, result)
+    int i = 0
+    while i < len(body.children) { life_returns(body.children[i], result) i = i + 1 }
+}
+class LifeScan {
+    bool move
+    bool brk
+    bool cont
+    func new() { self.move = false self.brk = false self.cont = false }
+}
+func life_scan(ASTNode? node, LifeScan scan) {
+    if node == null || node.kind == AST_LAMBDA || node.kind == AST_FUNC_DECL { return }
+    if node.kind == AST_OWN_EXPR { scan.move = true }
+    if node.kind == AST_BREAK { scan.brk = true }
+    if node.kind == AST_CONTINUE { scan.cont = true }
+    life_scan(node.left, scan) life_scan(node.right, scan) life_scan(node.condition, scan)
+    life_scan(node.init, scan) life_scan(node.increment, scan) life_scan(node.default_value, scan)
+    int i = 0
+    while i < len(node.children) { life_scan(node.children[i], scan) i = i + 1 }
+}
+func life_restore_flat(LifeState state, LifeEntry[] flat, int offset, int count) {
+    int i = 0
+    while i < count {
+        var entry = flat[offset + i]
+        var copy = new LifeEntry(entry.decl, entry.group, entry.birth, entry.parameter)
+        copy.moved = entry.moved
+        state.entries[i] = copy
+        i = i + 1
+    }
+    state.entry_count = count
+    state.stopped = false
+}
+func life_merge_flat(LifeState state, LifeEntry[] flat, int offset, int count) {
+    int i = 0
+    while i < count {
+        var entry = state.entries[i]
+        var other = flat[offset + i]
+        entry.moved = entry.moved || other.moved
+        if entry.group != other.group {
+            int a = entry.group
+            int b = other.group
+            int scope = 0
+            if a != 0 { state.groups[a].escaped = true scope = state.groups[a].scope }
+            if b != 0 { state.groups[b].escaped = true scope = life_scope_join(scope, state.groups[b].scope) }
+            entry.group = life_group(state, scope, true)
+        }
+        i = i + 1
+    }
+    state.entry_count = count
+}
+func life_alpha(char c): bool { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' }
+func life_interpolation(LifeState state, ASTNode node, bool capture) {
+    if node.token.kind != TOKEN_STRING_LITERAL { return }
+    str text = node.token.text
+    bool inside = false
+    int p = 0
+    while p < len(text) {
+        if text[p] == '{' { inside = true p = p + 1 continue }
+        if text[p] == '}' { inside = false p = p + 1 continue }
+        if inside && life_alpha(text[p]) {
+            int start = p
+            p = p + 1
+            while p < len(text) && (life_alpha(text[p]) || (text[p] >= '0' && text[p] <= '9')) { p = p + 1 }
+            if start > 0 && text[start - 1] == '.' { continue }
+            int i = state.entry_count - 1
+            while i >= 0 {
+                var entry = state.entries[i]
+                if entry.decl.token.text == text[start:p] {
+                    life_read(state, entry, node)
+                    if capture && entry.group != 0 {
+                        if state.groups[entry.group].scope != 0 { life_error(node, "Scoped references cannot be captured by callbacks or deferred work:") }
+                        state.groups[entry.group].escaped = true
+                    }
+                    break
+                }
+                i = i - 1
+            }
+        } else { p = p + 1 }
+    }
+}
+func life_capture(LifeState state, ASTNode? node) {
+    if node == null { return }
+    if node.kind == AST_OWN_EXPR { life_error(node, "Moves in callbacks or deferred work are not supported:") return }
+    if life_named(node, "mem_scope_begin") || life_named(node, "mem_scope_end") {
+        life_error(node, "Memory scopes in callbacks or deferred work are not supported:") return
+    }
+    if node.kind == AST_IDENTIFIER {
+        var entry = life_entry(state, node.binding)
+        if entry != null {
+            life_read(state, entry, node)
+            if entry.group != 0 {
+                if state.groups[entry.group].scope != 0 { life_error(node, "Scoped references cannot be captured by callbacks or deferred work:") }
+                state.groups[entry.group].escaped = true
+            }
+        }
+    }
+    if node.kind == AST_LITERAL { life_interpolation(state, node, true) }
+    life_capture(state, node.left) life_capture(state, node.right) life_capture(state, node.condition)
+    life_capture(state, node.init) life_capture(state, node.increment)
+    life_capture(state, node.default_value)
+    int i = 0
+    while i < len(node.children) { life_capture(state, node.children[i]) i = i + 1 }
+}
+func life_value(LifeState state, ASTNode? node, bool transfer): int {
+    if node == null { return 0 }
+    if node.kind == AST_IDENTIFIER {
+        var entry = life_entry(state, node.binding)
+        if entry != null { life_read(state, entry, node) return entry.group }
+        if life_resource(node) { return life_group(state, 0, true) }
+        return 0
+    }
+    if node.kind == AST_OWN_EXPR {
+        if !transfer || state.control != 0 { life_error(node, "own requires an unconditional transfer position:") }
+        int group = life_value(state, node.left, false)
+        LifeEntry? entry = null
+        if node.left != null && node.left.kind == AST_IDENTIFIER { entry = life_entry(state, node.left.binding) }
+        bool fresh_position = node.left != null && (node.left.kind == AST_CALL || node.left.kind == AST_NEW_EXPR || node.left.kind == AST_LITERAL_ARRAY)
+        if (entry == null && !fresh_position) || (entry != null && entry.parameter) || group == 0 {
+            life_error(node, "own requires a local resource binding or a fresh value:") return group
+        }
+        if entry != null && life_carried(state, entry) { life_error(node, "Cannot move a binding carried between loop iterations:") }
+        if state.groups[group].scope != 0 { life_error(node, "Cannot move a value out of an arena scope:") }
+        if state.groups[group].borrowed || state.groups[group].escaped { life_error(node, "Cannot move a borrowed, captured, or escaped value:") }
+        if entry != null && life_alias_count(state, group) > 1 { life_error(node, "Cannot move an aliased value:") }
+        if entry != null { entry.moved = true }
+        return group
+    }
+    if node.kind == AST_LITERAL {
+        life_interpolation(state, node, false)
+        if life_resource(node) { return life_group(state, 0, true) }
+        return 0
+    }
+    if node.kind == AST_NULL_LITERAL { return 0 }
+    if node.kind == AST_LITERAL_ARRAY {
+        int i = 0
+        while i < len(node.children) {
+            int group = life_value(state, node.children[i], false)
+            if group != 0 {
+                if state.groups[group].scope != 0 { life_error(node, "Scoped reference cannot escape through an array:") }
+                state.groups[group].escaped = true
+            }
+            i = i + 1
+        }
+        return life_group(state, 0, false)
+    }
+    if node.kind == AST_LAMBDA { life_capture(state, node) return 0 }
+    if node.kind == AST_MEMBER_ACCESS || node.kind == AST_INDEX || node.kind == AST_SLICE {
+        int parent = life_value(state, node.left, false)
+        life_value(state, node.right, false)
+        if node.kind == AST_SLICE { return parent }
+        if parent != 0 && life_resource(node) {
+            state.groups[parent].escaped = true
+            return life_group(state, state.groups[parent].scope, true)
+        }
+        return 0
+    }
+    if node.kind == AST_TERNARY || node.kind == AST_WHEN {
+        life_value(state, node.condition, false)
+        state.control = state.control + 1
+        int result = 0
+        if node.kind == AST_TERNARY {
+            int a = life_value(state, node.left, false)
+            int b = life_value(state, node.right, false)
+            if a == b { result = a }
+            else {
+                int scope = 0
+                if a != 0 { scope = state.groups[a].scope }
+                if b != 0 { scope = life_scope_join(scope, state.groups[b].scope) }
+                if a != 0 { state.groups[a].escaped = true }
+                if b != 0 { state.groups[b].escaped = true }
+                if a != 0 || b != 0 { result = life_group(state, scope, true) }
+            }
+        } else {
+            int i = 0
+            while i < len(node.children) {
+                var arm = node.children[i]
+                life_value(state, arm.condition, false)
+                int group = life_value(state, arm.left, false)
+                if group != 0 {
+                    state.groups[group].escaped = true
+                    int scope = state.groups[group].scope
+                    if result != 0 { scope = life_scope_join(scope, state.groups[result].scope) }
+                    result = life_group(state, scope, true)
+                }
+                i = i + 1
+            }
+        }
+        state.control = state.control - 1
+        return result
+    }
+    if node.kind == AST_CALL || node.kind == AST_NEW_EXPR {
+        if life_named(node, "mem_scope_begin") || life_named(node, "mem_scope_end") {
+            life_error(node, "Memory-scope operations require a standalone statement:") return 0
+        }
+        bool safe = life_safe_call(node)
+        ASTNode? callee = null
+        if node.left != null { callee = node.left.binding }
+        int[] groups = {}
+        bool[] moved = {}
+        if len(node.children) > 127 { life_error(node, "Too many arguments for lifetime analysis:") return 0 }
+        if node.kind == AST_CALL && node.left != null && node.left.kind != AST_IDENTIFIER {
+            var receiver = node.left
+            if receiver.kind == AST_MEMBER_ACCESS { receiver = receiver.left }
+            int group = life_value(state, receiver, false)
+            if group != 0 { push(groups, group) push(moved, false) }
+        }
+        int i = 0
+        while i < len(node.children) {
+            var arg = node.children[i]
+            if arg.kind == AST_NAMED_ARG { arg = arg.right }
+            int group = life_value(state, arg, true)
+            bool move = arg.kind == AST_OWN_EXPR
+            if move && !safe && node.kind != AST_NEW_EXPR && (callee == null || callee.left == null) {
+                life_error(arg, "Ownership transfer to foreign or unknown calls is not supported:")
+            }
+            if group != 0 {
+                int j = 0
+                while j < len(groups) {
+                    if groups[j] == group && (move || moved[j]) { life_error(arg, "Cannot move and borrow the same value in one call:") }
+                    j = j + 1
+                }
+                push(groups, group) push(moved, move)
+            }
+            i = i + 1
+        }
+        i = 0
+        while i < len(groups) {
+            if !safe && !moved[i] {
+                if state.groups[groups[i]].scope != 0 { life_error(node, "Scoped references cannot escape through calls:") }
+                state.groups[groups[i]].escaped = true
+            }
+            i = i + 1
+        }
+        if node.kind == AST_NEW_EXPR { return life_group(state, life_current_scope(state), false) }
+        if life_resource(node) || life_fresh_call(node) {
+            var result = new LifeReturns()
+            if callee != null && callee.left != null { life_returns(callee.left, result) }
+            int scope = 0
+            if node.is_class || node.expr_type == TOKEN_IDENTIFIER { scope = life_current_scope(state) }
+            return life_group(state, scope, !(life_fresh_call(node) || (result.found && result.fresh)))
+        }
+        return 0
+    }
+    if node.kind == AST_ASSIGN { life_node(state, node) return 0 }
+    int scope = 0
+    state.control = state.control + 1
+    ASTNode[] parts = {node.left, node.right, node.condition}
+    int i = 0
+    while i < 3 + len(node.children) {
+        ASTNode? part = null
+        if i < 3 { part = parts[i] } else { part = node.children[i - 3] }
+        int group = life_value(state, part, false)
+        if group != 0 && life_resource(node) {
+            state.groups[group].escaped = true
+            scope = life_scope_join(scope, state.groups[group].scope)
+        }
+        i = i + 1
+    }
+    state.control = state.control - 1
+    if life_resource(node) { return life_group(state, scope, true) }
+    return 0
+}
+func life_end(LifeState state, ASTNode node, bool deferred) {
+    if state.arena_count == 0 || (!deferred && state.arenas[state.arena_count - 1].depth != state.depth) {
+        life_error(node, "Memory scopes must be balanced in their lexical block:") return
+    }
+    if !deferred && state.arenas[state.arena_count - 1].deferred {
+        life_error(node, "Memory scope is already scheduled for deferred cleanup:") return
+    }
+    state.arena_count = state.arena_count - 1
+}
+func life_node(LifeState state, ASTNode? node) {
+    if node == null || state.stopped { return }
+    if node.kind == AST_BLOCK || node.kind == AST_MAIN {
+        if node.kind == AST_MAIN { life_node(state, node.left) return }
+        int entries = state.entry_count
+        int arenas = state.arena_count
+        state.depth = state.depth + 1
+        int i = 0
+        while i < len(node.children) { life_node(state, node.children[i]) i = i + 1 }
+        while state.arena_count > arenas {
+            if !state.arenas[state.arena_count - 1].deferred { life_error(node, "Memory scope may leave without cleanup; close it or defer its end:") }
+            life_end(state, node, true)
+        }
+        state.entry_count = entries
+        state.depth = state.depth - 1
+    } else if node.kind == AST_VAR_DECL {
+        int group = life_value(state, node.init, true)
+        life_add(state, node, group, false)
+    } else if node.kind == AST_ASSIGN {
+        LifeEntry? entry = null
+        if node.left != null && node.left.kind == AST_IDENTIFIER { entry = life_entry(state, node.left.binding) }
+        if entry == null || node.token.kind != TOKEN_EQUAL { life_value(state, node.left, false) }
+        int group = life_value(state, node.right, true)
+        if entry != null {
+            if node.right != null && node.right.kind == AST_OWN_EXPR && node.right.left != null &&
+                node.right.left.binding != null && node.right.left.binding.lifetime_id == entry.decl.lifetime_id {
+                life_error(node, "Cannot move a binding into itself:")
+            }
+            if group != 0 && state.groups[group].scope != 0 && entry.birth < state.groups[group].scope {
+                life_error(node, "Scoped reference cannot be stored in an outer binding:")
+            }
+            if state.control != 0 || life_carried(state, entry) {
+                if entry.group != 0 { state.groups[entry.group].escaped = true }
+                if group != 0 { state.groups[group].escaped = true }
+                int scope = 0
+                if entry.group != 0 { scope = state.groups[entry.group].scope }
+                if group != 0 { scope = life_scope_join(scope, state.groups[group].scope) }
+                if entry.group != 0 || group != 0 { group = life_group(state, scope, true) }
+            } else { entry.moved = false }
+            entry.group = group
+        } else if group != 0 {
+            if state.groups[group].scope != 0 { life_error(node, "Scoped reference cannot escape through fields or globals:") }
+            state.groups[group].escaped = true
+        }
+    } else if node.kind == AST_RETURN || node.kind == AST_THROW || node.kind == AST_BREAK || node.kind == AST_CONTINUE {
+        int group = life_value(state, node.left, true)
+        if group != 0 && state.groups[group].scope != 0 { life_error(node, "Scoped reference cannot be returned or thrown:") }
+        int i = 0
+        while i < state.arena_count {
+            if !state.arenas[i].deferred { life_error(node, "Memory scope may leave without cleanup; close it or defer its end:") }
+            i = i + 1
+        }
+        state.stopped = true
+    } else if node.kind == AST_DEFER {
+        var value = node.left
+        if value != null && value.kind == AST_BLOCK && len(value.children) == 1 { value = value.children[0] }
+        if value != null && value.kind == AST_EXPR_STMT { value = value.left }
+        if life_named(value, "mem_scope_end") {
+            if state.arena_count == 0 || state.arenas[state.arena_count - 1].depth != state.depth || state.arenas[state.arena_count - 1].deferred {
+                life_error(node, "Deferred scope cleanup requires one open local memory scope:")
+            } else { state.arenas[state.arena_count - 1].deferred = true }
+        } else { life_capture(state, node.left) }
+    } else if node.kind == AST_EXPR_STMT && life_named(node.left, "mem_scope_begin") {
+        if state.arena_count == 128 { life_error(node, "Too many nested memory scopes:") return }
+        state.next_scope = state.next_scope + 1
+        var arena = new LifeArena(state.next_scope, state.depth)
+        if state.arena_count < len(state.arenas) { state.arenas[state.arena_count] = arena }
+        else { push(state.arenas, arena) }
+        state.arena_count = state.arena_count + 1
+    } else if node.kind == AST_EXPR_STMT && life_named(node.left, "mem_scope_end") {
+        life_end(state, node, false)
+    } else if node.kind == AST_IF {
+        state.control = state.control + 1
+        life_value(state, node.condition, false)
+        state.control = state.control - 1
+        int entries = state.entry_count
+        var before = life_snapshot(state, entries)
+        life_node(state, node.left)
+        bool left_stopped = state.stopped
+        var left = life_snapshot(state, entries)
+        life_restore(state, before, entries)
+        life_node(state, node.right)
+        bool right_stopped = state.stopped
+        if right_stopped { life_restore(state, left, entries) }
+        else if !left_stopped { life_merge(state, left, entries) }
+        state.stopped = left_stopped && right_stopped
+    } else if node.kind == AST_WHILE || node.kind == AST_FOR || node.kind == AST_FOR_IN {
+        int entries = state.entry_count
+        int floor = state.move_floor
+        life_node(state, node.init)
+        int loop_entries = state.entry_count
+        var before = life_snapshot(state, loop_entries)
+        state.move_floor = loop_entries
+        state.control = state.control + 1
+        life_value(state, node.condition, false)
+        state.control = state.control - 1
+        life_node(state, node.left)
+        state.stopped = false
+        state.control = state.control + 1
+        life_node(state, node.increment)
+        state.control = state.control - 1
+        life_merge(state, before, loop_entries)
+        state.entry_count = entries
+        state.move_floor = floor
+    } else if node.kind == AST_SWITCH || node.kind == AST_MATCH {
+        int entries = state.entry_count
+        state.control = state.control + 1
+        life_value(state, node.condition, false)
+        state.control = state.control - 1
+        var before = life_snapshot(state, entries)
+        int branches = len(node.children)
+        LifeEntry[] results = {}
+        bool[] continues = {}
+        bool has_default = false
+        int i = 0
+        while i < branches {
+            var arm = node.children[i]
+            if arm.kind == AST_DEFAULT { has_default = true }
+            if arm.kind == AST_MATCH_ARM && arm.is_const && arm.condition == null { has_default = true }
+            var scan = new LifeScan()
+            life_scan(arm.left, scan)
+            if scan.move && (scan.brk || scan.cont) {
+                life_error(arm, "Moves in switch/match arms containing break or continue are not supported:")
+            }
+            life_restore(state, before, entries)
+            life_node(state, arm)
+            // A break exits only the switch, so that arm still reaches the code
+            // after it. Other terminating exits leave the construct entirely.
+            push(continues, !state.stopped || scan.brk)
+            var snap = life_snapshot(state, entries)
+            int k = 0
+            while k < entries { push(results, snap[k]) k = k + 1 }
+            i = i + 1
+        }
+        int first = -1
+        i = 0
+        while i < branches { if continues[i] { first = i break } i = i + 1 }
+        if first < 0 {
+            // Without a default, the no-match path still reaches after the switch.
+            life_restore(state, before, entries)
+            state.stopped = has_default && branches > 0
+        } else if has_default {
+            life_restore_flat(state, results, first * entries, entries)
+            i = first + 1
+            while i < branches {
+                if continues[i] { life_merge_flat(state, results, i * entries, entries) }
+                i = i + 1
+            }
+            state.stopped = false
+        } else {
+            life_restore(state, before, entries)
+            i = 0
+            while i < branches {
+                if continues[i] { life_merge_flat(state, results, i * entries, entries) }
+                i = i + 1
+            }
+            state.stopped = false
+        }
+    } else if node.kind == AST_TRY {
+        int entries = state.entry_count
+        life_node(state, node.init)
+        state.control = state.control + 1
+        life_node(state, node.condition)
+        state.stopped = false
+        life_node(state, node.left) state.stopped = false
+        life_node(state, node.right) state.stopped = false
+        life_node(state, node.increment) state.stopped = false
+        int i = 0
+        while i < len(node.children) {
+            life_node(state, node.children[i]) state.stopped = false i = i + 1
+        }
+        state.control = state.control - 1
+        state.entry_count = entries
+        // Exception joins remain conservative sequential analysis for now.
+        state.stopped = false
+    } else if node.kind == AST_FUNC_DECL || node.kind == AST_LAMBDA {
+        life_capture(state, node)
+    } else if node.kind == AST_EXPR_STMT { life_value(state, node.left, false) }
+    else if node.kind == AST_DESTRUCTURE { life_capture(state, node) }
+    else if node.kind == AST_CATCH || node.kind == AST_CASE || node.kind == AST_DEFAULT ||
+        node.kind == AST_MATCH_ARM || node.kind == AST_BENCH_DECL {
+        life_value(state, node.condition, false)
+        life_node(state, node.left) life_node(state, node.right)
+        int i = 0
+        while i < len(node.children) { life_node(state, node.children[i]) i = i + 1 }
+    } else { life_value(state, node, false) }
+}
+func life_function(ASTNode function) {
+    if function.left == null { return }
+    int parameter_index = 0
+    while parameter_index < len(function.children) {
+        var parameter = function.children[parameter_index]
+        if life_constructs(parameter.default_value) { life_error(parameter, "Ownership and memory scopes are not supported in default arguments:") }
+        parameter_index = parameter_index + 1
+    }
+    if function.is_generator || function.kind == AST_ASYNC_FUNC_DECL || function.kind == AST_COROUTINE_DECL {
+        if life_constructs(function.left) { life_error(function, "Ownership and memory scopes are not supported in suspended functions:") }
+        return
+    }
+    var state = new LifeState(function)
+    int i = 0
+    while i < len(function.children) {
+        var param = function.children[i]
+        if param.kind == AST_VAR_DECL {
+            int group = 0
+            if life_resource(param) { group = life_group(state, 0, true) }
+            life_add(state, param, group, true)
+        }
+        i = i + 1
+    }
+    life_node(state, function.left)
+}
+func analyze_lifetimes(ASTNode program) {
+    if !life_constructs(program) { return }
+    life_next_id = 0
+    int i = 0
+    while i < len(program.children) {
+        var node = program.children[i]
+        if node.kind == AST_MAIN || node.kind == AST_TEST || node.kind == AST_FUNC_DECL ||
+            node.kind == AST_ASYNC_FUNC_DECL || node.kind == AST_COROUTINE_DECL { life_function(node) }
+        else if node.kind == AST_CLASS_DECL || node.kind == AST_STRUCT_DECL {
+            int j = 0
+            while j < len(node.children) {
+                var member = node.children[j]
+                if member.kind == AST_FUNC_DECL || member.kind == AST_CONSTRUCTOR || member.kind == AST_OPERATOR_DECL { life_function(member) }
+                else if life_constructs(member) { life_error(member, "Ownership and memory scopes require a supported function body:") }
+                j = j + 1
+            }
+        } else if life_constructs(node) { life_error(node, "Ownership and memory scopes require a function body:") }
+        i = i + 1
+    }
+}

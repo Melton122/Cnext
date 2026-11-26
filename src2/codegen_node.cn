@@ -11,6 +11,15 @@ bool g_codegen_func_returns_void = false
 bool g_codegen_in_main = false
 bool g_codegen_main_cleanup_used = false
 
+func expression_is_void_call(ASTNode? node): bool {
+    if node == null || node.kind != AST_CALL || node.left == null || node.left.kind != AST_IDENTIFIER { return false }
+    ASTNode? callee = node.left.binding
+    if callee == null { return false }
+    if callee.kind != AST_FUNC_DECL && callee.kind != AST_ASYNC_FUNC_DECL &&
+        callee.kind != AST_COROUTINE_DECL { return false }
+    return callee.return_type.kind == TOKEN_EOF
+}
+
 func codegen_init(ASTNode? program) {
     codegen_output_set("#include \"runtime.h\"\n\n")
     g_codegen_current_class = ""
@@ -24,6 +33,8 @@ func codegen_init(ASTNode? program) {
     g_codegen_main_cleanup_used = false
     g_codegen_program = program
     g_lambda_counter = 0
+    g_adapt_counter = 0
+    g_interp_lambdas = null
     g_lambda_helpers = ""
     g_generator_helper_chunks = {}
     g_active_captures = null
@@ -61,12 +72,7 @@ func generate_program(ASTNode? program) {
     if test_count > 0 { codegen_emit("\n") }
     i = 0
     while i < n {
-        ASTNode? node = program.children[i]
-        if node != null && node.kind == AST_CLASS_DECL {
-            g_codegen_class_names = g_codegen_class_names + node.token.text + "|"
-        } else if node != null && node.kind == AST_STRUCT_DECL {
-            g_codegen_struct_names = g_codegen_struct_names + node.token.text + "|"
-        }
+        scan_class_names(program.children[i])
         i = i + 1
     }
     track_global_class_vars()
@@ -142,6 +148,15 @@ func generate_program(ASTNode? program) {
     }
     if wrote_typedef {
         codegen_emit("\n")
+    }
+
+    // Value arrays of struct elements need a file-scope typedef per element
+    // type; emit them here so every use site shares one type.
+    g_struct_array_typedefs_seen = "|"
+    i = 0
+    while i < n {
+        emit_struct_array_typedefs(program.children[i])
+        i = i + 1
     }
 
     // Prototypes for top-level functions only (stage 0 does not prototype
@@ -499,7 +514,7 @@ func generate_prototypes(ASTNode? node) {
 
 func generate_prototype(ASTNode? node, str prefix) {
     if node == null || node.kind == AST_MAIN || node.is_generator { return }
-    codegen_emit_c_type(node.return_type, node.is_array, node.is_pointer)
+    codegen_emit_c_type(node.return_type, node.return_is_array, node.is_pointer)
     codegen_emit(" ")
     if len(prefix) > 0 {
         codegen_emit(prefix)
@@ -639,7 +654,7 @@ func generate_function(ASTNode? node, str prefix) {
     g_capture_cell_params = node
     bool is_main = node.kind == AST_MAIN
     g_codegen_in_main = is_main
-    g_codegen_func_returns_void = !is_main && node.return_type.kind == TOKEN_EOF
+    g_codegen_func_returns_void = is_main || node.return_type.kind == TOKEN_EOF
     // generate_program marks the declaration currently being emitted as
     // top-level. Its body is not file scope: without clearing this flag a
     // local `new Klass()` emits a GCC constructor function inside `main`.
@@ -649,7 +664,7 @@ func generate_function(ASTNode? node, str prefix) {
     if is_main {
         codegen_emit("int main(int argc, char** argv) ")
     } else {
-        codegen_emit_c_type(node.return_type, node.is_array, node.is_pointer)
+        codegen_emit_c_type(node.return_type, node.return_is_array, node.is_pointer)
         codegen_emit(" ")
         if len(prefix) > 0 {
             codegen_emit(prefix)
@@ -824,19 +839,16 @@ func generate_var_declaration(ASTNode? node) {
         codegen_emit(";\n")
         return
     }
-    if node.init != null && node.init.kind == AST_NEW_EXPR {
-        if len(node.init.type_args) > 0 {
-            codegen_emit(class_mangled_name(node.init))
-            codegen_emit("* ")
-        } else {
-            generate_node_type(node, true)
-            codegen_emit(" ")
-        }
+    if node.is_class && node.init != null && node.init.kind == AST_NEW_EXPR && len(node.init.type_args) > 0 {
+        codegen_emit(class_mangled_name(node.init))
+        codegen_emit("* ")
     } else {
         generate_node_type(node, node.is_pointer || node.is_class)
         codegen_emit(" ")
     }
     codegen_emit(node.token.text)
+    bool cast_class_init = node.is_class && node.init != null &&
+        !(node.init.kind == AST_NEW_EXPR && len(node.init.type_args) > 0)
     if node.init != null {
         // Propagate the declared type to the initializer so null literals
         // emit (CnextString){NULL, 0} instead of bare NULL.
@@ -856,13 +868,19 @@ func generate_var_declaration(ASTNode? node) {
             codegen_emit("(void) {\n")
             codegen_emit(node.token.text)
             codegen_emit(" = ")
+            if cast_class_init { codegen_emit("(" + node.var_type.text + "*)(") }
             generate_expression(node.init)
+            if cast_class_init { codegen_emit(")") }
             codegen_emit(";\n}\n")
             return
         }
         codegen_emit(" = ")
         if node.var_type.kind == TOKEN_FUNC { emit_owned_closure(node.init) }
-        else { generate_expression(node.init) }
+        else {
+            if cast_class_init { codegen_emit("(" + node.var_type.text + "*)(") }
+            generate_expression(node.init)
+            if cast_class_init { codegen_emit(")") }
+        }
     }
     codegen_emit(";\n")
     if node.init != null && node.var_type.kind == TOKEN_FUNC {
@@ -877,6 +895,33 @@ func generate_var_declaration(ASTNode? node) {
     if node.init != null && node.init.kind == AST_NEW_EXPR {
         track_class_var(node.token.text, class_mangled_name(node.init))
     }
+    // Remember lambda-valued variables for interpolation call-throughs.
+    if node.init != null && node.init.kind == AST_LAMBDA && !node.is_array {
+        register_interp_lambda(node.token.text, node.init)
+    }
+}
+
+// Register every class and struct name in the tree, including ones declared
+// inside test blocks or other nested scopes; the class-name registry drives
+// pointer-typed declarations and method dispatch for the whole program.
+func scan_class_names(ASTNode? node) {
+    if node == null { return }
+    if node.kind == AST_CLASS_DECL {
+        g_codegen_class_names = g_codegen_class_names + node.token.text + "|"
+    } else if node.kind == AST_STRUCT_DECL {
+        g_codegen_struct_names = g_codegen_struct_names + node.token.text + "|"
+    }
+    int i = 0
+    int n = len(node.children)
+    while i < n {
+        scan_class_names(node.children[i])
+        i = i + 1
+    }
+    if node.left != null { scan_class_names(node.left) }
+    if node.right != null { scan_class_names(node.right) }
+    if node.condition != null { scan_class_names(node.condition) }
+    if node.init != null { scan_class_names(node.init) }
+    if node.increment != null { scan_class_names(node.increment) }
 }
 
 func track_global_class_vars() {
@@ -1037,6 +1082,12 @@ func generate_statement(ASTNode? node) {
     if node.kind == AST_EXPR_STMT {
         write_indent()
         generate_expression_stmt(node.left)
+    } else if node.kind == AST_RUN_ASYNC {
+        // run_async f(): run the async function's frame to completion here.
+        write_indent()
+        codegen_emit("({ __auto_type _a = ")
+        generate_expression(node.left)
+        codegen_emit("; _a->_next(_a); _a; });")
     } else if node.kind == AST_BLOCK {
         write_indent()
         generate_block(node)
@@ -1208,7 +1259,7 @@ func generate_statement(ASTNode? node) {
                         ki = ki + 1
                     }
                     write_indent()
-                    if g_codegen_func_returns_void {
+                    if g_codegen_func_returns_void || expression_is_void_call(last_stmt.left) {
                         generate_expression(last_stmt.left)
                         codegen_emit(";\n")
                     } else {
@@ -1362,13 +1413,29 @@ func generate_statement(ASTNode? node) {
             codegen_emit("++) {\n")
             g_indent_level = g_indent_level + 1
             write_indent()
-            codegen_emit("__auto_type ")
-            codegen_emit(node.init.token.text)
-            codegen_emit(" = _src")
-            codegen_emit(to_str(current_loop))
-            codegen_emit(".data[_i")
-            codegen_emit(to_str(current_loop))
-            codegen_emit("];\n")
+            // An array of class instances stores pointers, so the loop
+            // variable must be a typed pointer, not a bare void* from
+            // __auto_type; otherwise member access on it emits invalid C.
+            if node.init.is_class && len(node.init.type_name) > 0 {
+                codegen_emit(node.init.type_name)
+                codegen_emit("* ")
+                codegen_emit(node.init.token.text)
+                codegen_emit(" = (")
+                codegen_emit(node.init.type_name)
+                codegen_emit("*)_src")
+                codegen_emit(to_str(current_loop))
+                codegen_emit(".data[_i")
+                codegen_emit(to_str(current_loop))
+                codegen_emit("];\n")
+            } else {
+                codegen_emit("__auto_type ")
+                codegen_emit(node.init.token.text)
+                codegen_emit(" = _src")
+                codegen_emit(to_str(current_loop))
+                codegen_emit(".data[_i")
+                codegen_emit(to_str(current_loop))
+                codegen_emit("];\n")
+            }
             int bi = 0
             while bi < len(node.left.children) {
                 generate_statement(node.left.children[bi])

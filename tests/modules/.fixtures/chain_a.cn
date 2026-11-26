@@ -1,0 +1,6 @@
+// Relative import without a leading "./"
+import "shared.cn"
+
+export func chain_a(): int {
+    return 10 + shared()
+}

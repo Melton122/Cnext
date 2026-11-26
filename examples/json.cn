@@ -4,21 +4,21 @@ import json
 
 main {
     // Parse JSON
-    var data = json_parse('{"name": "Alice", "age": 30, "city": "NYC"}')
+    var data = json.parse("{\"name\": \"Alice\", \"age\": 30, \"city\": \"NYC\"}")
 
     // Get values
-    str name = json_get_string(data, "name")
-    int age = json_get_int(data, "age")
-    str city = json_get_string(data, "city")
+    str name = json.get_string(data, "name")
+    int age = json.get_int(data, "age")
+    str city = json.get_string(data, "city")
 
     printin("Name: " + name)
-    printin("Age: " + age)
+    printin("Age: " + to_str(age))
     printin("City: " + city)
 
     // Stringify
-    str json_str = json_stringify(data)
+    str json_str = json.stringify(data)
     printin("JSON: " + json_str)
 
     // Free memory
-    json_free(data)
+    json.free(data)
 }
