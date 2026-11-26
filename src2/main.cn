@@ -7,6 +7,9 @@ import process
 import os
 
 extern "C" func cnext_native_manifest_args(str path, bool required): str
+
+// Keep in sync with CNEXT_VERSION in include/main_internal.h.
+const str CNEXT_VERSION_STR = "10.0.5"
 extern "C" func cnext_test_execute(str[] argv, str stdin_path, str output_path): int
 extern "C" func cnext_test_list_directory(str path): str
 
@@ -247,14 +250,52 @@ func build_source_with_packages(str source, str source_dir, str source_path): st
 
 
 func driver_usage() {
-    print("Usage: cnext build <file.cn> [-o <program>] [--emit-c <output.c>]\n")
-    print("       cnext run <file.cn> [-o <program>] [options] [-- args...]\n")
-    print("       cnext test [filter|file.cn|directory] [--list] [build options]\n")
-    print("       cnext <file.cn> [-o <output.c>]  (legacy C emission)\n")
-    print("Options: --cc <executable>, --runtime-dir <headers>, --include-dir <path>,\n")
-    print("         --c-source <path>, --object <path>, --library-dir <path>, --link-lib <name>\n")
-    print("         --manifest <path>, --no-native-config\n")
-    print("         --optimize, --no-optimize (optimizer is opt-in; disable overrides enable)\n")
+    // Mirrors print_help() in src/main.c (same text, same order).
+    print("Cnext Compiler v" + CNEXT_VERSION_STR + "\n")
+    print("Usage: cnext <command> [arguments]\n\n")
+    print("Commands:\n")
+    print("  new <ProjectName>              Create a new Cnext project.\n")
+    print("  run <file.cn> [options]        Compile and run a Cnext file.\n")
+    print("  build <file.cn> [options]      Compile a Cnext file to an executable.\n")
+    print("  fmt <file.cn>                  Format a Cnext file.\n")
+    print("  lint <file.cn>                 Lint a Cnext file.\n")
+    print("  repl                           Start the interactive REPL.\n")
+    print("  version                        Show compiler version.\n")
+    print("  help                           Show this help message.\n\n")
+    print("Development:\n")
+    print("  doctor                         Check system for common issues.\n")
+    print("  init                           Initialize a new cnext.toml.\n")
+    print("  upgrade                        Upgrade compiler to latest version.\n")
+    print("  cache <clear|status>           Manage build cache.\n")
+    print("  config <key> [value]           Get/set configuration.\n")
+    print("  doc [output_dir]               Generate documentation from source.\n\n")
+    print("Package Manager:\n")
+    print("  test [filter|file.cn] [--list] Run project tests.\n")
+    print("  install                        Install all dependencies from cnext.toml.\n")
+    print("  install <package>              Install a single package.\n")
+    print("  remove <package>               Remove a package.\n")
+    print("  update                         Update all dependencies.\n")
+    print("  search <query>                 Search for packages.\n")
+    print("  info <package>                 Show package information.\n")
+    print("  publish                        Publish a package to the registry.\n")
+    print("  login                          Login to the registry.\n")
+    print("  logout                         Logout from the registry.\n\n")
+    print("Build Options:\n")
+    print("  -o, --output <path>            Set output file path.\n")
+    print("  --release                      Release build (optimized, no debug info).\n")
+    print("  --debug                        Debug build (no optimization, with symbols).\n")
+    print("  --optimize                     Enable the (experimental) Cnext-level optimizer.\n")
+    print("  --no-optimize                  Disable the optimizer (overrides --optimize).\n")
+    print("  --verbose                      Show generated C code before compilation.\n")
+    print("  --emit-c <path>                Write generated C to <path> and skip GCC.\n")
+    print("  --c-source <path>              Compile an additional C source (repeatable).\n")
+    print("  --object <path>                Link an object or archive (repeatable).\n")
+    print("  --include-dir <path>           Add a C header search directory (repeatable).\n")
+    print("  --library-dir <path>           Add a library search directory (repeatable).\n")
+    print("  --link-lib <name>              Link a C library by name (repeatable).\n")
+    print("  --manifest <path>              Read native settings from this manifest.\n")
+    print("  --no-native-config             Ignore native settings in cnext.toml.\n")
+    print("  --clean                        Remove build artifacts.\n")
 }
 
 func driver_error(str message) {
@@ -545,7 +586,42 @@ main {
     int argument_count = sys_args_count()
     if argument_count < 2 { driver_usage(); exit(2) }
     str first = sys_arg_at(1)
-    if first == "--help" || first == "-h" { driver_usage(); exit(0) }
+    if first == "help" || first == "--help" || first == "-h" { driver_usage(); exit(0) }
+    if first == "fmt" {
+        // cnext fmt <file.cn> rewrites the file in place, like stage 0.
+        if argument_count < 3 {
+            print("Usage: cnext fmt <file.cn>\n")
+            exit(64)
+        }
+        str fmt_path = sys_arg_at(2)
+        str fmt_source = read_file(fmt_path)
+        if fmt_source == null {
+            print("Could not open file \"" + fmt_path + "\"\n")
+            exit(1)
+        }
+        driver_write(fmt_path, format_source(fmt_source))
+        exit(0)
+    }
+    if first == "lint" {
+        // cnext lint <file.cn> reports issues on stderr, like stage 0.
+        if argument_count < 3 {
+            print("Usage: cnext lint <file.cn>\n")
+            exit(64)
+        }
+        str lint_path = sys_arg_at(2)
+        str lint_source_text = read_file(lint_path)
+        if lint_source_text == null {
+            print("Could not open file \"" + lint_path + "\"\n")
+            exit(1)
+        }
+        lint_source(lint_source_text)
+        lint_print_issues()
+        exit(0)
+    }
+    if first == "version" {
+        print("Cnext version " + CNEXT_VERSION_STR + "\n")
+        exit(0)
+    }
     if first == "test" { exit(driver_test_command(argument_count)) }
     bool legacy = first != "build" && first != "run"
     str mode = first

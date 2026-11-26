@@ -1,0 +1,151 @@
+// Self-hosting bootstrap: formatter.
+// Port of src/formatter.c: a lexer-driven token reprinter. Comments are
+// dropped by the lexer, so formatting normalizes spacing and indentation.
+
+func fmt_is_decl_keyword(int kind): bool {
+    return kind == TOKEN_FUNC || kind == TOKEN_VAR || kind == TOKEN_CONST ||
+        kind == TOKEN_STRUCT || kind == TOKEN_CLASS || kind == TOKEN_ENUM ||
+        kind == TOKEN_INTERFACE || kind == TOKEN_TRAIT || kind == TOKEN_MACRO ||
+        kind == TOKEN_CONSTEXPR || kind == TOKEN_EXTERN
+}
+
+func format_source(str source): str {
+    Lexer lx = new Lexer(source)
+    str out = ""
+    int indent = 0
+    bool need_indent = true
+    int paren_depth = 0
+    int bracket_depth = 0
+    bool when_braces0 = false
+    bool when_braces1 = false
+    bool when_braces2 = false
+    bool when_braces3 = false
+    int brace_count = 0
+    bool suppress_next_line = false
+    int prev_kind = TOKEN_EOF
+    int prev_line = 0
+
+    while true {
+        lx.next_token()
+        int kind = lx.cur_type
+        if kind == TOKEN_EOF { break }
+        str text = lx.cur_start
+        if kind == TOKEN_ERROR {
+            // Pass errors through as-is; prev token stays stale, as in stage 0.
+            out = out + text
+            continue
+        }
+
+        // Collapse runs of blank lines to at most one blank line.
+        if prev_kind != TOKEN_EOF && lx.cur_line > prev_line && !suppress_next_line {
+            int newlines = lx.cur_line - prev_line
+            if newlines > 2 { newlines = 2 }
+            while newlines > 0 {
+                out = out + "\n"
+                newlines = newlines - 1
+            }
+            need_indent = true
+        }
+        suppress_next_line = false
+
+        bool at_line_start = need_indent
+        if need_indent && kind != TOKEN_RBRACE {
+            int i = 0
+            while i < indent {
+                out = out + "    "
+                i = i + 1
+            }
+            need_indent = false
+        }
+
+        if !at_line_start && prev_kind != TOKEN_EOF {
+            bool add_space = true
+
+            if kind == TOKEN_SEMICOLON || kind == TOKEN_COMMA ||
+               kind == TOKEN_RPAREN || kind == TOKEN_RBRACKET ||
+               kind == TOKEN_RBRACE || kind == TOKEN_COLON ||
+               kind == TOKEN_DOT {
+                add_space = false
+            }
+            if prev_kind == TOKEN_LPAREN || prev_kind == TOKEN_LBRACKET ||
+               prev_kind == TOKEN_LBRACE || prev_kind == TOKEN_DOT ||
+               prev_kind == TOKEN_COMMA || prev_kind == TOKEN_SEMICOLON {
+                add_space = false
+            }
+            if kind == TOKEN_LPAREN &&
+               (prev_kind == TOKEN_IDENTIFIER || prev_kind == TOKEN_RBRACKET) {
+                add_space = false
+            }
+            if prev_kind == TOKEN_COLON && kind == TOKEN_COLON {
+                add_space = false
+            }
+            if (prev_kind == TOKEN_IDENTIFIER || fmt_is_decl_keyword(prev_kind)) &&
+               kind == TOKEN_IDENTIFIER {
+                if fmt_is_decl_keyword(prev_kind) { add_space = true } else { add_space = false }
+            }
+            if add_space { out = out + " " }
+        }
+
+        if kind != TOKEN_RBRACE {
+            out = out + text
+        }
+
+        if kind == TOKEN_LPAREN { paren_depth = paren_depth + 1 }
+        if kind == TOKEN_RPAREN && paren_depth > 0 { paren_depth = paren_depth - 1 }
+        if kind == TOKEN_LBRACKET { bracket_depth = bracket_depth + 1 }
+        if kind == TOKEN_RBRACKET && bracket_depth > 0 { bracket_depth = bracket_depth - 1 }
+
+        if kind == TOKEN_LBRACE {
+            int slot = brace_count
+            if slot < 4 {
+                if slot == 0 { when_braces0 = prev_kind == TOKEN_WHEN }
+                else if slot == 1 { when_braces1 = prev_kind == TOKEN_WHEN }
+                else if slot == 2 { when_braces2 = prev_kind == TOKEN_WHEN }
+                else { when_braces3 = prev_kind == TOKEN_WHEN }
+            }
+            brace_count = brace_count + 1
+            out = out + "\n"
+            indent = indent + 1
+            need_indent = true
+            suppress_next_line = true
+        } else if kind == TOKEN_RBRACE {
+            if brace_count > 0 { brace_count = brace_count - 1 }
+            if indent > 0 { indent = indent - 1 }
+            if !at_line_start { out = out + "\n" }
+            need_indent = true
+            int i = 0
+            while i < indent {
+                out = out + "    "
+                i = i + 1
+            }
+            out = out + text + "\n"
+            suppress_next_line = true
+        }
+
+        bool comma_in_when = false
+        if brace_count == 1 { comma_in_when = when_braces0 }
+        else if brace_count == 2 { comma_in_when = when_braces1 }
+        else if brace_count == 3 { comma_in_when = when_braces2 }
+        else if brace_count == 4 { comma_in_when = when_braces3 }
+        if kind == TOKEN_COMMA && paren_depth == 0 && bracket_depth == 0 &&
+           brace_count > 0 && comma_in_when {
+            out = out + "\n"
+            need_indent = true
+            suppress_next_line = true
+        }
+
+        if kind == TOKEN_SEMICOLON {
+            out = out + "\n"
+            need_indent = true
+            suppress_next_line = true
+        }
+
+        prev_kind = kind
+        prev_line = lx.cur_line
+    }
+
+    if out.length > 0 && str_char_at(out, out.length - 1) != 10 {
+        out = out + "\n"
+    }
+    return out
+}

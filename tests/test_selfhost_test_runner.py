@@ -50,7 +50,7 @@ class SelfHostedTestRunnerTests(unittest.TestCase):
         result = self.cli("test", "selected", "--list")
         self.assert_ok(result)
         self.assertEqual(result.stdout, "a/selected.cn\n")
-        self.assertIn("cnext test", self.cli("--help").stdout)
+        self.assertIn("test [filter|file.cn]", self.cli("--help").stdout)
 
     def test_optimizer_options_are_forwarded_to_builds(self):
         path = self.write("arithmetic.cn", '// EXPECT: 5\nmain { printin(2 + 3) }')

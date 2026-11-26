@@ -871,6 +871,10 @@ static inline void print_llong(long long x) { _cnext_print("%lld", x); }
 static inline void print_ullong(unsigned long long x) { _cnext_print("%llu", x); }
 static inline void print_float(float x) { _cnext_print("%f", x); }
 static inline void print_double(double x) { _cnext_print("%f", x); }
+/* Diagnostics go to stderr so stdout stays clean for program output. */
+static inline void cnext_eprint(CnextString s) {
+    fwrite(s.data ? s.data : "", 1, s.data ? s.length : 0, stderr);
+}
 /* Strings carry an explicit length, so printing has to honour it. A slice from
    cnext_str_sub points into a larger buffer and is not NUL-terminated at its
    end, so "%s" would run past the slice to the end of the source buffer. */

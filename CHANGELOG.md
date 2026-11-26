@@ -5,6 +5,10 @@ All notable changes to Cnext will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Self-hosted CLI commands `fmt`, `lint`, `version`, and `help` now match the
+  native compiler byte-for-byte (same formatter token reprinter, same linter
+  rules and ANSI output on stderr, same usage text). `cnext_eprint` was added
+  to the runtime so diagnostics reach stderr while stdout stays clean.
 - Self-hosted opt-in AST optimization: guarded int32/boolean literal folding,
   decisive short-circuit folding, literal `if` selection, and `while(false)` removal.
   `--no-optimize` wins over `--optimize` in either order.

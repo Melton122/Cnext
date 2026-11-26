@@ -1,0 +1,222 @@
+// Self-hosting bootstrap: linter.
+
+extern "C" func cnext_eprint(str text)
+// Port of src/linter.c: a single lexer pass that reports suspicious patterns
+// (unreachable code, stray assignments in conditions, unused variables, ...).
+
+// Issue lists, kept in parallel arrays. Globals of array type must be
+// declared without an initializer; lint_reset clears them at use time.
+str[] g_lint_messages
+int[] g_lint_lines
+str[] g_lint_severity
+str[] g_lint_fixes
+
+func lint_reset() {
+    g_lint_messages = {}
+    g_lint_lines = {}
+    g_lint_severity = {}
+    g_lint_fixes = {}
+}
+
+func lint_add(int line, str severity, str msg, str fix) {
+    push(g_lint_messages, msg)
+    push(g_lint_lines, line)
+    push(g_lint_severity, severity)
+    push(g_lint_fixes, fix)
+}
+
+// Declared-name tracking for unused-variable warnings.
+str[] g_lint_decl_names
+int[] g_lint_decl_lines
+bool[] g_lint_decl_used
+bool[] g_lint_decl_is_func
+
+func lint_track_decl(str name, int line, bool is_func) {
+    if len(g_lint_decl_names) >= 256 { return }
+    push(g_lint_decl_names, name)
+    push(g_lint_decl_lines, line)
+    push(g_lint_decl_used, false)
+    push(g_lint_decl_is_func, is_func)
+}
+
+func lint_source(str source) {
+    lint_reset()
+    g_lint_decl_names = {}
+    g_lint_decl_lines = {}
+    g_lint_decl_used = {}
+    g_lint_decl_is_func = {}
+
+    Lexer lx = new Lexer(source)
+    int prev_kind = TOKEN_EOF
+    str prev_text = ""
+    int paren_depth = 0
+    int brace_depth = 0
+    bool after_return = false
+    bool after_break = false
+    bool after_continue = false
+
+    while true {
+        lx.next_token()
+        int kind = lx.cur_type
+        if kind == TOKEN_EOF { break }
+        if kind == TOKEN_ERROR { continue }
+        str text = lx.cur_start
+
+        if kind == TOKEN_LBRACE { brace_depth = brace_depth + 1 }
+        if kind == TOKEN_RBRACE {
+            if brace_depth > 0 { brace_depth = brace_depth - 1 }
+            after_return = false
+            after_break = false
+            after_continue = false
+        }
+        if kind == TOKEN_LPAREN { paren_depth = paren_depth + 1 }
+        if kind == TOKEN_RPAREN {
+            if paren_depth > 0 { paren_depth = paren_depth - 1 }
+        }
+
+        // Comparison with a true/false literal.
+        if (kind == TOKEN_TRUE || kind == TOKEN_FALSE) && prev_kind != TOKEN_EOF {
+            bool is_cmp = true
+            if prev_kind == TOKEN_EQ_EQ || prev_kind == TOKEN_BANG_EQ ||
+               prev_kind == TOKEN_AND_AND || prev_kind == TOKEN_OR_OR ||
+               prev_kind == TOKEN_LPAREN || prev_kind == TOKEN_LBRACE ||
+               prev_kind == TOKEN_COMMA || prev_kind == TOKEN_FAT_ARROW ||
+               prev_kind == TOKEN_WHEN || prev_kind == TOKEN_ELSE ||
+               prev_kind == TOKEN_RETURN {
+                is_cmp = false
+            }
+            if is_cmp {
+                lint_add(lx.cur_line, "W",
+                    "Comparison with literal `" + text + "`; remove comparison", null)
+            }
+        }
+
+        // Assignment inside a condition (likely meant ==).
+        if kind == TOKEN_EQUAL && paren_depth > 0 && prev_kind != TOKEN_EOF {
+            if prev_kind == TOKEN_IDENTIFIER {
+                lint_add(lx.cur_line, "W",
+                    "Possible assignment in condition; did you mean `==`?", "==")
+            }
+        }
+
+        // Double semicolons.
+        if kind == TOKEN_SEMICOLON && prev_kind == TOKEN_SEMICOLON {
+            lint_add(lx.cur_line, "W", "Extra semicolon", null)
+        }
+
+        // Unreachable code after return/break/continue.
+        if after_return || after_break || after_continue {
+            if kind != TOKEN_RBRACE && kind != TOKEN_SEMICOLON &&
+               prev_kind != TOKEN_SEMICOLON {
+                str keyword = "return"
+                if after_break { keyword = "break" }
+                if after_continue { keyword = "continue" }
+                lint_add(lx.cur_line, "W", "Unreachable code after `" + keyword + "`", null)
+                after_return = false
+                after_break = false
+                after_continue = false
+            }
+        }
+        if kind == TOKEN_RETURN { after_return = true }
+        if kind == TOKEN_BREAK { after_break = true }
+        if kind == TOKEN_CONTINUE { after_continue = true }
+
+        // == true / == false comparisons.
+        if kind == TOKEN_EQ_EQ && prev_kind == TOKEN_TRUE {
+            lint_add(lx.cur_line, "W",
+                "Unnecessary comparison with `true`; use the expression directly", null)
+        }
+        if kind == TOKEN_EQ_EQ && prev_kind == TOKEN_FALSE {
+            lint_add(lx.cur_line, "W",
+                "Unnecessary comparison with `false`; use `!expression`", null)
+        }
+        if kind == TOKEN_BANG_EQ && prev_kind == TOKEN_TRUE {
+            lint_add(lx.cur_line, "W",
+                "Unnecessary comparison with `true`; use `!expression`", null)
+        }
+        if kind == TOKEN_BANG_EQ && prev_kind == TOKEN_FALSE {
+            lint_add(lx.cur_line, "W",
+                "Unnecessary comparison with `false`; use the expression directly", null)
+        }
+
+        // Deep nesting.
+        if kind == TOKEN_LBRACE && brace_depth > 4 {
+            lint_add(lx.cur_line, "I", "Deeply nested code (consider refactoring)", null)
+        }
+
+        // Track variable/const declarations.
+        if (prev_kind == TOKEN_VAR || prev_kind == TOKEN_CONST) &&
+           kind == TOKEN_IDENTIFIER {
+            lint_track_decl(text, lx.cur_line, false)
+        }
+        // Track function declarations.
+        if prev_kind == TOKEN_FUNC && kind == TOKEN_IDENTIFIER {
+            lint_track_decl(text, lx.cur_line, true)
+        }
+
+        // Mark identifiers as used when they appear.
+        if kind == TOKEN_IDENTIFIER {
+            int di = 0
+            int dn = len(g_lint_decl_names)
+            while di < dn {
+                if g_lint_decl_names[di] == text && !g_lint_decl_is_func[di] {
+                    g_lint_decl_used[di] = true
+                }
+                di = di + 1
+            }
+        }
+
+        // Mark functions as used when called.
+        if kind == TOKEN_LPAREN && prev_kind == TOKEN_IDENTIFIER {
+            int di = 0
+            int dn = len(g_lint_decl_names)
+            while di < dn {
+                if g_lint_decl_names[di] == prev_text && g_lint_decl_is_func[di] {
+                    g_lint_decl_used[di] = true
+                }
+                di = di + 1
+            }
+        }
+
+        prev_kind = kind
+        prev_text = text
+    }
+
+    // Unused variables (functions are exempt: they may be part of an API).
+    int di = 0
+    int dn = len(g_lint_decl_names)
+    while di < dn {
+        if !g_lint_decl_used[di] && !g_lint_decl_is_func[di] {
+            lint_add(g_lint_decl_lines[di], "W",
+                "Variable '" + g_lint_decl_names[di] + "' is declared but never used",
+                "Remove or use the variable")
+        }
+        di = di + 1
+    }
+}
+
+func lint_print_issues() {
+    int count = len(g_lint_messages)
+    if count == 0 {
+        print("No issues found.\n")
+        return
+    }
+    int errors = 0
+    int warnings = 0
+    int i = 0
+    while i < count {
+        str severity = g_lint_severity[i]
+        str color = "\x1b[36m"
+        if severity == "E" { color = "\x1b[31m" }
+        if severity == "W" { color = "\x1b[33m" }
+        cnext_eprint(color + severity + to_str(g_lint_lines[i]) + ":1: " +
+                     g_lint_messages[i] + "\x1b[0m\n")
+        if len(g_lint_fixes[i]) > 0 {
+            cnext_eprint("  fix: " + g_lint_fixes[i] + "\n")
+        }
+        if severity == "E" { errors = errors + 1 }
+        if severity == "W" { warnings = warnings + 1 }
+        i = i + 1
+    }
+    cnext_eprint("\n" + to_str(errors) + " error(s), " + to_str(warnings) + " warning(s)\n")
+}
