@@ -1,0 +1,93 @@
+// Self-hosting bootstrap: `cnext new` project scaffolding.
+// Port of create_project() in src/main.c; file templates are byte-identical
+// (native writes in text mode, so templates carry CRLF endings on Windows).
+
+// Self-hosting bootstrap: `cnext new` project scaffolding.
+// Port of create_project() in src/main.c; file templates are byte-identical.
+
+func LB() { return to_char(123) }
+
+func scaffold_content_cnext_toml(str project_name): str {
+    return "[package]\r\nname = \"" + project_name + "\"\r\nversion = \"0.1.0\"\r\n\r\n[dependencies]\r\n"
+}
+
+func scaffold_content_src_main_cn(str project_name): str {
+    return "// " + project_name + " - A Cnext project\r\n\r\nfunc double_value(int x): int " + LB() + "\r\n    return x * 2\r\n}\r\n\r\nclass Animal " + LB() + "\r\n    str name\r\n\r\n    func new(str n) " + LB() + "\r\n        self.name = n\r\n    }\r\n\r\n    func speak(): str " + LB() + "\r\n        return \"Hello from " + LB() + "self.name}!\"\r\n    }\r\n}\r\n\r\nmain " + LB() + "\r\n    printin(\"=== Welcome to " + project_name + "! ===\")\r\n    printin(\"\")\r\n\r\n    int age = 25\r\n    str name = \"Cnext Developer\"\r\n    bool active = true\r\n    printin(\"Hello, " + LB() + "name}! You are " + LB() + "age} years old.\")\r\n    printin(\"\")\r\n\r\n    int doubled = double_value(age)\r\n    printin(\"" + LB() + "age} doubled is " + LB() + "doubled}\")\r\n    printin(\"\")\r\n\r\n    int[] numbers = " + LB() + "1, 2, 3, 4, 5}\r\n    printin(\"Counting to 5:\")\r\n    for n in numbers " + LB() + "\r\n        printin(\"  " + LB() + "n}\")\r\n    }\r\n    printin(\"\")\r\n\r\n    var dog = new Animal(\"Rex\")\r\n    printin(dog.speak())\r\n    printin(\"\")\r\n\r\n    printin(\"Ready to build something amazing!\")\r\n}\r\n"
+}
+
+func scaffold_content_src_greeting_cn(str project_name): str {
+    return "// Greeting utilities\r\n\r\nfunc greet(str name): str " + LB() + "\r\n    return \"Hello, " + LB() + "name}!\"\r\n}\r\n\r\nfunc shout(str message): str " + LB() + "\r\n    return message.upper()\r\n}\r\n"
+}
+
+func scaffold_content_src_models_cn(str project_name): str {
+    return "// Data models\r\n\r\nclass Person " + LB() + "\r\n    str name\r\n    int age\r\n\r\n    func new(str n, int a) " + LB() + "\r\n        self.name = n\r\n        self.age = a\r\n    }\r\n\r\n    func greet(): str " + LB() + "\r\n        return \"Hi, I'm " + LB() + "self.name} and I'm " + LB() + "self.age} years old.\"\r\n    }\r\n}\r\n\r\nclass Student extends Person " + LB() + "\r\n    str school\r\n\r\n    func new(str n, int a, str s) " + LB() + "\r\n        super.new(n, a)\r\n        self.school = s\r\n    }\r\n\r\n    override func greet(): str " + LB() + "\r\n        return \"Hi, I'm " + LB() + "self.name} from " + LB() + "self.school}.\"\r\n    }\r\n}\r\n"
+}
+
+func scaffold_content_gitignore(str project_name): str {
+    return "# Build artifacts\r\nbuild/\r\nout.exe\r\nout\r\ntemp_out.c\r\n\r\n# Packages\r\npackages/\r\n\r\n# IDE (keep .vscode/tasks.json)\r\n.idea/\r\n\r\n# OS\r\n.DS_Store\r\nThumbs.db\r\n"
+}
+
+func scaffold_content_readme_md(str project_name): str {
+    return "# " + project_name + "\r\n\r\nA Cnext project.\r\n\r\n## Getting Started\r\n\r\n### Prerequisites\r\n\r\n- [Cnext compiler](https://github.com/Melton122/cnext) installed\r\n- [GCC](https://gcc.gnu.org/) or Clang compiler\r\n- (Optional) [VS Code](https://code.visualstudio.com/) with the Cnext extension\r\n\r\n### Run the project\r\n\r\n```bash\r\ncnext run src/main.cn\r\n```\r\n\r\n### Build an executable\r\n\r\n```bash\r\ncnext build src/main.cn -o " + project_name + "\r\n# Linux/macOS: ./" + project_name + "\r\n# Windows: ./" + project_name + ".exe\r\n```\r\n\r\n### Run tests\r\n\r\n```bash\r\ncnext test\r\n```\r\n\r\n## Project Structure\r\n\r\n```\r\n" + project_name + "/\r\n  src/\r\n    main.cn        # Entry point - run this file\r\n    greeting.cn    # Utility functions\r\n    models.cn      # Data model classes\r\n  packages/        # Third-party packages\r\n  build/           # Build output\r\n  cnext.toml       # Project configuration\r\n  README.md        # This file\r\n```\r\n\r\n## What's in the Sample Code?\r\n\r\nThe sample code demonstrates:\r\n\r\n- **Variables** — `int`, `str`, `bool`, `var` type inference\r\n- **Functions** — Regular functions with parameters and return types\r\n- **String interpolation** — `\"Hello, " + LB() + "name}!\"` syntax\r\n- **Classes** — Object-oriented programming with constructors\r\n- **For-in loops** — Iterating over arrays\r\n- **Imports** — Using code from other files\r\n\r\n## Learn More\r\n\r\n- [Language Guide](https://github.com/Melton122/cnext/blob/main/docs/getting-started.md)\r\n- [Type System](https://github.com/Melton122/cnext/blob/main/docs/types.md)\r\n- [Standard Library](https://github.com/Melton122/cnext/blob/main/docs/stdlib.md)\r\n- [Examples](https://github.com/Melton122/cnext/tree/main/examples)\r\n- [VS Code Extension](https://github.com/Melton122/cnext/tree/main/vscode-extension)\r\n"
+}
+
+func scaffold_content_vscode_tasks_json(str project_name): str {
+    return LB() + "\r\n    \"version\": \"2.0.0\",\r\n    \"tasks\": [\r\n        " + LB() + "\r\n            \"label\": \"Cnext: Run\",\r\n            \"type\": \"shell\",\r\n            \"command\": \"cnext run src/main.cn\",\r\n            \"group\": \"build\",\r\n            \"problemMatcher\": []\r\n        },\r\n        " + LB() + "\r\n            \"label\": \"Cnext: Build\",\r\n            \"type\": \"shell\",\r\n            \"command\": \"cnext build src/main.cn\",\r\n            \"group\": \"build\",\r\n            \"problemMatcher\": []\r\n        },\r\n        " + LB() + "\r\n            \"label\": \"Cnext: Build Release\",\r\n            \"type\": \"shell\",\r\n            \"command\": \"cnext build src/main.cn --release\",\r\n            \"group\": \"build\",\r\n            \"problemMatcher\": []\r\n        },\r\n        " + LB() + "\r\n            \"label\": \"Cnext: Test\",\r\n            \"type\": \"shell\",\r\n            \"command\": \"cnext test\",\r\n            \"group\": \"test\",\r\n            \"problemMatcher\": []\r\n        },\r\n        " + LB() + "\r\n            \"label\": \"Cnext: Format\",\r\n            \"type\": \"shell\",\r\n            \"command\": \"cnext fmt src/main.cn\",\r\n            \"group\": \"none\",\r\n            \"problemMatcher\": []\r\n        }\r\n    ]\r\n}\r\n"
+}
+
+func create_project(str project_name): int {
+    if len(project_name) == 0 {
+        cnext_eprint("Project name cannot be empty.
+")
+        return 64
+    }
+
+    print("Creating new project '" + project_name + "'...
+")
+    if os_mkdir(project_name) == false { return 74 }
+    if os_mkdir(project_name + "/src") == false { return 74 }
+    if os_mkdir(project_name + "/packages") == false { return 74 }
+    if os_mkdir(project_name + "/build") == false { return 74 }
+
+    driver_write(project_name + "/cnext.toml", scaffold_content_cnext_toml(project_name))
+    driver_write(project_name + "/src/main.cn", scaffold_content_src_main_cn(project_name))
+    driver_write(project_name + "/src/greeting.cn", scaffold_content_src_greeting_cn(project_name))
+    driver_write(project_name + "/src/models.cn", scaffold_content_src_models_cn(project_name))
+    driver_write(project_name + "/.gitignore", scaffold_content_gitignore(project_name))
+    driver_write(project_name + "/README.md", scaffold_content_readme_md(project_name))
+
+    if os_mkdir(project_name + "/.vscode") == false { return 74 }
+    driver_write(project_name + "/.vscode/tasks.json", scaffold_content_vscode_tasks_json(project_name))
+
+    print("Project '" + project_name + "' created!
+
+")
+    print("  Next steps:
+")
+    print("    cd " + project_name + "
+")
+    print("    cnext run src/main.cn
+
+")
+    print("  What's included:
+")
+    print("    src/main.cn       - Entry point with sample code
+")
+    print("    src/greeting.cn   - Utility functions
+")
+    print("    src/models.cn     - Data model classes
+")
+    print("    .vscode/tasks.json - VS Code build tasks
+")
+    print("    cnext.toml         - Project configuration
+")
+    print("    README.md          - Getting started guide
+
+")
+    print("  Install the VS Code extension for syntax highlighting:
+")
+    print("    code --install-extension cnext
+
+")
+    return 0
+}
