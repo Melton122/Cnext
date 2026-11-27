@@ -32,7 +32,9 @@ static bool compile_and_run(const char* c_code) {
     fwrite(c_code, 1, strlen(c_code), f);
     fclose(f);
 
-    const char* const gcc_args[] = {"gcc", "-std=gnu11", "-iquote", "include", "-o", CNEXT_TEMP_REPL_EXE, CNEXT_TEMP_REPL_C, NULL};
+    const char* runtime_dir = getenv("CNEXT_INCLUDE");
+    if (!runtime_dir || !*runtime_dir) runtime_dir = "include";
+    const char* const gcc_args[] = {"gcc", "-std=gnu11", "-iquote", runtime_dir, "-o", CNEXT_TEMP_REPL_EXE, CNEXT_TEMP_REPL_C, NULL};
     int compile_status = run_process("gcc", gcc_args);
     if (compile_status != 0) {
         fprintf(stderr, "Compilation failed.\n");

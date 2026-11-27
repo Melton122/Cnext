@@ -17,9 +17,19 @@ and checks generated-C parity and the stage-two rebuild fixed point.
 checks. CI runs additional language, ownership, native-manifest, and bootstrap
 fixtures on both stages. The Windows executable suffix is `.exe`.
 
+Release archives include the native CLI as `cnext` and stage two as `cnext-selfhost`.
+Both can run from the same installation.
+
+To install the stage-two compiler and its tools into a separate prefix, run
+`make install-selfhost INSTALL_DIR="/path/to/prefix"` and add the prefix's
+`bin` directory to `PATH`. The installed compiler finds the runtime headers
+relative to its executable when invoked from a project directory.
+
 ## Supported commands
 
 ```sh
+build/selfhost/stage2_exe new MyProject
+build/selfhost/stage2_exe init MyProject
 build/selfhost/stage2_exe build app.cn -o app
 build/selfhost/stage2_exe run app.cn -- argument
 build/selfhost/stage2_exe build app.cn --emit-c app.c
@@ -27,6 +37,63 @@ build/selfhost/stage2_exe test
 build/selfhost/stage2_exe test tests/core --list
 build/selfhost/stage2_exe test tests/core/test_simple.cn --optimize
 ```
+
+The bootstrap puts a native tools companion (`cnext-tools` or
+`cnext-tools.exe`) and its `registry.txt` next to the stage executables.
+Keep these files together when moving a build. Both stages use the companion
+for `doctor`, `repl`, `upgrade`, `cache`, `config`, `doc`, and package commands.
+The self-hosted driver compiles programs directly for `build`, `run`, and `test`.
+
+With `CNEXT_REGISTRY_URL` set to an HTTPS registry, `publish` uploads a gzip
+archive containing cnext.toml and src/lib.cn to `/api/publish`. A consumer can declare a dependency
+such as `answer = "^0.1.0"` under `[dependencies]` in `cnext.toml` and run
+`install`. The registry's `/api/packages/answer` response lists one
+`version|description|url` row per release. The URL must serve the importable
+CNext source over HTTPS. The installer selects the highest matching version
+and writes it to `packages/answer.cn` for use with `import answer`.
+
+For a team registry, set `CNEXT_REGISTRY_URL` in each publisher's and
+consumer's environment. A publisher runs `cnext login`, enters the registry
+token at the prompt, then runs `cnext publish` from the package directory.
+Increment the package version in `cnext.toml` before publishing another release.
+A consumer can use `cnext search answer`, `cnext info answer`, and
+`cnext update` to discover releases and install the latest version allowed
+by its manifest. `cnext remove answer` removes the dependency entry and its
+installed module. `cnext logout` removes the local token.
+
+After `make self-build`, run `python3 tests/test_package_workflow.py` to exercise
+both projects against a temporary loopback HTTPS registry. The test uses
+OpenSSL to create its certificate and keeps credentials in a temporary profile.
+
+### Maintainer review
+
+The reference service in `tools/package_registry.py` requires Python 3.11+
+and persistent SQLite storage. To serve it behind an HTTPS reverse proxy:
+
+```sh
+python3 tools/package_registry.py --db registry.db serve --public-url https://packages.example.org
+```
+
+Forward HTTPS to its loopback listener (port 8080 by default). Configure request
+limits on public registration and submission at the proxy. Anyone can obtain a
+publisher token with `curl -fsS -X POST "$CNEXT_REGISTRY_URL/api/register"`.
+Use that private token at the `cnext login` prompt. Login credentials are scoped
+to the exact configured registry URL. Log in again after upgrading an older
+unscoped token file.
+
+Submit a manifest and a UTF-8 `src/lib.cn` with `cnext publish`. The reference
+registry accepts major.minor.patch versions. Pending content is visible only
+to the database operator. Inspect a submission in a new directory, read both
+files, then approve or reject that ID:
+
+```sh
+python3 tools/package_registry.py --db registry.db pending
+python3 tools/package_registry.py --db registry.db inspect 1 review-1
+python3 tools/package_registry.py --db registry.db approve 1
+```
+
+Use `reject` in place of `approve` to decline. The first approved release assigns
+the name to its publisher. Approved versions are immutable.
 
 The legacy `compiler file.cn -o output.c` spelling still emits C. Native sources,
 objects, headers, and libraries can be supplied through CLI options or the
@@ -85,8 +152,8 @@ nonterminating or excessively verbose programs.
 
 ## Remaining parity work
 
-Package installation/update/resolution commands, formatter, linter, REPL, and
-documentation-generation commands remain native-driver work. Debug/source-map,
+The stage driver implements formatting and linting. Package commands, the REPL,
+and documentation generation still use the native companion. Debug/source-map,
 incremental-build, and complete optimization-option parity also remain pending.
 See the [production plan](production-plan.md) for ownership, ABI, packaging, and
 embedded-profile requirements shared by both compilers.

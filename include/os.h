@@ -19,6 +19,27 @@
 #include <sys/utsname.h>
 #endif
 
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
+
+static inline CnextString os_executable_path(void) {
+    char path[32768];
+#ifdef _WIN32
+    DWORD n = GetModuleFileNameA(NULL, path, sizeof(path));
+    if (!n || n >= sizeof(path)) return (CnextString){NULL, 0};
+#elif defined(__APPLE__)
+    uint32_t size = sizeof(path);
+    if (_NSGetExecutablePath(path, &size) != 0) return (CnextString){NULL, 0};
+    size_t n = strlen(path);
+#else
+    ssize_t n = readlink("/proc/self/exe", path, sizeof(path));
+    if (n <= 0 || (size_t)n >= sizeof(path)) return (CnextString){NULL, 0};
+#endif
+    path[n] = 0;
+    return cnext_from_cstr(path);
+}
+
 static inline CnextString os_getenv(CnextString name) {
 #ifdef _WIN32
     DWORD len = GetEnvironmentVariableA(name.data, NULL, 0);

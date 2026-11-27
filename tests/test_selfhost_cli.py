@@ -42,6 +42,46 @@ class SelfHostedCliTests(unittest.TestCase):
     def assert_clean(self):
         self.assertEqual(list(self.work.glob(".cnext-*")), [])
 
+    def test_companion_commands(self):
+        doctor = self.cli("doctor")
+        self.assert_ok(doctor)
+        self.assertIn("Cnext Doctor", doctor.stdout)
+        repl = self.cli("repl", input="6 * 7\n.exit\n")
+        self.assert_ok(repl)
+        self.assertIn("42", repl.stdout)
+        for command in ("search", "info", "remove"):
+            with self.subTest(command=command):
+                result = self.cli(command)
+                self.assertEqual(result.returncode, 64)
+                self.assertIn("Usage: cnext " + command, result.stderr)
+
+    def test_init_manifest(self):
+        manifest = self.work / "cnext.toml"
+        for args, name in [((), "my-project"), (("Sample Project",), "Sample Project")]:
+            result = self.cli("init", *args)
+            self.assert_ok(result)
+            self.assertEqual(result.stdout, f"Created cnext.toml for project '{name}'\n")
+            text = (f'[package]\nname = "{name}"\nversion = "0.1.0"\n'
+                    'description = "A Cnext project"\n\n[dependencies]\n')
+            self.assertEqual(manifest.read_bytes(), text.replace("\n", os.linesep).encode())
+
+    def test_new_matches_native_project(self):
+        name = "Sample Project"
+        native_dir = self.work / "native"
+        native_dir.mkdir()
+        native = subprocess.run([ROOT / ("cnext" + SUFFIX), "new", name], cwd=native_dir,
+                                capture_output=True, text=True, timeout=90)
+        self.assert_ok(native)
+        result = self.cli("new", name)
+        self.assert_ok(result)
+        self.assertEqual(result.stdout, native.stdout)
+
+        def snapshot(directory):
+            return {p.relative_to(directory): p.read_bytes() if p.is_file() else None
+                    for p in directory.rglob("*")}
+
+        self.assertEqual(snapshot(self.work / name), snapshot(native_dir / name))
+
     def test_help_and_legacy_emission(self):
         self.assertIn("Usage:", self.cli("--help").stdout)
         legacy = self.cli(self.source)

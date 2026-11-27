@@ -133,9 +133,12 @@ install_cnext() {
     sudo mkdir -p "$bin_dir" 2>/dev/null || mkdir -p "$bin_dir"
     sudo mkdir -p "$include_dir" 2>/dev/null || mkdir -p "$include_dir"
 
+    if [ -f "${tmpdir}/extract/cnext-tools${ext}" ]; then
+        sudo cp "${tmpdir}/extract/cnext-selfhost${ext}" "${tmpdir}/extract/cnext-tools${ext}" "${tmpdir}/extract/registry.txt" "${bin_dir}/"
+    fi
     sudo cp "${tmpdir}/extract/cnext${ext}" "${bin_dir}/cnext${ext}"
     sudo chmod +x "${bin_dir}/cnext${ext}"
-    sudo cp -r "${tmpdir}/extract/include/"* "${include_dir}/" 2>/dev/null || true
+    sudo cp -r "${tmpdir}/extract/include/"* "${include_dir}/"
 
     if [ -d "${tmpdir}/extract/examples" ]; then
         sudo mkdir -p "${INSTALL_DIR}/share/cnext/examples" 2>/dev/null || true
@@ -180,6 +183,9 @@ install_cnext() {
 
 uninstall_cnext() {
     info "Removing Cnext..."
+    if [ -f "${INSTALL_DIR}/bin/cnext-tools" ] || [ -f "${INSTALL_DIR}/bin/cnext-tools.exe" ]; then
+        sudo rm -f "${INSTALL_DIR}/bin/"{cnext-selfhost,cnext-selfhost.exe,cnext-tools,cnext-tools.exe,registry.txt}
+    fi
     sudo rm -f "${INSTALL_DIR}/bin/cnext" "${INSTALL_DIR}/bin/cnext.exe" 2>/dev/null || true
     sudo rm -rf "${INSTALL_DIR}/share/cnext" 2>/dev/null || true
     # Legacy: remove headers from previous flat /usr/local/include installs

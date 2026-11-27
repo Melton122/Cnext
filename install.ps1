@@ -62,6 +62,11 @@ try {
         throw "cnext.exe not found in downloaded archive."
     }
     Write-Host "Found: $($cnextExe.FullName)" -ForegroundColor Green
+    if (Test-Path -LiteralPath (Join-Path $cnextExe.DirectoryName "cnext-tools.exe")) {
+        foreach ($name in @("cnext-selfhost.exe", "cnext-tools.exe", "registry.txt")) {
+            Copy-Item -LiteralPath (Join-Path $cnextExe.DirectoryName $name) -Destination $INSTALL_BIN -Force -ErrorAction Stop
+        }
+    }
     Copy-Item -LiteralPath $cnextExe.FullName -Destination (Join-Path $INSTALL_BIN "cnext.exe") -Force
 
     $includeDir = Get-ChildItem -LiteralPath $EXTRACT_DIR -Filter "include" -Directory -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1

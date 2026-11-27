@@ -47,8 +47,8 @@ ifdef WINDOWS_BUILD
     INSTALL_INC = $(INSTALL_DIR)/include
 else
     INSTALL_DIR = /usr/local
-    INSTALL_BIN = /usr/local/bin
-    INSTALL_INC = /usr/local/include
+    INSTALL_BIN = $(INSTALL_DIR)/bin
+    INSTALL_INC = $(INSTALL_DIR)/share/cnext/include
 endif
 
 
@@ -140,6 +140,7 @@ endif
 
 uninstall:
 	@rm -f "$(INSTALL_BIN)/$(EXEC)"
+	@rm -f "$(INSTALL_BIN)/cnext-tools$(if $(WINDOWS_BUILD),.exe,)"
 	@rm -rf "$(INSTALL_DIR)/share/cnext" 2>/dev/null || true
 ifdef WINDOWS_BUILD
 	@rm -rf "$(INSTALL_INC)" 2>/dev/null || true
@@ -177,6 +178,13 @@ PARITY_REF = $(PARITY_DIR)/lexdump$(if $(WINDOWS_BUILD),.exe,)
 PARITY_PY = $(shell if command -v python3 >/dev/null 2>&1; then echo python3; else echo python; fi)
 STAGE1_EXE = $(PARITY_DIR)/stage1_exe$(if $(WINDOWS_BUILD),.exe,)
 STAGE2_EXE = $(PARITY_DIR)/stage2_exe$(if $(WINDOWS_BUILD),.exe,)
+
+.PHONY: install-selfhost
+install-selfhost: self-build
+	$(MKDIR) "$(INSTALL_BIN)" "$(INSTALL_INC)"
+	cp "$(STAGE2_EXE)" "$(INSTALL_BIN)/$(EXEC)"
+	cp "$(PARITY_DIR)/cnext-tools$(if $(WINDOWS_BUILD),.exe,)" "$(PARITY_DIR)/registry.txt" "$(INSTALL_BIN)/"
+	cp -r include/. "$(INSTALL_INC)/"
 MSVC_DEFER_OBJ = $(PARITY_DIR)/codegen_node_msvc_defer.o
 MSVC_DEFER_EXE = $(PARITY_DIR)/cnext_msvc_defer$(if $(WINDOWS_BUILD),.exe,)
 # Bootstrap builds favor fast, lower-memory compilation. Override with
@@ -222,12 +230,18 @@ $(PARITY_REF): tools/lexdump.c src/lexer.c | $(PARITY_DIR)
 $(PARITY_DIR):
 	$(MKDIR) $(PARITY_DIR)
 
+.PHONY: package-workflow-check
+package-workflow-check: self-build
+	$(PARITY_PY) tests/test_package_workflow.py
+
 .PHONY: self-build
 self-build: $(EXEC)
 	@echo "=== Starting Self-Hosting Bootstrap ==="
 	@$(MKDIR) $(PARITY_DIR)
+	cp registry.txt "$(PARITY_DIR)/registry.txt"
+	cp "$(EXEC)" "$(PARITY_DIR)/cnext-tools$(if $(WINDOWS_BUILD),.exe,)"
 	@echo "Stage 0 -> Stage 1: Bundling src2..."
-	@python tools/build_bundle.py codegen -o $(PARITY_DIR)/stage1_bundle.cn
+	@python3 tools/build_bundle.py codegen -o $(PARITY_DIR)/stage1_bundle.cn
 	@echo "Stage 0 -> Stage 1: Compiling bundle to C..."
 	./$(EXEC) build $(PARITY_DIR)/stage1_bundle.cn --emit-c $(PARITY_DIR)/stage1_src.c
 	@echo "Stage 0 -> Stage 1: Building binary with GCC..."

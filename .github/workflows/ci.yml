@@ -75,7 +75,7 @@ jobs:
       run: make parity
 
     - name: Self-hosted compiler
-      run: make self-build
+      run: make package-workflow-check
 
     - name: Stage 1 bootstrap programs
       run: python tests/test_bootstrap_codegen.py --stage1 build/selfhost/stage1_exe${{ runner.os == 'Windows' && '.exe' || '' }}

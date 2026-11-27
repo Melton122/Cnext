@@ -59,6 +59,9 @@ if %errorlevel% neq 0 (
 )
 
 echo Installing...
+if exist "%TMPDIR%\extract\cnext-tools.exe" for %%F in (cnext-selfhost.exe cnext-tools.exe registry.txt) do (
+    copy /Y "%TMPDIR%\extract\%%F" "%INSTALL_DIR%\bin\" >nul || exit /b 1
+)
 copy /Y "%TMPDIR%\extract\cnext.exe" "%INSTALL_DIR%\bin\" >nul
 if not exist "%INSTALL_DIR%\bin\cnext.exe" (
     echo ERROR: cnext.exe was not installed.

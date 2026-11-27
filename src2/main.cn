@@ -6,6 +6,7 @@
 import process
 import os
 
+extern "C" func os_executable_path(): str
 extern "C" func cnext_native_manifest_args(str path, bool required): str
 
 // Keep in sync with CNEXT_VERSION in include/main_internal.h.
@@ -250,7 +251,6 @@ func build_source_with_packages(str source, str source_dir, str source_path): st
 
 
 func driver_usage() {
-    // Mirrors print_help() in src/main.c (same text, same order).
     print("Cnext Compiler v" + CNEXT_VERSION_STR + "\n")
     print("Usage: cnext <command> [arguments]\n\n")
     print("Commands:\n")
@@ -259,43 +259,28 @@ func driver_usage() {
     print("  build <file.cn> [options]      Compile a Cnext file to an executable.\n")
     print("  fmt <file.cn>                  Format a Cnext file.\n")
     print("  lint <file.cn>                 Lint a Cnext file.\n")
-    print("  repl                           Start the interactive REPL.\n")
+    print("  init [ProjectName]             Initialize cnext.toml.\n")
+    print("  test [filter|file.cn] [--list] Run project tests.\n")
     print("  version                        Show compiler version.\n")
     print("  help                           Show this help message.\n\n")
-    print("Development:\n")
-    print("  doctor                         Check system for common issues.\n")
-    print("  init                           Initialize a new cnext.toml.\n")
-    print("  upgrade                        Upgrade compiler to latest version.\n")
-    print("  cache <clear|status>           Manage build cache.\n")
-    print("  config <key> [value]           Get/set configuration.\n")
-    print("  doc [output_dir]               Generate documentation from source.\n\n")
-    print("Package Manager:\n")
-    print("  test [filter|file.cn] [--list] Run project tests.\n")
-    print("  install                        Install all dependencies from cnext.toml.\n")
-    print("  install <package>              Install a single package.\n")
-    print("  remove <package>               Remove a package.\n")
-    print("  update                         Update all dependencies.\n")
-    print("  search <query>                 Search for packages.\n")
-    print("  info <package>                 Show package information.\n")
-    print("  publish                        Publish a package to the registry.\n")
-    print("  login                          Login to the registry.\n")
-    print("  logout                         Logout from the registry.\n\n")
+    print("Development tools:\n")
+    print("  doctor, repl, upgrade, cache, config, doc\n")
+    print("Package manager:\n")
+    print("  install, remove, update, search, info, publish, login, logout\n\n")
     print("Build Options:\n")
-    print("  -o, --output <path>            Set output file path.\n")
-    print("  --release                      Release build (optimized, no debug info).\n")
-    print("  --debug                        Debug build (no optimization, with symbols).\n")
+    print("  -o <path>                      Set output file path.\n")
     print("  --optimize                     Enable the (experimental) Cnext-level optimizer.\n")
     print("  --no-optimize                  Disable the optimizer (overrides --optimize).\n")
-    print("  --verbose                      Show generated C code before compilation.\n")
     print("  --emit-c <path>                Write generated C to <path> and skip GCC.\n")
     print("  --c-source <path>              Compile an additional C source (repeatable).\n")
     print("  --object <path>                Link an object or archive (repeatable).\n")
     print("  --include-dir <path>           Add a C header search directory (repeatable).\n")
     print("  --library-dir <path>           Add a library search directory (repeatable).\n")
     print("  --link-lib <name>              Link a C library by name (repeatable).\n")
+    print("  --cc <path>                    Select the C compiler.\n")
+    print("  --runtime-dir <path>           Select the runtime header directory.\n")
     print("  --manifest <path>              Read native settings from this manifest.\n")
     print("  --no-native-config             Ignore native settings in cnext.toml.\n")
-    print("  --clean                        Remove build artifacts.\n")
 }
 
 func driver_error(str message) {
@@ -317,7 +302,8 @@ func driver_runtime_dir(): str {
     str configured = getenv("CNEXT_INCLUDE")
     if configured != null && len(configured) > 0 { return configured }
     if file_exists("include/runtime.h") { return "include" }
-    str compiler_dir = driver_directory(sys_arg_at(0))
+    str compiler_dir = driver_directory(os_executable_path())
+    if file_exists(compiler_dir + "../share/cnext/include/runtime.h") { return compiler_dir + "../share/cnext/include" }
     if file_exists(compiler_dir + "../include/runtime.h") { return compiler_dir + "../include" }
     if file_exists(compiler_dir + "../../include/runtime.h") { return compiler_dir + "../../include" }
     if file_exists(compiler_dir + "include/runtime.h") { return compiler_dir + "include" }
@@ -587,6 +573,44 @@ main {
     if argument_count < 2 { driver_usage(); exit(2) }
     str first = sys_arg_at(1)
     if first == "help" || first == "--help" || first == "-h" { driver_usage(); exit(0) }
+    if first == "doctor" || first == "repl" || first == "upgrade" || first == "cache" ||
+       first == "config" || first == "doc" || first == "install" || first == "remove" ||
+       first == "update" || first == "search" || first == "info" || first == "publish" ||
+       first == "login" || first == "logout" {
+        str executable = os_executable_path()
+        if executable == null { driver_error("Could not locate the compiler executable") }
+        str companion = driver_directory(executable) + "cnext-tools"
+        if os_os_name() == "Windows" { companion = companion + ".exe" }
+        if !file_exists(companion) { driver_error("Missing native tools companion: " + companion) }
+        if first == "repl" {
+            str runtime_dir = driver_runtime_dir()
+            if len(runtime_dir) > 0 { os_setenv("CNEXT_INCLUDE", runtime_dir) }
+        }
+        str[] args = {companion}
+        int index = 1
+        while index < argument_count { push(args, sys_arg_at(index)); index = index + 1 }
+        exit(process_spawn(args))
+    }
+    if first == "init" {
+        str name = "my-project"
+        if argument_count >= 3 { name = sys_arg_at(2) }
+        str content = "[package]\nname = \"" + name + "\"\nversion = \"0.1.0\"\ndescription = \"A Cnext project\"\n\n[dependencies]\n"
+        if os_os_name() == "Windows" { content = str_replace(content, "\n", "\r\n") }
+        if write_file("cnext.toml", content) == false {
+            cnext_eprint("Could not create cnext.toml\n")
+            exit(1)
+        }
+        print("Created cnext.toml for project '" + name + "'\n")
+        exit(0)
+    }
+    if first == "new" {
+        // cnext new <ProjectName> scaffolds a project, like stage 0.
+        if argument_count < 3 {
+            cnext_eprint("Usage: cnext new <ProjectName>\n")
+            exit(64)
+        }
+        exit(create_project(sys_arg_at(2)))
+    }
     if first == "fmt" {
         // cnext fmt <file.cn> rewrites the file in place, like stage 0.
         if argument_count < 3 {

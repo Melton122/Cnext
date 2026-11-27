@@ -54,7 +54,13 @@ jobs:
 
     - name: Install Dependencies (macOS)
       if: runner.os == 'macOS'
-      run: brew install make curl
+      run: |
+        brew install gcc make curl
+        compiler=$(find "$(brew --prefix gcc)/bin" -name 'gcc-[0-9]*' | head -n 1)
+        mkdir -p "$RUNNER_TEMP/cnext-toolchain"
+        ln -s "$compiler" "$RUNNER_TEMP/cnext-toolchain/gcc"
+        echo "$RUNNER_TEMP/cnext-toolchain" >> "$GITHUB_PATH"
+        echo "CC=gcc" >> "$GITHUB_ENV"
 
     - name: Setup MSYS2 (Windows)
       if: runner.os == 'Windows'
@@ -66,23 +72,26 @@ jobs:
         install: >-
           mingw-w64-ucrt-x86_64-gcc
           mingw-w64-ucrt-x86_64-make
+          mingw-w64-ucrt-x86_64-python
           zip
 
     - name: Build (Unix)
       if: runner.os != 'Windows'
-      run: make
+      run: make self-build
 
     - name: Build (Windows)
       if: runner.os == 'Windows'
       shell: msys2 {0}
-      run: mingw32-make -j4
+      run: mingw32-make -j4 self-build
 
     - name: Package & Archive (Unix)
       if: runner.os != 'Windows'
       run: |
         mkdir -p dist
-        cp cnext dist/
-        cp -r include dist/ 2>/dev/null || true
+        cp cnext dist/cnext
+        cp build/selfhost/stage2_exe dist/cnext-selfhost
+        cp build/selfhost/cnext-tools registry.txt dist/
+        cp -r include dist/
         cp -r examples dist/ 2>/dev/null || true
         cp -r docs dist/ 2>/dev/null || true
         cp README.md dist/ 2>/dev/null || true
@@ -97,14 +106,19 @@ jobs:
       shell: msys2 {0}
       run: |
         mkdir -p dist
-        cp cnext.exe dist/
-        cp -r include dist/ 2>/dev/null || true
+        cp cnext.exe dist/cnext.exe
+        cp build/selfhost/stage2_exe.exe dist/cnext-selfhost.exe
+        cp build/selfhost/cnext-tools.exe registry.txt dist/
+        cp -r include dist/
         cp -r examples dist/ 2>/dev/null || true
         cp -r docs dist/ 2>/dev/null || true
         cp README.md dist/ 2>/dev/null || true
         cp LICENSE dist/ 2>/dev/null || true
         cd dist
         zip -r ../${{ matrix.artifact }}-${{ github.ref_name }}.${{ matrix.ext }} *
+
+    - name: Verify packaged compiler and companion
+      run: python3 tools/check_release_archive.py ${{ matrix.artifact }}-${{ github.ref_name }}.${{ matrix.ext }}
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
