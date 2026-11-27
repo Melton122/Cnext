@@ -233,12 +233,25 @@ bool download_package(const char* name, const char* url) {
     return false;
 }
 
+static bool install_registry_version(const char* name, const char* constraint) {
+    VersionSpec spec;
+    RegistryPackage pkg;
+    if (!semver_parse_spec(&spec, constraint) || !registry_resolve(name, &spec, &pkg) ||
+        strncmp(pkg.url, "https://", 8) != 0) {
+        fprintf(stderr, "No downloadable version of %s matching %s.\n", name, constraint);
+        return false;
+    }
+    return download_package(name, pkg.url);
+}
+
 bool install_single_package(const char* name, const char* argv0) {
     if (is_standard_module(name)) {
         printf("Package '%s' is a standard module (no install needed).\n", name);
         return true;
     }
 
+    const char* remote = getenv("CNEXT_REGISTRY_URL");
+    if (remote && *remote) return install_registry_version(name, "*");
     char registry_path[CNEXT_PATH_MAX];
     if (!find_registry_path(argv0, registry_path, sizeof(registry_path))) {
         fprintf(stderr, "Error: No registry found. Cannot resolve package '%s'.\n", name);
@@ -274,6 +287,7 @@ bool install_packages_from_toml(const char* argv0) {
     char registry_path[CNEXT_PATH_MAX];
     bool have_registry = find_registry_path(argv0, registry_path, sizeof(registry_path));
 
+    const char* remote = getenv("CNEXT_REGISTRY_URL");
     int installed = 0;
     int failed = 0;
     char line[2048];
@@ -312,6 +326,9 @@ bool install_packages_from_toml(const char* argv0) {
                     } else {
                         failed++;
                     }
+                } else if (remote && *remote) {
+                    if (install_registry_version(name, value)) installed++;
+                    else failed++;
                 } else if (have_registry) {
                     char url[1024];
                     if (resolve_package_url(name, registry_path, url, sizeof(url))) {

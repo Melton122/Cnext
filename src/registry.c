@@ -16,6 +16,7 @@ extern int run_process_captured(const char* program, const char* const args[], c
 #endif
 
 #ifdef _WIN32
+#include <windows.h>
 #include <direct.h>
 #include <io.h>
 #include <process.h>
@@ -221,7 +222,7 @@ static bool http_get(const char* url, char** out_body, long* out_status, long* o
     return http_get_ex(url, NULL, out_body, out_status, out_size);
 }
 
-static bool http_post(const char* url, const char* body, const char* token, long* out_status) {
+static bool http_post(const char* url, const char* body, size_t body_len, const char* token, long* out_status) {
     *out_status = 0;
     if (!url || url[0] == '\0') return false;
     if (!is_https_url(url)) {
@@ -238,7 +239,6 @@ static bool http_post(const char* url, const char* body, const char* token, long
     if (body) {
         FILE* bf = fopen(body_tmpfile, "wb");
         if (!bf) { remove(tmpfile_path); return false; }
-        size_t body_len = strlen(body);
         size_t written = fwrite(body, 1, body_len, bf);
         fclose(bf);
         if (written != body_len) {
@@ -265,7 +265,7 @@ static bool http_post(const char* url, const char* body, const char* token, long
     curl_args[argc++] = "-X";
     curl_args[argc++] = "POST";
     curl_args[argc++] = "-H";
-    curl_args[argc++] = "Content-Type: application/json";
+    curl_args[argc++] = "Content-Type: application/gzip";
     char* auth_header = NULL;
     char* data_arg = NULL;
     if (token && token[0]) {
@@ -281,7 +281,7 @@ static bool http_post(const char* url, const char* body, const char* token, long
         curl_args[argc++] = auth_header;
     }
     if (body) {
-        size_t cap = strlen("-d@") + strlen(body_tmpfile) + 1;
+        size_t cap = strlen("@") + strlen(body_tmpfile) + 1;
         data_arg = (char*)checked_malloc(cap);
         if (!data_arg) {
             free(auth_header);
@@ -289,7 +289,8 @@ static bool http_post(const char* url, const char* body, const char* token, long
             remove(tmpfile_path);
             return false;
         }
-        snprintf(data_arg, cap, "-d@%s", body_tmpfile);
+        snprintf(data_arg, cap, "@%s", body_tmpfile);
+        curl_args[argc++] = "--data-binary";
         curl_args[argc++] = data_arg;
     }
     curl_args[argc++] = "--";
@@ -307,6 +308,15 @@ static bool http_post(const char* url, const char* body, const char* token, long
     remove(body_tmpfile);
     remove(tmpfile_path);
     return ok;
+}
+
+static char* next_field(char** cursor, char separator) {
+    char* start = *cursor;
+    if (!start) return NULL;
+    char* end = strchr(start, separator);
+    if (end) *end++ = 0;
+    *cursor = end;
+    return start;
 }
 
 bool registry_search(const char* query, RegistryResult* result) {
@@ -330,11 +340,12 @@ bool registry_search(const char* query, RegistryResult* result) {
         free(encoded_query);
         if (written < 0 || (size_t)written >= sizeof(url)) return false;
         if (http_get(url, &body, &status, NULL) && status == 200) {
-            char* line = strtok(body, "\n");
+            char* rows = body;
+            char* line = next_field(&rows, '\n');
             int capacity = 0;
             while (line) {
                 line[strcspn(line, "\r")] = '\0';
-                if (line[0] == '\0') { line = strtok(NULL, "\n"); continue; }
+                if (line[0] == '\0') { line = next_field(&rows, '\n'); continue; }
 
                 if (result->count >= capacity) {
                     capacity = capacity ? capacity * 2 : 8;
@@ -345,14 +356,15 @@ bool registry_search(const char* query, RegistryResult* result) {
                 RegistryPackage* pkg = &result->versions[result->count++];
                 memset(pkg, 0, sizeof(*pkg));
 
-                char* tok = strtok(line, "|");
+                char* fields = line;
+                char* tok = next_field(&fields, '|');
                 if (tok) strncpy(pkg->name, tok, sizeof(pkg->name) - 1);
-                tok = strtok(NULL, "|");
+                tok = next_field(&fields, '|');
                 if (tok) strncpy(pkg->version, tok, sizeof(pkg->version) - 1);
-                tok = strtok(NULL, "|");
+                tok = next_field(&fields, '|');
                 if (tok) strncpy(pkg->description, tok, sizeof(pkg->description) - 1);
 
-                line = strtok(NULL, "\n");
+                line = next_field(&rows, '\n');
             }
             free(body);
             return result->count > 0;
@@ -406,11 +418,12 @@ bool registry_info(const char* package_name, RegistryResult* result) {
         char* body = NULL;
         long status = 0;
         if (http_get(url, &body, &status, NULL) && status == 200) {
-            char* line = strtok(body, "\n");
+            char* rows = body;
+            char* line = next_field(&rows, '\n');
             int capacity = 0;
             while (line) {
                 line[strcspn(line, "\r")] = '\0';
-                if (line[0] == '\0') { line = strtok(NULL, "\n"); continue; }
+                if (line[0] == '\0') { line = next_field(&rows, '\n'); continue; }
 
                 if (result->count >= capacity) {
                     capacity = capacity ? capacity * 2 : 8;
@@ -421,15 +434,16 @@ bool registry_info(const char* package_name, RegistryResult* result) {
                 RegistryPackage* pkg = &result->versions[result->count++];
                 memset(pkg, 0, sizeof(*pkg));
 
-                char* tok = strtok(line, "|");
+                char* fields = line;
+                char* tok = next_field(&fields, '|');
                 if (tok) strncpy(pkg->version, tok, sizeof(pkg->version) - 1);
-                tok = strtok(NULL, "|");
+                tok = next_field(&fields, '|');
                 if (tok) strncpy(pkg->description, tok, sizeof(pkg->description) - 1);
-                tok = strtok(NULL, "|");
+                tok = next_field(&fields, '|');
                 if (tok) strncpy(pkg->url, tok, sizeof(pkg->url) - 1);
                 strncpy(pkg->name, package_name, sizeof(pkg->name) - 1);
 
-                line = strtok(NULL, "\n");
+                line = next_field(&rows, '\n');
             }
             free(body);
             return result->count > 0;
@@ -555,13 +569,11 @@ bool registry_publish(const char* package_dir, const char* token) {
     }
 
     char tarball[1024];
-    snprintf(tarball, sizeof(tarball), "%s/%s-%s.tar.gz", package_dir, name, version);
-    char pkg_dir_buf[1024];
-    strncpy(pkg_dir_buf, package_dir, sizeof(pkg_dir_buf) - 1);
-    pkg_dir_buf[sizeof(pkg_dir_buf) - 1] = '\0';
-    const char* const tar_args[] = {"tar", "-czf", tarball, "-C", pkg_dir_buf, ".", NULL};
+    if (!ensure_cache_dirs() || !make_cache_temp_path(tarball, sizeof(tarball), "publish")) return false;
+    const char* const tar_args[] = {"tar", "-czf", tarball, "-C", package_dir, "cnext.toml", "src/lib.cn", NULL};
     int status = run_process("tar", tar_args);
     if (status != 0) {
+        remove(tarball);
         fprintf(stderr, "Failed to create package tarball.\n");
         return false;
     }
@@ -591,11 +603,16 @@ bool registry_publish(const char* package_dir, const char* token) {
     if (tsize < 0) { fclose(tf); remove(tarball); return false; }
     rewind(tf);
     char* tdata = (char*)checked_malloc(tsize);
-    if (tdata && fread(tdata, 1, tsize, tf)) { /* read ok */ }
+    if (!tdata || fread(tdata, 1, (size_t)tsize, tf) != (size_t)tsize) {
+        free(tdata);
+        fclose(tf);
+        remove(tarball);
+        return false;
+    }
     fclose(tf);
 
     long http_status = 0;
-    bool ok = http_post(post_url, tdata, token, &http_status);
+    bool ok = http_post(post_url, tdata, (size_t)tsize, token, &http_status);
     free(tdata);
     remove(tarball);
 
@@ -604,6 +621,10 @@ bool registry_publish(const char* package_dir, const char* token) {
         return false;
     }
 
+    if (http_status == 202) {
+        fprintf(stderr, "Submitted %s@%s for maintainer review.\n", name, version);
+        return true;
+    }
     if (http_status == 200 || http_status == 201) {
         fprintf(stderr, "Published %s@%s successfully.\n", name, version);
         return true;
@@ -631,38 +652,51 @@ static const char* get_auth_token_path(void) {
 
 const char* registry_get_token(void) {
     static char token[512] = "";
-    if (token[0]) return token;
+    const char* url = get_registry_url();
+    if (!url || !*url) return NULL;
     FILE* f = fopen(get_auth_token_path(), "r");
     if (!f) return NULL;
-    if (fgets(token, sizeof(token), f)) {
-        token[strcspn(token, "\r\n")] = '\0';
+    char scope[1024];
+    token[0] = '\0';
+    if (fgets(scope, sizeof(scope), f) && strchr(scope, '\n')) {
+        scope[strcspn(scope, "\r\n")] = '\0';
+        if (strcmp(scope, url) == 0 && fgets(token, sizeof(token), f)) {
+            token[strcspn(token, "\r\n")] = '\0';
+        }
     }
     fclose(f);
     return token[0] ? token : NULL;
 }
 
-static void save_token(const char* token) {
+static bool replace_file(const char* source, const char* target) {
+#ifdef _WIN32
+    return MoveFileExA(source, target, MOVEFILE_REPLACE_EXISTING) != 0;
+#else
+    return rename(source, target) == 0;
+#endif
+}
+
+static bool save_token(const char* url, const char* token) {
     const char* path = get_auth_token_path();
     if (!token || strpbrk(token, "\r\n")) {
         fprintf(stderr, "Invalid token.\n");
-        return;
+        return false;
     }
     if (!ensure_cache_dirs()) {
         fprintf(stderr, "Could not save token to %s\n", path);
-        return;
+        return false;
     }
     char tmp_path[1024];
     if (!make_cache_temp_path(tmp_path, sizeof(tmp_path), "token")) {
         fprintf(stderr, "Could not save token to %s\n", path);
-        return;
+        return false;
     }
     FILE* f = fopen(tmp_path, "w");
     if (!f) {
         fprintf(stderr, "Could not save token to %s\n", path);
-        return;
+        return false;
     }
-    size_t len = strlen(token);
-    bool ok = fwrite(token, 1, len, f) == len && fputc('\n', f) != EOF;
+    bool ok = fprintf(f, "%s\n%s\n", url, token) >= 0;
     if (fclose(f) != 0) ok = false;
 #ifndef _WIN32
     if (ok && chmod(tmp_path, 0600) != 0) ok = false;
@@ -670,28 +704,32 @@ static void save_token(const char* token) {
     if (!ok) {
         remove(tmp_path);
         fprintf(stderr, "Could not save token to %s\n", path);
-        return;
+        return false;
     }
-    remove(path);
-    if (rename(tmp_path, path) != 0) {
+    if (!replace_file(tmp_path, path)) {
         remove(tmp_path);
         fprintf(stderr, "Could not save token to %s\n", path);
-        return;
+        return false;
     }
     fprintf(stderr, "Token saved.\n");
+    return true;
 }
 
-static void remove_token(void) {
+static bool remove_token(void) {
     const char* path = get_auth_token_path();
     if (remove(path) == 0) {
         fprintf(stderr, "Logged out. Token removed.\n");
-    } else {
+    } else if (errno == ENOENT) {
         fprintf(stderr, "No token found.\n");
+    } else {
+        perror("Could not remove token");
+        return false;
     }
+    return true;
 }
 
 bool registry_login(const char* registry_url) {
-    if (registry_url && !is_https_url(registry_url)) {
+    if (!is_https_url(registry_url) || strlen(registry_url) >= 1000 || strpbrk(registry_url, "\r\n")) {
         fprintf(stderr, "Registry URL must use HTTPS.\n");
         return false;
     }
@@ -728,13 +766,11 @@ bool registry_login(const char* registry_url) {
         }
     }
 
-    save_token(token);
-    return true;
+    return save_token(registry_url, token);
 }
 
 bool registry_logout(void) {
-    remove_token();
-    return true;
+    return remove_token();
 }
 
 // --- Update ---
@@ -742,66 +778,44 @@ bool registry_logout(void) {
 // --- Remove ---
 
 bool registry_remove(const char* package_name, const char* project_dir) {
-    // Path traversal guard: reject names with ".." or path separators
-    if (!package_name || package_name[0] == '\0') return false;
-    for (const char* p = package_name; *p; p++) {
-        if ((*p == '.' && *(p + 1) == '.') || *p == '/' || *p == '\\') {
-            fprintf(stderr, "Invalid package name: contains path separators.\n");
-            return false;
+    if (!is_safe_registry_name(package_name)) return false;
+    char manifest[1024], temp[1100], module[1024];
+    int m = snprintf(manifest, sizeof(manifest), "%s/cnext.toml", project_dir);
+    int n = snprintf(module, sizeof(module), "%s/packages/%s.cn", project_dir, package_name);
+    if (m < 0 || (size_t)m >= sizeof(manifest) || n < 0 || (size_t)n >= sizeof(module)) return false;
+    snprintf(temp, sizeof(temp), "%s.%lu.tmp", manifest, (unsigned long)getpid());
+    FILE* in = fopen(manifest, "rb");
+    if (!in) { perror("Could not open cnext.toml"); return false; }
+    FILE* out = fopen(temp, "wbx");
+    if (!out) { fclose(in); return false; }
+    bool deps = false, found = false, ok = true;
+    char line[4096];
+    while (fgets(line, sizeof(line), in)) {
+        if (!strchr(line, '\n') && !feof(in)) { ok = false; break; }
+        const char* entry = line + strspn(line, " \t");
+        if (*entry == '[') {
+            deps = strncmp(entry, "[dependencies]", 14) == 0;
+        } else if (deps) {
+            size_t key = strcspn(entry, "= \t\r\n");
+            const char* equals = entry + key;
+            equals += strspn(equals, " \t");
+            if (*equals == '=' && key == strlen(package_name) && !memcmp(entry, package_name, key)) {
+                found = true;
+                continue;
+            }
         }
+        if (fputs(line, out) == EOF) { ok = false; break; }
     }
-
-    char toml_path[1024];
-    snprintf(toml_path, sizeof(toml_path), "%s/cnext.toml", project_dir);
-
-    FILE* f = fopen(toml_path, "r");
-    if (!f) {
-        fprintf(stderr, "No cnext.toml found.\n");
+    if (ferror(in)) ok = false;
+    fclose(in);
+    if (fclose(out) != 0) ok = false;
+    if (!ok) { remove(temp); return false; }
+    if (found && !replace_file(temp, manifest)) { remove(temp); return false; }
+    if (!found) remove(temp);
+    if (remove(module) != 0 && !(found && errno == ENOENT)) {
+        perror("Could not remove installed package");
         return false;
     }
-
-    // Read entire file
-    fseek(f, 0, SEEK_END);
-    long size = ftell(f);
-    if (size < 0) { fclose(f); return false; }
-    rewind(f);
-    char* content = (char*)checked_malloc(size + 1);
-    if (!content) { fclose(f); return false; }
-    if (fread(content, 1, size, f)) { /* read ok */ }
-    content[size] = '\0';
-    fclose(f);
-
-    // Find and remove the dependency line
-    char* dep_start = strstr(content, package_name);
-    if (!dep_start) {
-        fprintf(stderr, "Package '%s' not found in cnext.toml.\n", package_name);
-        free(content);
-        return false;
-    }
-
-    // Find the start of the line
-    char* line_start = dep_start;
-    while (line_start > content && *(line_start - 1) != '\n') line_start--;
-
-    // Find the end of the line
-    char* line_end = dep_start;
-    while (*line_end && *line_end != '\n') line_end++;
-    if (*line_end == '\n') line_end++;
-
-    // Write back without that line
-    FILE* out = fopen(toml_path, "w");
-    if (!out) { free(content); return false; }
-    fwrite(content, 1, line_start - content, out);
-    fwrite(line_end, 1, strlen(line_end), out);
-    fclose(out);
-    free(content);
-
-    // Remove cached package
-    char pkg_dir[1024];
-    snprintf(pkg_dir, sizeof(pkg_dir), "%s/packages/%s", project_dir, package_name);
-    // rmdir recursively (simplified)
-    remove(pkg_dir);
-
     fprintf(stderr, "Removed package '%s'.\n", package_name);
     return true;
 }
