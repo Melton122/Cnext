@@ -2743,31 +2743,25 @@ static inline int cnext_arg_count(void) {
 }
 
 static inline CnextString cnext_getenv_str(CnextString name) {
-    char buf[256];
-    size_t nlen = name.length < 255 ? name.length : 255;
-    memcpy(buf, name.data, nlen);
-    buf[nlen] = '\0';
-    const char* val = getenv(buf);
-    if (!val) return (CnextString){NULL, 0};
-    size_t vlen = strlen(val);
-    char* result = (char*)malloc(vlen + 1);
-    if (!result) return (CnextString){NULL, 0};
-    memcpy(result, val, vlen + 1);
-    _cnext_track(result);
-    return (CnextString){result, vlen};
+    if (!name.data || !name.length) return (CnextString){NULL, 0};
+    CStr key = cnext_to_cstr(name);
+    const char* value = getenv(key);
+    CnextString result = value ? cnext_from_cstr(value) : (CnextString){NULL, 0};
+    cnext_cstr_free(key);
+    return result;
 }
 
 static inline void cnext_setenv_str(CnextString name, CnextString value) {
-    char nbuf[256], vbuf[1024];
-    size_t nlen = name.length < 255 ? name.length : 255;
-    size_t vlen = value.length < 1023 ? value.length : 1023;
-    memcpy(nbuf, name.data, nlen); nbuf[nlen] = '\0';
-    memcpy(vbuf, value.data, vlen); vbuf[vlen] = '\0';
+    if (!name.data || !name.length) return;
+    CStr key = cnext_to_cstr(name);
+    CStr text = value.data ? cnext_to_cstr(value) : NULL;
 #ifdef _WIN32
-    _putenv_s(nbuf, vbuf);
+    _putenv_s(key, text ? text : "");
 #else
-    setenv(nbuf, vbuf, 1);
+    setenv(key, text ? text : "", 1);
 #endif
+    cnext_cstr_free(text);
+    cnext_cstr_free(key);
 }
 
 static inline CnextString cnext_hostname_str(void) {

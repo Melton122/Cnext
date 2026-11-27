@@ -576,18 +576,30 @@ void generate_string_interpolation(const char* start, int length) {
     }
 }
 
+// Keep CNext definitions distinct from the POSIX select declaration. The
+// dollar sign is accepted by our C backend and cannot occur in a CNext name.
+Token codegen_function_symbol(ASTNode* decl) {
+    Token name = decl->token;
+    if (decl->left && name.length == 6 && !memcmp(name.start, "select", 6)) {
+        name.start = "cnext$select";
+        name.length = sizeof("cnext$select") - 1;
+    }
+    return name;
+}
+
 void generate_function(ASTNode* node, const char* prefix) {
     bool previous_in_main = codegen_in_main;
     codegen_in_main = false;
     emit_line_directive(node->token.line);
+    Token symbol = prefix ? node->token : codegen_function_symbol(node);
     if (node->is_generator) {
         char func_name[256];
         if (prefix) {
             snprintf(func_name, sizeof(func_name), "%.*s_%.*s",
-                     (int)strlen(prefix), prefix, node->token.length, node->token.start);
+                     (int)strlen(prefix), prefix, symbol.length, symbol.start);
         } else {
             snprintf(func_name, sizeof(func_name), "%.*s",
-                     node->token.length, node->token.start);
+                     symbol.length, symbol.start);
         }
         generate_generator_code(node, func_name);
         codegen_in_main = previous_in_main;
@@ -602,9 +614,9 @@ void generate_function(ASTNode* node, const char* prefix) {
     // because class instances are always heap-allocated.
     generate_return_type(node);
     if (prefix) {
-        fprintf(out, " %s_%.*s(", prefix, node->token.length, node->token.start);
+        fprintf(out, " %s_%.*s(", prefix, symbol.length, symbol.start);
     } else {
-        fprintf(out, " %.*s(", node->token.length, node->token.start);
+        fprintf(out, " %.*s(", symbol.length, symbol.start);
     }
     
     bool first_param = true;
@@ -647,7 +659,8 @@ void generate_return_type(ASTNode* node) {
 
 void generate_function_prototype(ASTNode* node) {
     generate_return_type(node);
-    fprintf(out, " %.*s(", node->token.length, node->token.start);
+    Token symbol = codegen_function_symbol(node);
+    fprintf(out, " %.*s(", symbol.length, symbol.start);
     bool first_param = true;
     for (int i = 0; i < node->child_count; i++) {
         if (!first_param) fprintf(out, ", ");

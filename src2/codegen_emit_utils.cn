@@ -224,6 +224,11 @@ func operator_suffix(int kind): str {
     return ""
 }
 
+func codegen_function_symbol(ASTNode decl): str {
+    if decl.left != null && decl.token.text == "select" { return "cnext$select" }
+    return decl.token.text
+}
+
 func find_func_decl(ASTNode? prog, str name): ASTNode? {
     if prog == null { return null }
     int i = 0

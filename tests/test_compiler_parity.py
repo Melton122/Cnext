@@ -158,6 +158,18 @@ main {
 }
 ''', output="0\n12\nchild\n")
 
+    def test_long_environment_names_and_values(self):
+        prefix = "CNEXT_" + "K" * 250
+        value = "v" * 1536
+        self.compare(f'''main {{
+    setenv("{prefix}A", "{value}")
+    setenv("{prefix}B", "other")
+    str first = getenv("{prefix}A")
+    str second = getenv("{prefix}B")
+    printin(len(first))
+    printin(second)
+}}''', output="1536\nother\n")
+
     def test_nullable_references_and_conditional_join(self):
         self.compare('''
 class Box { int value }

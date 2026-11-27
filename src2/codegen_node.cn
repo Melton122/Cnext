@@ -519,8 +519,10 @@ func generate_prototype(ASTNode? node, str prefix) {
     if len(prefix) > 0 {
         codegen_emit(prefix)
         codegen_emit("_")
+        codegen_emit(node.token.text)
+    } else {
+        codegen_emit(codegen_function_symbol(node))
     }
-    codegen_emit(node.token.text)
     codegen_emit("(")
     emit_prototype_params(node)
     codegen_emit(");\n")
@@ -639,7 +641,7 @@ func generate_function(ASTNode? node, str prefix) {
     int start = codegen_output_len()
     if node.is_generator {
         str gen_name = node.token.text
-        if len(prefix) > 0 { gen_name = prefix + "_" + gen_name }
+        if len(prefix) > 0 { gen_name = prefix + "_" + gen_name } else { gen_name = codegen_function_symbol(node) }
         bool gen_old_top_level = g_codegen_top_level
         g_codegen_top_level = false
         generate_generator_code(node, gen_name)
@@ -669,8 +671,11 @@ func generate_function(ASTNode? node, str prefix) {
         if len(prefix) > 0 {
             codegen_emit(prefix)
             codegen_emit("_")
+            codegen_emit(node.token.text)
+        } else {
+            codegen_emit(codegen_function_symbol(node))
         }
-        codegen_emit(node.token.text)        codegen_emit("(")
+        codegen_emit("(")
         int i = 0
         int n = len(node.children)
         while i < n {

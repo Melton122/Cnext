@@ -92,6 +92,7 @@ void generate_node(ASTNode* node);
 void generate_function(ASTNode* node, const char* prefix);
 void generate_function_prototype(ASTNode* node);
 void emit_line_directive(int src_line);
+Token codegen_function_symbol(ASTNode* decl);
 ASTNode* find_func_decl(ASTNode* prog, const char* name);
 ASTNode* find_class_decl(ASTNode* prog, const char* name);
 ASTNode* find_struct_decl(ASTNode* prog, const char* name);

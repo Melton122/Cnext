@@ -1183,7 +1183,7 @@ func generate_expression_inner(ASTNode? node): bool {
                 if len(callee_decl.type_params) > 0 {
                     codegen_emit(mangle_generic_name(node.left))
                 } else {
-                    codegen_emit(node.left.token.text)
+                    codegen_emit(codegen_function_symbol(callee_decl))
                 }
                 codegen_emit("(")
                 bool first_arg = true

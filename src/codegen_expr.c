@@ -893,7 +893,8 @@ static void generate_call_expr(ASTNode* node) {
                     fprintf(out, "%s(", mangled);
                     free(mangled);
                 } else if (!found_builtin) {
-                    fprintf(out, "%.*s(", node->left->token.length, node->left->token.start);
+                    Token symbol = fdecl ? codegen_function_symbol(fdecl) : node->left->token;
+                    fprintf(out, "%.*s(", symbol.length, symbol.start);
                 }
             } else if (!found_builtin) {
                 fprintf(out, "%.*s(", node->left->token.length, node->left->token.start);
